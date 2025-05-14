@@ -1,8 +1,6 @@
 /**
- * Service for interacting with Ollama API
- * Ollama is an open-source platform for running LLMs locally
+ * Enhanced OllamaService with improved handling for embeddings and reference tracking
  */
-
 class OllamaService {
   static instance;
 
@@ -30,7 +28,7 @@ class OllamaService {
    * Set the default model to use
    */
   setDefaultModel(model) {
-    this.defaultModel = model.trim();
+    this.defaultModel = model.trim() || 'llama3.2';
     console.log('Ollama default model set to:', this.defaultModel);
   }
 
@@ -85,7 +83,7 @@ class OllamaService {
       // Handle different response formats from different Ollama versions
       if (data.models) {
         // Newer format
-        const models = data.models.map(model => model.name);
+        const models = data.models.map(model => model.name || model);
         console.log('Found models:', models);
         return models;
       } else if (Array.isArray(data)) {
@@ -225,13 +223,10 @@ class OllamaService {
   }
 
   /**
-   * Generate embeddings for text
-   * Note: This requires a model that supports embeddings
+   * Generate semantic embeddings for text
+   * Used for similarity comparisons and reference tracking
    */
-  async generateEmbeddings(
-    text,
-    model = this.defaultModel
-  ) {
+  async generateEmbeddings(text, model = this.defaultModel) {
     if (!model) {
       model = this.defaultModel;
     }
@@ -258,7 +253,7 @@ class OllamaService {
       });
 
       if (!response.ok) {
-        // If embedding endpoint fails, we'll try the alternative embed endpoint that some Ollama versions use
+        // If embedding endpoint fails, try the alternative embed endpoint that some Ollama versions use
         console.warn('Embeddings endpoint failed, trying alternate endpoint');
         return this.generateEmbeddingsAlternate(text, model);
       }
@@ -351,13 +346,74 @@ class OllamaService {
   }
 
   /**
-   * Extract structured information from text
+   * Calculate cosine similarity between two embedding vectors
+   * Used for finding similar sections of text
    */
-  async extractInformation(
-    text,
-    schema,
-    model = this.defaultModel
-  ) {
+  cosineSimilarity(vecA, vecB) {
+    if (!vecA || !vecB || vecA.length !== vecB.length) {
+      return 0;
+    }
+    
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+    
+    for (let i = 0; i < vecA.length; i++) {
+      dotProduct += vecA[i] * vecB[i];
+      normA += vecA[i] * vecA[i];
+      normB += vecB[i] * vecB[i];
+    }
+    
+    normA = Math.sqrt(normA);
+    normB = Math.sqrt(normB);
+    
+    if (normA === 0 || normB === 0) {
+      return 0;
+    }
+    
+    return dotProduct / (normA * normB);
+  }
+
+  /**
+   * Find the most similar text sections using embeddings
+   * Used for semantic search and reference identification
+   */
+  async findSimilarSections(query, sections, model = this.defaultModel, topK = 3) {
+    try {
+      // Generate embedding for the query
+      const queryEmbedding = await this.generateEmbeddings(query, model);
+      
+      // Calculate similarity scores for each section
+      const scoredSections = await Promise.all(sections.map(async (section) => {
+        // Generate embedding for the section if not already present
+        const sectionEmbedding = section.embedding || await this.generateEmbeddings(section.text, model);
+        
+        // Calculate similarity score
+        const score = this.cosineSimilarity(queryEmbedding, sectionEmbedding);
+        
+        return {
+          ...section,
+          embedding: sectionEmbedding,
+          score
+        };
+      }));
+      
+      // Sort sections by similarity score (highest first)
+      const sortedSections = scoredSections.sort((a, b) => b.score - a.score);
+      
+      // Return top K sections
+      return sortedSections.slice(0, topK);
+    } catch (error) {
+      console.error('Error finding similar sections:', error);
+      return sections.slice(0, topK);
+    }
+  }
+
+  /**
+   * Extract structured information from text using Ollama LLM
+   * Used for form field extraction with reference tracking
+   */
+  async extractInformation(text, schema, model = this.defaultModel) {
     try {
       // Create a prompt that asks for structured information
       const schemaDescription = Object.entries(schema)
@@ -370,6 +426,7 @@ ${schemaDescription}
 
 If a field is not found, leave it null or empty string.
 Return only valid JSON, with the field names exactly as specified.
+For each field, include a brief explanation of where you found this information in the document.
 
 TEXT:
 ${text}
@@ -377,15 +434,25 @@ ${text}
 
       const systemPrompt = `You are an AI assistant specialized in extracting structured information from medical documents. 
 Your task is to extract specific fields of information and return them in a clean JSON format.
-Only return the JSON object, nothing else.`;
+Only return the JSON object, nothing else.
 
-      // Add context about the sections in the document
-      // Create embeddings for each paragraph to enable source references
-      const paragraphs = text.split('\n\n').filter(p => p.trim().length > 0);
-      console.log(`Document split into ${paragraphs.length} paragraphs for context`);
-      
-      // Generate embeddings for each paragraph to support references
-      const paragraphEmbeddings = [];
+Format your response as:
+{
+  "fieldName1": "extracted value",
+  "fieldName2": "extracted value",
+  ...
+  "_references": {
+    "fieldName1": {
+      "text": "The exact text snippet from which the value was extracted",
+      "location": "Section of the document where this was found"
+    },
+    "fieldName2": {...}
+  }
+}`;
+
+      // Process text to find potential paragraph boundaries for references
+      const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+      console.log(`Document split into ${paragraphs.length} paragraphs for reference tracking`);
       
       // Save indices of paragraphs to generate reference metadata
       const paragraphIndices = {};
@@ -393,7 +460,7 @@ Only return the JSON object, nothing else.`;
         paragraphIndices[paragraphs[i].slice(0, 50)] = i;
       }
       
-      // Use the extraction prompt to get structured data
+      // Use extraction prompt to get structured data
       const result = await this.generateCompletion(prompt, model, systemPrompt, {
         temperature: 0.1, // Low temperature for more deterministic output
       });
@@ -414,8 +481,32 @@ Only return the JSON object, nothing else.`;
           parsedResult.modelUsed = model;
           parsedResult.extractionDate = new Date().toISOString();
           
-          // Add source information to help with references
-          parsedResult.paragraphIndices = paragraphIndices;
+          // If no _references field was created, add it
+          if (!parsedResult._references) {
+            parsedResult._references = {};
+            
+            // Try to create references for each field
+            for (const [field, value] of Object.entries(parsedResult)) {
+              // Skip metadata fields or empty values
+              if (field.startsWith('_') || value === null || value === undefined || value === '') {
+                continue;
+              }
+              
+              // Find a paragraph containing this value
+              const containingParagraph = paragraphs.find(p => 
+                p.includes(value) || 
+                (typeof value === 'string' && p.toLowerCase().includes(value.toLowerCase()))
+              );
+              
+              if (containingParagraph) {
+                parsedResult._references[field] = {
+                  text: containingParagraph,
+                  location: this.determineSectionType(containingParagraph),
+                  value: value
+                };
+              }
+            }
+          }
           
           return parsedResult;
         }
@@ -461,6 +552,46 @@ Only return the JSON object, nothing else.`;
         timestamp: new Date().toISOString()
       };
     }
+  }
+  
+  /**
+   * Determine the type of a section based on its content
+   * Used for categorizing references
+   */
+  determineSectionType(text) {
+    const lowerText = text.toLowerCase();
+    
+    // Check for common section types in medical documents
+    if (lowerText.includes('patient') && (lowerText.includes('information') || lowerText.includes('details'))) {
+      return 'Patient Information';
+    }
+    
+    if (lowerText.includes('referring') && (lowerText.includes('physician') || lowerText.includes('doctor'))) {
+      return 'Referring Physician';
+    }
+    
+    if (lowerText.includes('diagnosis') || lowerText.includes('assessment') || lowerText.includes('impression')) {
+      return 'Diagnosis';
+    }
+    
+    if (lowerText.includes('history')) {
+      return 'Medical History';
+    }
+    
+    if (lowerText.includes('medication') || lowerText.includes('prescription')) {
+      return 'Medications';
+    }
+    
+    if (lowerText.includes('insurance')) {
+      return 'Insurance Information';
+    }
+    
+    if (lowerText.includes('reason') && lowerText.includes('referral')) {
+      return 'Referral Reason';
+    }
+    
+    // Default section type
+    return 'Document Section';
   }
 }
 

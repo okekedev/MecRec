@@ -1,14 +1,15 @@
 /**
- * Service for extracting structured form data from medical referral documents
- * Can use Ollama AI for extraction or fallback to regex-based extraction
+ * Enhanced MedicalFormExtractor with reference tracking capabilities
  */
 import OllamaService from './OllamaService';
+import DocumentReferenceService from './DocumentReferenceService';
 
 class MedicalFormExtractor {
   static instance;
   
   constructor() {
     this.ollamaService = OllamaService.getInstance();
+    this.referenceService = DocumentReferenceService.getInstance();
     this.useAI = true;
   }
   
@@ -27,10 +28,15 @@ class MedicalFormExtractor {
   }
   
   /**
-   * Extract form data from the provided text
+   * Extract form data from the provided text with reference tracking
    */
-  async extractFormData(text) {
+  async extractFormData(text, documentId = null) {
     try {
+      // Process document for references
+      if (documentId) {
+        this.referenceService.processDocument(documentId, text);
+      }
+      
       // If AI extraction is enabled, try using Ollama first
       if (this.useAI) {
         try {
@@ -64,8 +70,15 @@ class MedicalFormExtractor {
             extractedData.extractedDate = new Date().toISOString().split('T')[0];
             extractedData.extractionMethod = 'ai';
             
-            console.log('AI extraction successful');
-            return extractedData;
+            // Find and add references for each field
+            const extractedWithReferences = await this.addReferencesToExtractedData(
+              extractedData,
+              text,
+              documentId
+            );
+            
+            console.log('AI extraction successful with references');
+            return extractedWithReferences;
           }
         } catch (aiError) {
           console.warn('AI-based extraction failed, falling back to regex:', aiError);
@@ -73,8 +86,8 @@ class MedicalFormExtractor {
         }
       }
       
-      // Fallback: Use regex-based extraction
-      return this.extractFormDataWithRegex(text);
+      // Fallback: Use regex-based extraction with references
+      return this.extractFormDataWithRegex(text, documentId);
     } catch (error) {
       console.error('Form extraction error:', error);
       // If all fails, return just the extraction date
@@ -86,65 +99,216 @@ class MedicalFormExtractor {
   }
   
   /**
+   * Add reference information to extracted data fields
+   */
+  async addReferencesToExtractedData(extractedData, text, documentId) {
+    // Create a copy to avoid modifying the original
+    const dataWithReferences = { ...extractedData };
+    
+    // Add a references object
+    dataWithReferences._references = {};
+    
+    // For each field, try to find the source in the text
+    for (const [field, value] of Object.entries(extractedData)) {
+      // Skip if the field is null, undefined, or a meta field
+      if (value === null || value === undefined || field.startsWith('_') || field === 'extractedDate' || field === 'extractionMethod') {
+        continue;
+      }
+      
+      try {
+        // Find the source of this information in the text
+        const reference = await this.findReferenceForField(field, value, text);
+        
+        if (reference) {
+          dataWithReferences._references[field] = reference;
+        }
+      } catch (err) {
+        console.warn(`Error finding reference for field ${field}:`, err);
+      }
+    }
+    
+    return dataWithReferences;
+  }
+  
+  /**
+   * Find the source reference for a specific field and value
+   */
+  async findReferenceForField(field, value, text) {
+    if (!value || typeof value !== 'string' || value.trim() === '') {
+      return null;
+    }
+    
+    // Try to find an exact match first
+    const exactMatch = text.indexOf(value);
+    if (exactMatch >= 0) {
+      // Get surrounding context
+      const startPos = Math.max(0, exactMatch - 50);
+      const endPos = Math.min(text.length, exactMatch + value.length + 50);
+      const context = text.substring(startPos, endPos);
+      
+      return {
+        text: context,
+        value: value,
+        position: {
+          start: exactMatch,
+          end: exactMatch + value.length
+        },
+        exactMatch: true,
+        field: field,
+        type: this.getFieldSectionType(field)
+      };
+    }
+    
+    // Try to find the value in a section that's likely to contain this field
+    const relevantSections = await this.referenceService.findRelevantSections(
+      text,
+      `${this.getFieldSearchTerms(field)} ${value}`,
+      1
+    );
+    
+    if (relevantSections.length > 0) {
+      return {
+        text: relevantSections[0].text,
+        value: value,
+        location: relevantSections[0].location,
+        field: field,
+        exactMatch: false,
+        score: relevantSections[0].score,
+        type: this.getFieldSectionType(field)
+      };
+    }
+    
+    // No reference found
+    return null;
+  }
+  
+  /**
+   * Get search terms for a field to help find its source
+   */
+  getFieldSearchTerms(field) {
+    const fieldTerms = {
+      patientName: "patient name",
+      patientDOB: "date of birth DOB",
+      patientGender: "gender sex",
+      patientID: "ID MRN medical record number",
+      patientPhone: "phone contact",
+      insurance: "insurance provider plan",
+      policyNumber: "policy number ID",
+      referringPhysician: "referring physician doctor provider",
+      referringPractice: "practice clinic center",
+      physicianPhone: "phone contact",
+      physicianNPI: "NPI provider number",
+      diagnosis: "diagnosis assessment impression condition",
+      symptoms: "symptoms presents with presenting complaint", 
+      referralReason: "reason for referral",
+      urgency: "urgency priority urgent routine"
+    };
+    
+    return fieldTerms[field] || field.replace(/([A-Z])/g, ' $1').toLowerCase();
+  }
+  
+  /**
+   * Get the section type for a field
+   */
+  getFieldSectionType(field) {
+    if (field.startsWith('patient')) {
+      return 'Patient Information';
+    }
+    
+    if (field.includes('insurance') || field.includes('policy')) {
+      return 'Insurance Information';
+    }
+    
+    if (field.includes('physician') || field.includes('practice') || field.includes('NPI')) {
+      return 'Referring Physician';
+    }
+    
+    if (field.includes('diagnosis') || field.includes('symptoms')) {
+      return 'Diagnosis/Assessment';
+    }
+    
+    if (field.includes('referral')) {
+      return 'Referral Information';
+    }
+    
+    return 'General';
+  }
+  
+  /**
    * Extract form data using regex patterns (fallback method)
    */
-  extractFormDataWithRegex(text) {
+  async extractFormDataWithRegex(text, documentId) {
     const formData = {};
+    const references = {};
     
-    // Helper function to extract fields using regex patterns
+    // Helper function to extract fields using regex patterns and track references
     const extractField = (fieldName, pattern) => {
       const match = text.match(pattern);
-      return match ? match[1].trim() : null;
+      
+      if (match) {
+        const value = match[1].trim();
+        formData[fieldName] = value;
+        
+        // Add reference
+        references[fieldName] = {
+          text: match[0],
+          value: value,
+          position: {
+            start: text.indexOf(match[0]),
+            end: text.indexOf(match[0]) + match[0].length
+          },
+          exactMatch: true,
+          field: fieldName,
+          type: this.getFieldSectionType(fieldName)
+        };
+        
+        return value;
+      }
+      
+      return null;
     };
     
     // Patient information
-    const patientName = extractField('patientName', /(?:patient name|patient)[\s:]+([^\n]+)/i);
-    const patientDOB = extractField('patientDOB', /(?:DOB|date of birth)[\s:]+([^\n]+)/i);
-    const patientGender = extractField('patientGender', /(?:gender|sex)[\s:]+([^\n]+)/i);
-    const patientPhone = extractField('patientPhone', /(?:phone|contact|tel)[\s:]+([^\n\)]+)/i);
-    const patientID = extractField('patientID', /(?:ID|MRN|medical record|patient ID)[\s:]+([^\n]+)/i);
+    extractField('patientName', /(?:patient name|patient)[\s:]+([^\n]+)/i);
+    extractField('patientDOB', /(?:DOB|date of birth)[\s:]+([^\n]+)/i);
+    extractField('patientGender', /(?:gender|sex)[\s:]+([^\n]+)/i);
+    extractField('patientPhone', /(?:phone|contact|tel)[\s:]+([^\n\)]+)/i);
+    extractField('patientID', /(?:ID|MRN|medical record|patient ID)[\s:]+([^\n]+)/i);
     
     // Insurance information
-    const insurance = extractField('insurance', /(?:insurance|plan)[\s:]+([^\n]+)/i);
-    const policyNumber = extractField('policyNumber', /(?:policy|policy #|policy number)[\s:]+([^\n]+)/i);
+    extractField('insurance', /(?:insurance|plan)[\s:]+([^\n]+)/i);
+    extractField('policyNumber', /(?:policy|policy #|policy number)[\s:]+([^\n]+)/i);
     
     // Referring physician
-    const referringPhysician = extractField('referringPhysician', /(?:referring physician|doctor|dr\.)[\s:]+([^\n]+)/i);
-    const referringPractice = extractField('referringPractice', /(?:practice|clinic|center)[\s:]+([^\n]+)/i);
-    const physicianPhone = extractField('physicianPhone', /(?:phone|tel|contact)[\s:]+(\(\d{3}\)\s*\d{3}-\d{4}|\d{3}[-.\s]\d{3}[-.\s]\d{4})/i);
-    const physicianNPI = extractField('physicianNPI', /(?:NPI|provider number)[\s:]+([^\n]+)/i);
+    extractField('referringPhysician', /(?:referring physician|doctor|dr\.)[\s:]+([^\n]+)/i);
+    extractField('referringPractice', /(?:practice|clinic|center)[\s:]+([^\n]+)/i);
+    extractField('physicianPhone', /(?:phone|tel|contact)[\s:]+(\(\d{3}\)\s*\d{3}-\d{4}|\d{3}[-.\s]\d{3}[-.\s]\d{4})/i);
+    extractField('physicianNPI', /(?:NPI|provider number)[\s:]+([^\n]+)/i);
     
     // Clinical information
-    const diagnosis = extractField('diagnosis', /(?:diagnosis|assessment|impression)[\s:]+([^\n]+)/i);
-    const symptoms = extractField('symptoms', /(?:symptoms|presenting with|complains of)[\s:]+([^\n]+)/i);
-    const referralReason = extractField('referralReason', /(?:reason for referral|referral reason)[\s:]+([^\n.]+)/i);
-    const urgency = extractField('urgency', /(?:urgency|priority)[\s:]+([^\n]+)/i);
-    
-    // Add all extracted data to the form data object
-    if (patientName) formData.patientName = patientName;
-    if (patientDOB) formData.patientDOB = patientDOB;
-    if (patientGender) formData.patientGender = patientGender;
-    if (patientPhone) formData.patientPhone = patientPhone;
-    if (patientID) formData.patientID = patientID;
-    
-    if (insurance) formData.insurance = insurance;
-    if (policyNumber) formData.policyNumber = policyNumber;
-    
-    if (referringPhysician) formData.referringPhysician = referringPhysician;
-    if (referringPractice) formData.referringPractice = referringPractice;
-    if (physicianPhone) formData.physicianPhone = physicianPhone;
-    if (physicianNPI) formData.physicianNPI = physicianNPI;
-    
-    if (diagnosis) formData.diagnosis = diagnosis;
-    if (symptoms) formData.symptoms = symptoms;
-    if (referralReason) formData.referralReason = referralReason;
-    if (urgency) formData.urgency = urgency;
+    extractField('diagnosis', /(?:diagnosis|assessment|impression)[\s:]+([^\n]+)/i);
+    extractField('symptoms', /(?:symptoms|presenting with|complains of)[\s:]+([^\n]+)/i);
+    extractField('referralReason', /(?:reason for referral|referral reason)[\s:]+([^\n.]+)/i);
+    extractField('urgency', /(?:urgency|priority)[\s:]+([^\n]+)/i);
     
     // Add current date and extraction method
     formData.extractedDate = new Date().toISOString().split('T')[0];
     formData.extractionMethod = 'regex';
     
+    // Add references
+    formData._references = references;
+    
     return formData;
+  }
+  
+  /**
+   * Get references for an extracted field
+   */
+  getFieldReference(extractedData, fieldName) {
+    if (extractedData && extractedData._references && extractedData._references[fieldName]) {
+      return extractedData._references[fieldName];
+    }
+    return null;
   }
 }
 

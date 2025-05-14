@@ -1,241 +1,247 @@
 /**
- * Enhanced DocumentListScreen with theme and animations
+ * Enhanced DocumentUploadScreen with theme and animations
  */
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  FlatList, 
-  TouchableOpacity, 
-  ActivityIndicator,
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
   SafeAreaView,
+  ScrollView,
   Alert,
-  Animated
+  Animated,
+  ActivityIndicator,
 } from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import EnhancedHeader from '../components/EnhancedHeader';
-import DocumentCard from '../components/DocumentCard';
-import PDFProcessorService from '../services/PDFProcessorService';
 import AppSideMenu from '../components/AppSideMenu';
-import { Colors, Typography, Spacing, BorderRadius, Shadows, Layout } from '../styles';
+import OCRProgressIndicator from '../components/OCRProgressIndicator';
+import PDFProcessorService from '../services/PDFProcessorService';
+import PDFTextExtractionService from '../services/PDFTextExtractionService';
+import { pickPdfDocument, saveDocumentToAppStorage } from '../utils/documentUtils';
+import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../styles';
 import * as Animations from '../animations';
 
-const DocumentListScreen = () => {
-  const [documents, setDocuments] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [menuVisible, setMenuVisible] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+const DocumentUploadScreen = () => {
   const navigation = useNavigation();
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [document, setDocument] = useState(null);
+  const [processing, setProcessing] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState(null);
   
-  // Animation refs
+  // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
+  const buttonScale = useRef(new Animated.Value(1)).current;
   
-  // Load documents from storage
-  const loadDocuments = async () => {
-    try {
-      setLoading(true);
-      
-      // Get documents from processor service
-      const processorService = PDFProcessorService.getInstance();
-      const docs = await processorService.getProcessedDocuments();
-      
-      // Sort by date (newest first)
-      const sortedDocs = docs.sort((a, b) => {
-        const dateA = new Date(a.date || 0);
-        const dateB = new Date(b.date || 0);
-        return dateB - dateA;
-      });
-      
-      setDocuments(sortedDocs);
-    } catch (error) {
-      console.error('Error loading documents:', error);
-      Alert.alert('Error', 'Failed to load documents');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-      
-      // Start animations
-      Animated.parallel([
-        Animations.fadeIn(fadeAnim, 400),
-        Animations.slideInUp(slideAnim, 30, 500),
-      ]).start();
-    }
-  };
-  
-  // Load documents on first render
+  // Handle animation when component mounts
   useEffect(() => {
-    loadDocuments();
+    // Animate in
+    Animated.parallel([
+      Animations.fadeIn(fadeAnim, 500),
+      Animations.slideInUp(slideAnim, 50, 600),
+    ]).start();
+    
+    // Set up OCR progress callback
+    const textExtractionService = PDFTextExtractionService.getInstance();
+    textExtractionService.setProgressCallback(setOcrProgress);
+    
+    return () => {
+      // Clean up callback when unmounting
+      textExtractionService.setProgressCallback(null);
+    };
   }, []);
   
-  // Reload documents when screen is focused
-  useFocusEffect(
-    React.useCallback(() => {
-      loadDocuments();
-      return () => {};
-    }, [])
-  );
-  
-  // Handle document selection
-  const handleDocumentPress = (document) => {
-    navigation.navigate('DocumentViewer', { 
-      uri: document.uri,
-      documentId: document.id
-    });
-  };
-  
-  // Handle long press (for document actions)
-  const handleDocumentLongPress = (document) => {
-    Alert.alert(
-      'Document Options',
-      `${document.name}`,
-      [
-        {
-          text: 'View',
-          onPress: () => handleDocumentPress(document),
-        },
-        {
-          text: 'Chat',
-          onPress: () => navigation.navigate('DocumentChat', { documentId: document.id }),
-        },
-        {
-          text: 'Delete',
-          onPress: () => confirmDeleteDocument(document),
-          style: 'destructive',
-        },
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-      ]
-    );
-  };
-  
-  // Confirm document deletion
-  const confirmDeleteDocument = (document) => {
-    Alert.alert(
-      'Delete Document',
-      `Are you sure you want to delete "${document.name}"?`,
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => deleteDocument(document),
-        },
-      ]
-    );
-  };
-  
-  // Delete document
-  const deleteDocument = async (document) => {
+  // Handle document pick
+  const handleDocumentPick = async () => {
     try {
-      // Get processor service
-      const processorService = PDFProcessorService.getInstance();
+      const pickedDocument = await pickPdfDocument();
       
-      // TODO: Implement document deletion in PDFProcessorService
-      // For now, just remove from state
-      setDocuments(prev => prev.filter(doc => doc.id !== document.id));
-      
-      // Show success message
-      Alert.alert('Success', 'Document deleted successfully');
+      if (pickedDocument) {
+        setDocument(pickedDocument);
+        
+        // Animate button when document selected
+        Animations.pulse(buttonScale).start();
+      }
     } catch (error) {
-      console.error('Error deleting document:', error);
-      Alert.alert('Error', 'Failed to delete document');
+      console.error('Error picking document:', error);
+      Alert.alert('Error', 'Failed to select document');
     }
   };
   
-  // Handle refresh
-  const handleRefresh = () => {
-    setRefreshing(true);
-    loadDocuments();
-  };
-  
-  // Render document item
-  const renderDocumentItem = ({ item, index }) => {
-    // Calculate delay for staggered animation
-    const delay = index * 100;
+  // Handle document processing
+  const handleProcessDocument = async () => {
+    if (!document) {
+      Alert.alert('Error', 'Please select a document first');
+      return;
+    }
     
-    return (
-      <Animated.View
-        style={{
-          opacity: fadeAnim,
-          transform: [{ translateY: slideAnim }],
-          animationDelay: delay,
-        }}
-      >
-        <DocumentCard
-          document={item}
-          onPress={handleDocumentPress}
-          onLongPress={handleDocumentLongPress}
-        />
-      </Animated.View>
-    );
+    try {
+      setProcessing(true);
+      
+      // Save document to app storage if needed
+      let localPath = document.localPath;
+      if (!localPath) {
+        const savedPath = await saveDocumentToAppStorage(document.uri, document.name);
+        
+        if (!savedPath) {
+          throw new Error('Failed to save document to app storage');
+        }
+        
+        localPath = savedPath;
+      }
+      
+      // Process the document
+      const processorService = PDFProcessorService.getInstance();
+      const processedDocument = await processorService.processDocument(
+        localPath,
+        document.name
+      );
+      
+      // Navigate to document viewer
+      navigation.navigate('DocumentViewer', {
+        uri: processedDocument.uri,
+        documentId: processedDocument.id
+      });
+      
+    } catch (error) {
+      console.error('Error processing document:', error);
+      Alert.alert('Error', 'Failed to process document');
+    } finally {
+      setProcessing(false);
+      setOcrProgress(null);
+    }
   };
   
   // Toggle menu
   const toggleMenu = () => {
     setMenuVisible(!menuVisible);
   };
-
+  
   return (
     <View style={styles.container}>
       <EnhancedHeader
-        title="Your Documents"
+        title="Upload Document"
+        showBackButton={true}
         onMenuPress={toggleMenu}
       />
       
       <AppSideMenu
         isVisible={menuVisible}
         onClose={() => setMenuVisible(false)}
-        currentScreen="DocumentList"
+        currentScreen="DocumentUpload"
       />
       
       <SafeAreaView style={styles.content}>
-        {loading && !refreshing ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={Colors.primary} style={styles.spinner} />
-            <Text style={styles.loadingText}>Loading documents...</Text>
-          </View>
-        ) : (
-          <>
-            {documents.length > 0 ? (
-              <FlatList
-                data={documents}
-                renderItem={renderDocumentItem}
-                keyExtractor={(item) => item.id}
-                contentContainerStyle={styles.listContainer}
-                showsVerticalScrollIndicator={false}
-                onRefresh={handleRefresh}
-                refreshing={refreshing}
-              />
-            ) : (
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>No documents processed yet</Text>
-                <TouchableOpacity
-                  style={styles.uploadButton}
-                  onPress={() => navigation.navigate('DocumentUpload')}
-                >
-                  <Text style={styles.uploadButtonText}>Upload Document</Text>
-                </TouchableOpacity>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <Animated.View
+            style={[
+              styles.uploadContainer,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }]
+              }
+            ]}
+          >
+            <Text style={styles.title}>Upload Medical Document</Text>
+            <Text style={styles.subtitle}>
+              Select a PDF medical referral document to process. 
+              The document will be analyzed using OCR technology.
+            </Text>
+            
+            <TouchableOpacity
+              style={styles.uploadArea}
+              onPress={handleDocumentPick}
+              disabled={processing}
+            >
+              <View style={styles.uploadIconContainer}>
+                <View style={styles.uploadIcon}>
+                  <View style={styles.uploadArrow} />
+                  <View style={styles.uploadBase} />
+                </View>
+              </View>
+              <Text style={styles.uploadText}>
+                {document ? 'Change Document' : 'Select PDF Document'}
+              </Text>
+              <Text style={styles.uploadHint}>
+                Tap to browse files
+              </Text>
+            </TouchableOpacity>
+            
+            {document && (
+              <View style={styles.documentInfo}>
+                <Text style={styles.documentName} numberOfLines={1} ellipsizeMode="middle">
+                  {document.name}
+                </Text>
+                <Text style={styles.documentSize}>
+                  {Math.round(document.size / 1024)} KB
+                </Text>
               </View>
             )}
-          </>
-        )}
-        
-        {documents.length > 0 && (
-          <TouchableOpacity
-            style={styles.addButton}
-            onPress={() => navigation.navigate('DocumentUpload')}
+            
+            <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
+              <TouchableOpacity
+                style={[
+                  styles.processButton,
+                  (!document || processing) && styles.disabledButton
+                ]}
+                onPress={handleProcessDocument}
+                disabled={!document || processing}
+              >
+                {processing ? (
+                  <ActivityIndicator color={Colors.white} size="small" />
+                ) : (
+                  <Text style={styles.processButtonText}>
+                    Process Document
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </Animated.View>
+          </Animated.View>
+          
+          <Animated.View
+            style={[
+              styles.infoSection,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }]
+              }
+            ]}
           >
-            <Text style={styles.addButtonText}>+</Text>
-          </TouchableOpacity>
-        )}
+            <Text style={styles.infoTitle}>About Document Processing</Text>
+            <Text style={styles.infoText}>
+              MedRec uses advanced OCR technology to extract text from medical 
+              referral documents. The processing is done entirely on your device, 
+              ensuring privacy and HIPAA compliance.
+            </Text>
+            <Text style={styles.infoText}>
+              After processing, you'll be able to:
+            </Text>
+            <View style={styles.bulletPoints}>
+              <View style={styles.bulletPoint}>
+                <View style={styles.bullet} />
+                <Text style={styles.bulletText}>View extracted text</Text>
+              </View>
+              <View style={styles.bulletPoint}>
+                <View style={styles.bullet} />
+                <Text style={styles.bulletText}>Ask questions about the document</Text>
+              </View>
+              <View style={styles.bulletPoint}>
+                <View style={styles.bullet} />
+                <Text style={styles.bulletText}>Extract structured form data</Text>
+              </View>
+            </View>
+          </Animated.View>
+        </ScrollView>
       </SafeAreaView>
+      
+      {/* OCR Progress Overlay */}
+      {ocrProgress && <OCRProgressIndicator progress={ocrProgress} />}
     </View>
   );
 };
@@ -248,66 +254,160 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
-  loadingContainer: {
+  scrollView: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: Colors.lightGray,
   },
-  spinner: {
-    marginBottom: Spacing.medium,
+  scrollContent: {
+    padding: Spacing.large,
   },
-  loadingText: {
+  uploadContainer: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.medium,
+    padding: Spacing.large,
+    marginBottom: Spacing.large,
+    ...Shadows.medium,
+  },
+  title: {
+    fontSize: Typography.size.xlarge,
+    fontWeight: Typography.weight.bold,
+    color: Colors.black,
+    marginBottom: Spacing.small,
+  },
+  subtitle: {
     fontSize: Typography.size.medium,
     color: Colors.gray,
-  },
-  listContainer: {
-    padding: Spacing.large,
-    paddingBottom: Spacing.xxlarge, // Extra padding for FAB
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: Spacing.large,
-    backgroundColor: Colors.lightGray,
-  },
-  emptyText: {
-    fontSize: Typography.size.large,
-    color: Colors.gray,
     marginBottom: Spacing.large,
-    textAlign: 'center',
   },
-  uploadButton: {
+  uploadArea: {
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    borderStyle: 'dashed',
+    borderRadius: BorderRadius.medium,
+    padding: Spacing.xlarge,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primaryLight,
+  },
+  uploadIconContainer: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: Colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.medium,
+    ...Shadows.soft,
+  },
+  uploadIcon: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  uploadArrow: {
+    width: 0,
+    height: 0,
+    backgroundColor: 'transparent',
+    borderStyle: 'solid',
+    borderLeftWidth: 10,
+    borderRightWidth: 10,
+    borderBottomWidth: 15,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderBottomColor: Colors.primary,
+    marginBottom: 2,
+  },
+  uploadBase: {
+    width: 24,
+    height: 3,
     backgroundColor: Colors.primary,
+  },
+  uploadText: {
+    fontSize: Typography.size.large,
+    fontWeight: Typography.weight.semibold,
+    color: Colors.primary,
+    marginBottom: Spacing.small,
+  },
+  uploadHint: {
+    fontSize: Typography.size.small,
+    color: Colors.gray,
+  },
+  documentInfo: {
+    backgroundColor: Colors.lightGray,
+    padding: Spacing.medium,
+    borderRadius: BorderRadius.medium,
+    marginTop: Spacing.medium,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  documentName: {
+    fontSize: Typography.size.medium,
+    fontWeight: Typography.weight.medium,
+    color: Colors.black,
+    flex: 1,
+  },
+  documentSize: {
+    fontSize: Typography.size.small,
+    color: Colors.gray,
+    marginLeft: Spacing.small,
+  },
+  processButton: {
+    backgroundColor: Colors.secondary,
     paddingVertical: Spacing.medium,
     paddingHorizontal: Spacing.large,
     borderRadius: BorderRadius.medium,
-    ...Shadows.medium,
+    alignItems: 'center',
+    marginTop: Spacing.large,
+    ...Shadows.soft,
   },
-  uploadButtonText: {
+  processButtonText: {
     color: Colors.white,
     fontSize: Typography.size.medium,
     fontWeight: Typography.weight.semibold,
   },
-  addButton: {
-    position: 'absolute',
-    bottom: Spacing.large,
-    right: Spacing.large,
-    width: 56,
-    height: 56,
-    borderRadius: BorderRadius.round,
-    backgroundColor: Colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    ...Shadows.strong,
+  disabledButton: {
+    backgroundColor: Colors.gray,
+    opacity: 0.7,
   },
-  addButtonText: {
-    color: Colors.white,
-    fontSize: 30,
-    fontWeight: Typography.weight.bold,
-    lineHeight: 36,
+  infoSection: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.medium,
+    padding: Spacing.large,
+    marginBottom: Spacing.large,
+    ...Shadows.soft,
+  },
+  infoTitle: {
+    fontSize: Typography.size.large,
+    fontWeight: Typography.weight.semibold,
+    color: Colors.black,
+    marginBottom: Spacing.medium,
+  },
+  infoText: {
+    fontSize: Typography.size.medium,
+    color: Colors.black,
+    marginBottom: Spacing.medium,
+    lineHeight: Typography.lineHeight.normal,
+  },
+  bulletPoints: {
+    marginBottom: Spacing.medium,
+  },
+  bulletPoint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.small,
+  },
+  bullet: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.primary,
+    marginRight: Spacing.small,
+  },
+  bulletText: {
+    fontSize: Typography.size.medium,
+    color: Colors.black,
   },
 });
 
-export default DocumentListScreen;
+export default DocumentUploadScreen;

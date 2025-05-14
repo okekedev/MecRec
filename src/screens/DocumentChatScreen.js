@@ -1,5 +1,5 @@
 /**
- * Enhanced DocumentChatScreen with theme integration
+ * Updated DocumentChatScreen with reference highlighting capabilities
  */
 import React, { useState, useRef, useEffect } from 'react';
 import {
@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import EnhancedHeader from '../components/EnhancedHeader';
+import ReferencesView from '../components/ReferencesView';
 import ChatService from '../services/ChatService';
 import PDFProcessorService from '../services/PDFProcessorService';
 import { Colors, Typography, Spacing, BorderRadius, Shadows, ZIndex } from '../styles';
@@ -31,6 +32,10 @@ const DocumentChatScreen = () => {
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [documentText, setDocumentText] = useState('');
+  const [documentData, setDocumentData] = useState(null);
+  const [showReferences, setShowReferences] = useState(false);
+  const [selectedMessageId, setSelectedMessageId] = useState(null);
+  const [currentReferences, setCurrentReferences] = useState([]);
   
   const chatService = ChatService.getInstance();
   const processorService = PDFProcessorService.getInstance();
@@ -54,10 +59,11 @@ const DocumentChatScreen = () => {
       const chatHistory = chatService.getMessages(documentId);
       setMessages(chatHistory);
       
-      // Load document text
+      // Load document data
       const document = await processorService.getDocumentById(documentId);
       if (document) {
         setDocumentText(document.extractedText);
+        setDocumentData(document);
       }
       
       // Add initial greeting if no messages exist
@@ -125,6 +131,33 @@ const DocumentChatScreen = () => {
     }
   };
   
+  // Handle showing references for a message
+  const handleShowReferences = (message) => {
+    if (message.role !== 'assistant' || message.id === 'initial') {
+      return;
+    }
+    
+    // Get references for this message
+    const references = message.references || [];
+    
+    setSelectedMessageId(message.id);
+    setCurrentReferences(references);
+    setShowReferences(true);
+  };
+  
+  // Handle selecting a reference
+  const handleSelectReference = (reference) => {
+    // Close references view
+    setShowReferences(false);
+    
+    // Navigate to document viewer with reference highlight info
+    navigation.navigate('DocumentViewer', {
+      uri: documentData.uri,
+      documentId: documentId,
+      highlightReference: reference
+    });
+  };
+  
   // Message animation values object
   const getMessageAnimationValue = (index) => {
     const isNewMessage = index === messages.length - 1;
@@ -158,25 +191,41 @@ const DocumentChatScreen = () => {
   const renderMessage = ({ item, index }) => {
     const isUser = item.role === 'user';
     const animationValues = getMessageAnimationValue(index);
+    const hasReferences = !isUser && item.references && item.references.length > 0;
     
     React.useEffect(() => {
       animateNewMessage(animationValues);
     }, []);
     
     const messageContent = (
-      <View
+      <TouchableOpacity
         style={[
           styles.messageContainer,
           isUser ? styles.userMessageContainer : styles.aiMessageContainer,
         ]}
+        activeOpacity={isUser ? 1 : 0.8}
+        onPress={() => !isUser && handleShowReferences(item)}
+        disabled={isUser || item.id === 'initial'}
       >
         <Text style={[styles.messageText, isUser ? styles.userMessageText : styles.aiMessageText]}>
           {item.content}
         </Text>
-        <Text style={[styles.timestamp, isUser ? styles.userTimestamp : styles.aiTimestamp]}>
-          {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </Text>
-      </View>
+        
+        <View style={styles.messageFooter}>
+          <Text style={[styles.timestamp, isUser ? styles.userTimestamp : styles.aiTimestamp]}>
+            {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </Text>
+          
+          {hasReferences && (
+            <TouchableOpacity
+              style={styles.referencesButton}
+              onPress={() => handleShowReferences(item)}
+            >
+              <Text style={styles.referencesButtonText}>View Sources</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </TouchableOpacity>
     );
     
     if (animationValues) {
@@ -256,6 +305,14 @@ const DocumentChatScreen = () => {
             </View>
           </KeyboardAvoidingView>
         </Animated.View>
+        
+        <ReferencesView
+          isVisible={showReferences}
+          onClose={() => setShowReferences(false)}
+          references={currentReferences}
+          onSelectReference={handleSelectReference}
+          highlightInDocument={true}
+        />
       </SafeAreaView>
     </View>
   );
@@ -304,16 +361,32 @@ const styles = StyleSheet.create({
   aiMessageText: {
     color: Colors.black,
   },
+  messageFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: Spacing.small,
+  },
   timestamp: {
     fontSize: Typography.size.tiny,
-    marginTop: Spacing.tiny,
-    alignSelf: 'flex-end',
+    alignSelf: 'flex-start',
   },
   userTimestamp: {
     color: 'rgba(255, 255, 255, 0.7)',
   },
   aiTimestamp: {
     color: Colors.gray,
+  },
+  referencesButton: {
+    backgroundColor: Colors.primaryLight,
+    paddingVertical: 3,
+    paddingHorizontal: Spacing.small,
+    borderRadius: BorderRadius.small,
+  },
+  referencesButtonText: {
+    fontSize: Typography.size.tiny,
+    color: Colors.primary,
+    fontWeight: Typography.weight.medium,
   },
   inputContainer: {
     flexDirection: 'row',

@@ -1,7 +1,11 @@
+/**
+ * Enhanced PDFProcessorService with reference tracking
+ */
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 import PDFTextExtractionService from './PDFTextExtractionService';
 import MedicalFormExtractor from './MedicalFormExtractor';
+import DocumentReferenceService from './DocumentReferenceService';
 
 class PDFProcessorService {
   static instance;
@@ -10,6 +14,8 @@ class PDFProcessorService {
     this.documentsCache = new Map();
     this.textExtractionService = PDFTextExtractionService.getInstance();
     this.formExtractor = MedicalFormExtractor.getInstance();
+    this.referenceService = DocumentReferenceService.getInstance();
+    this.useAI = true;
   }
   
   static getInstance() {
@@ -20,12 +26,31 @@ class PDFProcessorService {
   }
   
   /**
+   * Set whether to use AI for processing
+   */
+  setUseAI(useAI) {
+    this.useAI = useAI;
+    this.formExtractor.setUseAI(useAI);
+  }
+  
+  /**
+   * Configure Ollama service
+   */
+  configureOllama(baseUrl, model) {
+    // Pass configuration to form extractor
+    // (FormExtractor will configure OllamaService)
+    this.formExtractor.setUseAI(this.useAI);
+  }
+  
+  /**
    * Process a PDF document and extract text and form data
    * @param uri URI of the PDF document
    * @param name Name of the document
    */
   async processDocument(uri, name) {
     try {
+      console.log('Processing document:', name);
+      
       // Extract text from the PDF
       const extractionResult = await this.textExtractionService.extractText(uri);
       
@@ -35,7 +60,10 @@ class PDFProcessorService {
       
       // Extract form data using the form extractor service
       const extractedText = extractionResult.text || '';
-      const formData = this.formExtractor.extractFormData(extractedText);
+      const formData = await this.formExtractor.extractFormData(extractedText, id);
+      
+      // Process document for references
+      const references = this.referenceService.processDocument(id, extractedText);
       
       // Generate embeddings (placeholder for now)
       const embeddings = await this.generateEmbeddings(extractedText);
@@ -51,6 +79,7 @@ class PDFProcessorService {
         ocrConfidence: extractionResult.confidence,
         pages: extractionResult.pages || 1,
         formData,
+        references: references,
         embeddings,
       };
       
@@ -60,6 +89,7 @@ class PDFProcessorService {
       // Persist to storage
       await this.saveProcessedDocuments();
       
+      console.log('Document processed successfully:', id);
       return processedDocument;
     } catch (error) {
       console.error('Error processing document:', error);
@@ -87,8 +117,12 @@ class PDFProcessorService {
    * Get a list of all processed documents
    */
   async getProcessedDocuments() {
-    // In a real app, we would load this from persistent storage
-    // For now, just return from our in-memory cache
+    // Load documents if cache is empty
+    if (this.documentsCache.size === 0) {
+      await this.loadProcessedDocuments();
+    }
+    
+    // Return all documents from cache
     return Array.from(this.documentsCache.values());
   }
   
@@ -96,17 +130,45 @@ class PDFProcessorService {
    * Get a specific processed document by ID
    */
   async getDocumentById(id) {
-    return this.documentsCache.get(id);
+    // Check if document is in cache
+    if (this.documentsCache.has(id)) {
+      return this.documentsCache.get(id);
+    }
+    
+    // Try to load from storage if not in cache
+    await this.loadProcessedDocuments();
+    
+    // Return from cache (or null if not found)
+    return this.documentsCache.get(id) || null;
   }
   
   /**
    * Save the processed documents to persistent storage
-   * This is a placeholder for actual implementation
    */
   async saveProcessedDocuments() {
     try {
-      // In a real app, this would save to AsyncStorage or a similar persistence mechanism
-      const documentsData = JSON.stringify(Array.from(this.documentsCache.entries()));
+      // Prepare documents for serialization
+      const documents = Array.from(this.documentsCache.entries()).map(([id, doc]) => {
+        // Create a copy that can be serialized
+        const serializableDoc = { ...doc };
+        
+        // Remove circular references or complex objects that can't be serialized
+        if (serializableDoc.references && serializableDoc.references.paragraphs) {
+          // Simplify paragraphs to avoid circular references
+          serializableDoc.references.paragraphs = serializableDoc.references.paragraphs.map(p => ({
+            id: p.id,
+            type: p.type,
+            position: p.position,
+            // Limit text length for storage efficiency
+            text: p.text.substring(0, 100) + (p.text.length > 100 ? '...' : '')
+          }));
+        }
+        
+        return [id, serializableDoc];
+      });
+      
+      // Convert to JSON string
+      const documentsData = JSON.stringify(documents);
       
       if (Platform.OS === 'web') {
         // For web, use localStorage
@@ -164,6 +226,69 @@ class PDFProcessorService {
     } catch (error) {
       console.error('Error loading documents:', error);
     }
+  }
+  
+  /**
+   * Delete a document from storage
+   */
+  async deleteDocument(id) {
+    if (this.documentsCache.has(id)) {
+      // Get document URI before deleting
+      const document = this.documentsCache.get(id);
+      const uri = document?.uri;
+      
+      // Remove from cache
+      this.documentsCache.delete(id);
+      
+      // Try to delete file if it's in the app's directory
+      if (uri && uri.startsWith(FileSystem.documentDirectory)) {
+        try {
+          await FileSystem.deleteAsync(uri, { idempotent: true });
+          console.log('Deleted document file:', uri);
+        } catch (e) {
+          console.warn('Failed to delete document file:', e);
+        }
+      }
+      
+      // Update storage
+      await this.saveProcessedDocuments();
+      
+      return true;
+    }
+    
+    return false;
+  }
+  
+  /**
+   * Get document references
+   */
+  getDocumentReferences(documentId) {
+    return this.referenceService.getDocumentReferences(documentId);
+  }
+  
+  /**
+   * Get reference for a specific field in a document
+   */
+  getFieldReference(documentId, fieldName) {
+    const document = this.documentsCache.get(documentId);
+    if (document && document.formData) {
+      return this.formExtractor.getFieldReference(document.formData, fieldName);
+    }
+    return null;
+  }
+  
+  /**
+   * Highlight references in document text
+   */
+  getHighlightedText(documentId, references) {
+    const document = this.documentsCache.get(documentId);
+    if (document && document.extractedText) {
+      return this.referenceService.highlightReferences(
+        document.extractedText,
+        references
+      );
+    }
+    return null;
   }
 }
 

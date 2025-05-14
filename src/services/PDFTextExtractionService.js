@@ -1,15 +1,20 @@
-import FSService from '../utils/fsService';
-
 /**
- * Service for extracting text from PDF documents
- * This is a placeholder implementation that simulates PDF text extraction
- * In a real app, you would integrate with libraries like react-native-pdf-lib,
- * and possibly a cloud OCR service for image-based PDFs
+ * Service for extracting text from PDF documents with reference tracking
+ * This is a development placeholder that simulates PDF text extraction
+ * In production, replace this with the Tesseract OCR implementation provided earlier
  */
+import FSService from '../utils/fsService';
+import DocumentReferenceService from './DocumentReferenceService';
+
 class PDFTextExtractionService {
   static instance;
   
-  constructor() {}
+  constructor() {
+    this.referenceService = DocumentReferenceService.getInstance();
+    this.progressCallback = null;
+    this.totalPages = 3; // Default for simulation
+    this.processedPages = 0;
+  }
   
   static getInstance() {
     if (!PDFTextExtractionService.instance) {
@@ -19,12 +24,40 @@ class PDFTextExtractionService {
   }
   
   /**
+   * Set a callback for progress updates
+   */
+  setProgressCallback(callback) {
+    this.progressCallback = callback;
+  }
+  
+  /**
+   * Update progress
+   */
+  updateProgress(status, progress) {
+    if (this.progressCallback) {
+      const overallProgress = this.totalPages > 0 
+        ? ((this.processedPages + progress) / this.totalPages)
+        : progress;
+      
+      this.progressCallback({
+        status,
+        progress: overallProgress,
+        page: this.processedPages + 1,
+        totalPages: this.totalPages
+      });
+    }
+  }
+  
+  /**
    * Extract text from a PDF document using direct extraction first,
    * then falling back to OCR if direct extraction yields little text
    * @param {string} filePath - Path to the PDF file
    * @returns {Promise<Object>} Extraction result
    */
   async extractText(filePath) {
+    this.processedPages = 0;
+    this.updateProgress('Starting extraction', 0);
+    
     // Check if file exists
     const exists = await FSService.exists(filePath);
     if (!exists) {
@@ -33,18 +66,24 @@ class PDFTextExtractionService {
     
     // First try direct extraction
     try {
+      this.updateProgress('Attempting direct extraction', 0);
       const directResult = await this.extractTextDirect(filePath);
       
       // If direct extraction yields enough text, return it
       if (directResult.text.length > 100) {
+        this.updateProgress('Direct extraction completed', 1);
+        console.log('Direct extraction successful');
         return directResult;
       }
       
       // Otherwise, try OCR
+      this.updateProgress('Direct extraction insufficient, preparing OCR', 0);
+      console.log('Direct extraction yielded insufficient text, trying OCR');
       const ocrResult = await this.extractTextOCR(filePath);
       return ocrResult;
     } catch (error) {
       // If direct extraction fails, try OCR
+      this.updateProgress('Direct extraction failed, preparing OCR', 0);
       console.warn('Direct extraction failed, trying OCR:', error);
       const ocrResult = await this.extractTextOCR(filePath);
       return ocrResult;
@@ -58,22 +97,40 @@ class PDFTextExtractionService {
    * @returns {Promise<Object>} Extraction result
    */
   async extractTextDirect(filePath) {
-    // This is a placeholder. In a real app, you would use a PDF parsing library
-    // For demonstration, we'll simulate success or failure
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    // Simulate PDF processing steps
+    this.updateProgress('Loading PDF document', 0.1);
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    this.updateProgress('Parsing PDF structure', 0.3);
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    this.updateProgress('Extracting text from PDF', 0.5);
+    await new Promise(resolve => setTimeout(resolve, 400));
     
     // Simulate successful text extraction 80% of the time
     const success = Math.random() < 0.8;
     
     if (success) {
       // Simulate extracted text
+      const text = this.generateSampleMedicalText();
+      
+      // Add reference information
+      this.createReferencePoints(text);
+      
+      this.updateProgress('Text extraction complete', 1.0);
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
       return {
-        text: this.generateSampleMedicalText(),
+        text: text,
         isOcr: false,
         pages: 3,
+        sections: this.identifySections(text)
       };
     } else {
       // Simulate a case where the PDF is image-based with little extractable text
+      this.updateProgress('No text found in PDF, will need OCR', 1.0);
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
       return {
         text: '',
         isOcr: false,
@@ -84,21 +141,168 @@ class PDFTextExtractionService {
   
   /**
    * Extract text using OCR for image-based PDFs
-   * In a real app, this would call a cloud OCR service
+   * In a real app, this would call the Tesseract OCR implementation
    * @param {string} filePath - Path to the PDF file
    * @returns {Promise<Object>} Extraction result
    */
   async extractTextOCR(filePath) {
-    // This is a placeholder. In a real app, you would integrate with an OCR service
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Simulate OCR processing steps
+    this.totalPages = 3; // For simulation
     
-    // Simulate OCR
+    for (let page = 1; page <= this.totalPages; page++) {
+      this.processedPages = page - 1;
+      
+      // Simulate PDF to image conversion
+      this.updateProgress(`Converting page ${page} to image`, 0.2);
+      await new Promise(resolve => setTimeout(resolve, 400));
+      
+      // Simulate OCR processing
+      this.updateProgress(`OCR processing page ${page}`, 0.5);
+      await new Promise(resolve => setTimeout(resolve, 600));
+      
+      // Simulate text extraction
+      this.updateProgress(`Extracting text from page ${page}`, 0.8);
+      await new Promise(resolve => setTimeout(resolve, 400));
+    }
+    
+    // Generate the text result
+    const text = this.generateSampleMedicalText();
+    
+    // Add reference information
+    this.createReferencePoints(text);
+    
+    this.updateProgress('OCR processing complete', 1.0);
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // Simulate OCR confidence
+    const confidence = 0.85 + (Math.random() * 0.1);
+    
     return {
-      text: this.generateSampleMedicalText(),
+      text: text,
       isOcr: true,
-      pages: 3,
-      confidence: 0.85 + (Math.random() * 0.1),
+      pages: this.totalPages,
+      confidence: confidence,
+      sections: this.identifySections(text)
     };
+  }
+  
+  /**
+   * Create reference points for extracted text
+   * This helps with tracking where information came from
+   */
+  createReferencePoints(text) {
+    // This would normally integrate with the DocumentReferenceService
+    // For the placeholder, we'll just prepare the data structure
+    
+    // Split the text into sections
+    const sections = this.identifySections(text);
+    
+    // Create reference points for each section
+    const referencePoints = sections.map((section, index) => ({
+      id: `section-${index + 1}`,
+      text: section.text,
+      type: section.type,
+      position: {
+        start: text.indexOf(section.text),
+        end: text.indexOf(section.text) + section.text.length
+      }
+    }));
+    
+    return referencePoints;
+  }
+  
+  /**
+   * Identify different sections in the extracted text
+   */
+  identifySections(text) {
+    // Simple section identification by looking for headers
+    const sections = [];
+    
+    // Split text into paragraphs
+    const paragraphs = text.split('\n\n');
+    
+    let currentType = 'Header';
+    let currentContent = '';
+    
+    // Process each paragraph
+    for (const paragraph of paragraphs) {
+      const trimmed = paragraph.trim();
+      
+      // Skip empty paragraphs
+      if (!trimmed) continue;
+      
+      // Check if this looks like a section header
+      const isHeader = trimmed === trimmed.toUpperCase() && trimmed.length < 50;
+      
+      if (isHeader) {
+        // Save previous section if there is content
+        if (currentContent) {
+          sections.push({
+            type: currentType,
+            text: currentContent.trim()
+          });
+        }
+        
+        // Start a new section
+        currentType = this.determineSectionType(trimmed);
+        currentContent = trimmed;
+      } else {
+        // Add to current section
+        currentContent += '\n\n' + trimmed;
+      }
+    }
+    
+    // Add the last section
+    if (currentContent) {
+      sections.push({
+        type: currentType,
+        text: currentContent.trim()
+      });
+    }
+    
+    return sections;
+  }
+  
+  /**
+   * Determine the type of a section based on its content
+   */
+  determineSectionType(text) {
+    const lowerText = text.toLowerCase();
+    
+    if (lowerText.includes('patient')) {
+      return 'Patient Information';
+    }
+    
+    if (lowerText.includes('referring') || lowerText.includes('physician')) {
+      return 'Referring Physician';
+    }
+    
+    if (lowerText.includes('reason') && lowerText.includes('referral')) {
+      return 'Reason for Referral';
+    }
+    
+    if (lowerText.includes('history')) {
+      return 'Medical History';
+    }
+    
+    if (lowerText.includes('medication')) {
+      return 'Medications';
+    }
+    
+    if (lowerText.includes('labs') || lowerText.includes('studies')) {
+      return 'Labs/Studies';
+    }
+    
+    if (lowerText.includes('clinical')) {
+      return 'Clinical Information';
+    }
+    
+    if (lowerText.includes('diagnosis')) {
+      return 'Diagnosis';
+    }
+    
+    // Default section type
+    return 'General Information';
   }
   
   /**
