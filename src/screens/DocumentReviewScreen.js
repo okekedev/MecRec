@@ -1,4 +1,4 @@
-// src/screens/DocumentReviewScreen.js (UI modernization)
+// src/screens/DocumentReviewScreen.js
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -21,19 +21,56 @@ import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../styles';
 import * as Animations from '../animations';
 
 const DocumentReviewScreen = () => {
-  // Existing state variables and functions...
+  const route = useRoute();
+  const navigation = useNavigation();
+  const { documentId } = route.params;
   
-  // Add animation references
+  // State variables
+  const [loading, setLoading] = useState(true);
+  const [documentData, setDocumentData] = useState(null);
+  const [formData, setFormData] = useState({});
+  const [reviewedFields, setReviewedFields] = useState({});
+  const [reviewerName, setReviewerName] = useState('');
+  const [reviewerCredentials, setReviewerCredentials] = useState('');
+  const [allFieldsReviewed, setAllFieldsReviewed] = useState(false);
+  
+  // Animation references
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   
-  // Update useEffect to include animations
+  // Load document data
   useEffect(() => {
     const loadDocument = async () => {
       try {
         setLoading(true);
         
-        // Existing document loading code...
+        // Get the PDF processor service
+        const processorService = PDFProcessorService.getInstance();
+        
+        // Load the document by ID
+        const document = await processorService.getDocumentById(documentId);
+        
+        if (!document) {
+          throw new Error('Document not found');
+        }
+        
+        // Set document data
+        setDocumentData(document);
+        
+        // Set form data
+        if (document.formData) {
+          setFormData(document.formData);
+          
+          // Initialize reviewed fields
+          const initialReviewed = {};
+          Object.keys(document.formData).forEach(key => {
+            // Skip metadata fields
+            if (!key.startsWith('_') && key !== 'extractionMethod' && key !== 'extractionDate') {
+              initialReviewed[key] = false;
+            }
+          });
+          setReviewedFields(initialReviewed);
+        }
         
         setLoading(false);
         
@@ -51,6 +88,71 @@ const DocumentReviewScreen = () => {
     
     loadDocument();
   }, [documentId]);
+  
+  // Update field value
+  const handleFieldChange = (fieldName, value) => {
+    setFormData(prev => ({
+      ...prev,
+      [fieldName]: value
+    }));
+  };
+  
+  // Toggle field review status
+  const handleReviewToggle = (fieldName, value) => {
+    setReviewedFields(prev => ({
+      ...prev,
+      [fieldName]: value
+    }));
+  };
+  
+  // Calculate progress
+  const calculateProgress = () => {
+    if (!reviewedFields || Object.keys(reviewedFields).length === 0) {
+      return 0;
+    }
+    
+    const total = Object.keys(reviewedFields).length;
+    const reviewed = Object.values(reviewedFields).filter(v => v).length;
+    
+    return (reviewed / total) * 100;
+  };
+  
+  // Check if all fields are reviewed
+  useEffect(() => {
+    const allReviewed = Object.values(reviewedFields).every(v => v);
+    setAllFieldsReviewed(allReviewed);
+  }, [reviewedFields]);
+  
+  // Mark all fields as reviewed
+  const markAllAsReviewed = () => {
+    const allReviewed = {};
+    Object.keys(reviewedFields).forEach(key => {
+      allReviewed[key] = true;
+    });
+    setReviewedFields(allReviewed);
+  };
+  
+  // Generate PDF
+  const generatePDF = () => {
+    if (!allFieldsReviewed) {
+      Alert.alert('Error', 'Please review all fields before generating a report.');
+      return;
+    }
+    
+    if (!reviewerName.trim()) {
+      Alert.alert('Error', 'Please enter your name as the reviewer.');
+      return;
+    }
+    
+    // Navigate to PDF preview with the data
+    navigation.navigate('PDFPreview', {
+      documentId,
+      formData,
+      reviewerName,
+      reviewerCredentials,
+      reviewDate: new Date().toISOString()
+    });
+  };
   
   // Modern loading screen
   if (loading) {
@@ -122,7 +224,56 @@ const DocumentReviewScreen = () => {
                 Review and verify the extracted information below. Edit any incorrect data and mark each field as reviewed when complete.
               </Text>
               
-              {/* Existing fields container... */}
+              <View style={modernStyles.fieldsContainer}>
+                {Object.entries(formData).map(([fieldName, value]) => {
+                  // Skip metadata fields
+                  if (fieldName.startsWith('_') || 
+                      fieldName === 'extractionMethod' || 
+                      fieldName === 'extractionDate') {
+                    return null;
+                  }
+                  
+                  // Format field label from camelCase
+                  const formatLabel = (camelCase) => {
+                    if (camelCase === 'dx') return 'Diagnosis (Dx)';
+                    if (camelCase === 'pcp') return 'Primary Care Provider (PCP)';
+                    if (camelCase === 'dc') return 'Discharge (DC)';
+                    
+                    return camelCase
+                      .replace(/([A-Z])/g, ' $1')
+                      .replace(/^./, str => str.toUpperCase());
+                  };
+                  
+                  // Get field reference if available
+                  const processorService = PDFProcessorService.getInstance();
+                  const fieldReference = processorService.getFieldReference(documentId, fieldName);
+                  const sourceText = fieldReference ? fieldReference.text : '';
+                  const sourceType = fieldReference ? fieldReference.location : '';
+                  
+                  // Determine if field needs multiline
+                  const needsMultiline = [
+                    'history', 
+                    'mentalHealthState', 
+                    'additionalComments',
+                    'labs',
+                    'wounds'
+                  ].includes(fieldName);
+                  
+                  return (
+                    <ReviewField
+                      key={fieldName}
+                      label={formatLabel(fieldName)}
+                      value={value || ''}
+                      onValueChange={(newValue) => handleFieldChange(fieldName, newValue)}
+                      isReviewed={reviewedFields[fieldName] || false}
+                      onReviewChange={(newValue) => handleReviewToggle(fieldName, newValue)}
+                      sourceText={sourceText}
+                      sourceType={sourceType}
+                      multiline={needsMultiline}
+                    />
+                  );
+                })}
+              </View>
               
               <TouchableOpacity
                 style={modernStyles.markAllButton}

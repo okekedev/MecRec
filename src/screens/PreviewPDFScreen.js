@@ -9,7 +9,8 @@ import {
   ActivityIndicator,
   ScrollView,
   Platform,
-  Animated
+  Animated,
+  Alert
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import EnhancedHeader from '../components/EnhancedHeader';
@@ -211,6 +212,11 @@ const PDFPreviewScreen = () => {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        
+        // Show success alert for web
+        setTimeout(() => {
+          Alert.alert('Success', 'PDF downloaded successfully');
+        }, 500);
       } else {
         // For native, save to FileSystem
         // This is a placeholder - would need proper implementation
@@ -223,8 +229,7 @@ const PDFPreviewScreen = () => {
       
       setGeneratingPdf(false);
       
-      // Navigate to document list after successful download
-      navigation.navigate('DocumentList');
+      // Removed navigation to DocumentList
     } catch (error) {
       console.error('Error downloading PDF:', error);
       setGeneratingPdf(false);
