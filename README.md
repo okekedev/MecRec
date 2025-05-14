@@ -1,97 +1,104 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# MedRec PDF Processor
 
-# Getting Started
+A React Native application for processing medical referral documents. This app allows you to upload and view PDF documents, extract text (via direct methods and OCR), and ask questions about the document using an AI-powered chat interface.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## Features
 
-## Step 1: Start Metro
+- Upload and process PDF documents
+- Extract text using both direct extraction and OCR
+- Generate embeddings for semantic search
+- AI-powered chat interface for document questions
+- Form extraction for medical referral data
+- Cross-platform: works on Android, iOS, and Web
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+## Project Structure
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+- `src/components/`: Reusable UI components
+- `src/screens/`: Application screens
+- `src/services/`: Business logic and services
+- `src/utils/`: Utility functions and helpers
+- `src/assets/`: Images and other static assets
+- `src/navigation/`: Navigation configuration
 
-```sh
-# Using npm
+## Running the App
+
+### Prerequisites
+
+- Node.js (v18+)
+- npm or yarn
+- For Android: Android Studio, Android SDK
+- For iOS: Xcode, CocoaPods
+
+### Installing Dependencies
+
+```bash
+# Install dependencies
+npm install --legacy-peer-deps
+```
+
+### Running on Android
+
+```bash
+# Start Metro bundler
 npm start
 
-# OR using Yarn
-yarn start
-```
-
-## Step 2: Build and run your app
-
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
-
-```sh
-# Using npm
+# In a new terminal, run on Android
 npm run android
-
-# OR using Yarn
-yarn android
 ```
 
-### iOS
+### Running on iOS
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+```bash
+# Install CocoaPods dependencies
+cd ios && pod install && cd ..
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+# Start Metro bundler
+npm start
 
-```sh
-bundle install
-```
-
-Then, and every time you update your native dependencies, run:
-
-```sh
-bundle exec pod install
-```
-
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
-
-```sh
-# Using npm
+# In a new terminal, run on iOS
 npm run ios
-
-# OR using Yarn
-yarn ios
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+### Running on Web
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+#### Option 1: Simple Web Demo (Recommended)
 
-## Step 3: Modify your app
+We've created a simplified web demo that doesn't require webpack configuration:
 
-Now that you have successfully run the app, let's make changes!
+```bash
+# Run the simple web demo
+npm run web:simple
+```
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+This will create a basic HTML page with PDF upload capabilities and serve it using a local server.
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+#### Option 2: Full React Native Web (Advanced)
 
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+For the full React Native Web experience (may require additional setup):
 
-## Congratulations! :tada:
+```bash
+# Install web-specific dependencies
+npm install webpack webpack-cli webpack-dev-server babel-loader html-webpack-plugin file-loader url-loader babel-plugin-react-native-web crypto-browserify stream-browserify path-browserify buffer browserify-zlib util url --save-dev --legacy-peer-deps
 
-You've successfully run and modified your React Native App. :partying_face:
+# Run the web version
+npm run web
+```
 
-### Now what?
+Note: The full React Native Web version may encounter compatibility issues due to the complex interaction of React Native modules with the web platform.
 
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
+## Web Compatibility
 
-# Troubleshooting
+The application has been designed to work on web browsers with platform-specific implementations for:
 
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
+- PDF viewing
+- Document picking
+- File system operations
 
-# Learn More
+Due to web platform limitations, some features may work differently on web:
+- Document storage is temporary (files aren't saved between sessions)
+- PDF manipulation capabilities are more limited
+- Native device features aren't accessible
 
-To learn more about React Native, take a look at the following resources:
+## License
 
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+This project is licensed under the MIT License - see the LICENSE file for details.

@@ -1,0 +1,41 @@
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createStackNavigator } from '@react-navigation/stack';
+
+import HomeScreen from '../screens/HomeScreen';
+import DocumentUploadScreen from '../screens/DocumentUploadScreen';
+import DocumentViewerScreen from '../screens/DocumentViewerScreen';
+import DocumentListScreen from '../screens/DocumentListScreen';
+import DocumentChatScreen from '../screens/DocumentChatScreen';
+
+export type RootStackParamList = {
+  Home: undefined;
+  DocumentUpload: undefined;
+  DocumentViewer: { uri: string; documentId?: string };
+  DocumentList: undefined;
+  DocumentChat: { documentId: string };
+};
+
+const Stack = createStackNavigator<RootStackParamList>();
+
+const AppNavigator = () => {
+  return (
+    <NavigationContainer>
+      <Stack.Navigator
+        initialRouteName="Home"
+        screenOptions={{
+          headerShown: false,
+          cardStyle: { backgroundColor: '#f5f5f7' },
+        }}
+      >
+        <Stack.Screen name="Home" component={HomeScreen} />
+        <Stack.Screen name="DocumentUpload" component={DocumentUploadScreen} />
+        <Stack.Screen name="DocumentViewer" component={DocumentViewerScreen} />
+        <Stack.Screen name="DocumentList" component={DocumentListScreen} />
+        <Stack.Screen name="DocumentChat" component={DocumentChatScreen} />
+      </Stack.Navigator>
+    </NavigationContainer>
+  );
+};
+
+export default AppNavigator;
