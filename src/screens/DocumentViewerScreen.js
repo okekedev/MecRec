@@ -1,32 +1,69 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ActivityIndicator, SafeAreaView, Alert } from 'react-native';
+/**
+ * Enhanced DocumentViewerScreen with theme and animations
+ */
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ActivityIndicator,
+  SafeAreaView,
+  Alert,
+  Animated,
+  ScrollView,
+} from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import PDFProcessorService from '../services/PDFProcessorService';
+import EnhancedHeader from '../components/EnhancedHeader';
 import PDFViewer from '../components/PDFViewer';
+import PDFProcessorService from '../services/PDFProcessorService';
+import AppSideMenu from '../components/AppSideMenu';
+import { Colors, Typography, Spacing, BorderRadius, Shadows, ZIndex } from '../styles';
+import * as Animations from '../animations';
 
 const DocumentViewerScreen = () => {
   const route = useRoute();
   const { uri, documentId } = route.params;
   const navigation = useNavigation();
   
+  const [menuVisible, setMenuVisible] = useState(false);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(0);
   const [extractedText, setExtractedText] = useState(null);
   const [showExtractedText, setShowExtractedText] = useState(false);
   const [docId, setDocId] = useState(documentId);
+  const [documentData, setDocumentData] = useState(null);
+  
+  // Animation refs
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+  const buttonScaleAnim = useRef(new Animated.Value(0.9)).current;
 
+  // PDF source object
   const source = { uri };
   
   // Load document details if we have a document ID
   useEffect(() => {
     const loadDocumentDetails = async () => {
       if (docId) {
-        const processorService = PDFProcessorService.getInstance();
-        const document = await processorService.getDocumentById(docId);
-        
-        if (document) {
-          setExtractedText(document.extractedText);
+        try {
+          const processorService = PDFProcessorService.getInstance();
+          const document = await processorService.getDocumentById(docId);
+          
+          if (document) {
+            setExtractedText(document.extractedText);
+            setDocumentData(document);
+          }
+          
+          // Start animations
+          Animated.parallel([
+            Animations.fadeIn(fadeAnim, 400),
+            Animations.slideInUp(slideAnim, 30, 500),
+            Animations.zoomIn(buttonScaleAnim, 0.9, 600),
+          ]).start();
+        } catch (error) {
+          console.error('Error loading document details:', error);
         }
       }
     };
@@ -34,6 +71,7 @@ const DocumentViewerScreen = () => {
     loadDocumentDetails();
   }, [docId]);
 
+  // Handle PDF load complete
   const onLoadComplete = (numberOfPages) => {
     setLoading(false);
     setTotalPages(numberOfPages);
@@ -45,172 +83,245 @@ const DocumentViewerScreen = () => {
     }
   };
 
+  // Handle page change
   const onPageChanged = (page) => {
     setCurrentPage(page);
   };
 
+  // Toggle text view
   const toggleTextView = () => {
     setShowExtractedText(!showExtractedText);
+    
+    // Animate the button press
+    Animations.pulse(buttonScaleAnim).start();
   };
   
+  // Navigate to chat
   const navigateToChat = () => {
     if (docId) {
       navigation.navigate('DocumentChat', { documentId: docId });
     } else {
       // If we don't have a document ID, we'll show an error
-      // In a real app, you might want to process the document first
       Alert.alert(
         'Document Not Processed',
         'Please process the document first before using the chat feature.'
       );
     }
   };
+  
+  // Toggle menu
+  const toggleMenu = () => {
+    setMenuVisible(!menuVisible);
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Text style={styles.backButtonText}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>Document Viewer</Text>
-        <Text style={styles.pageInfo}>Page {currentPage} of {totalPages}</Text>
-      </View>
+    <View style={styles.container}>
+      <EnhancedHeader
+        title="Document Viewer"
+        showBackButton={true}
+        onMenuPress={toggleMenu}
+      />
       
-      <View style={styles.contentContainer}>
-        {loading && (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#3498db" />
-            <Text style={styles.loadingText}>Loading document...</Text>
-          </View>
-        )}
-        
-        {!showExtractedText ? (
-          <PDFViewer
-            source={source}
-            onLoadComplete={onLoadComplete}
-            onPageChanged={onPageChanged}
-            onError={(error) => {
-              console.log(error);
-              setLoading(false);
-            }}
-            style={styles.pdf}
-          />
-        ) : (
-          <View style={styles.textContainer}>
-            <Text style={styles.extractedText}>{extractedText}</Text>
-          </View>
-        )}
-      </View>
+      <AppSideMenu
+        isVisible={menuVisible}
+        onClose={() => setMenuVisible(false)}
+        currentScreen="DocumentViewer"
+      />
       
-      <View style={styles.footer}>
-        <TouchableOpacity 
-          style={styles.button}
-          onPress={toggleTextView}
+      <SafeAreaView style={styles.content}>
+        <Animated.View 
+          style={[
+            styles.pageInfoContainer,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            }
+          ]}
         >
-          <Text style={styles.buttonText}>
-            {showExtractedText ? 'View PDF' : 'View Extracted Text'}
+          <Text style={styles.pageInfo}>
+            Page {currentPage} of {totalPages}
           </Text>
-        </TouchableOpacity>
+          
+          {documentData && (
+            <Text style={styles.documentName} numberOfLines={1}>
+              {documentData.name}
+            </Text>
+          )}
+        </Animated.View>
         
-        <TouchableOpacity 
-          style={[styles.button, styles.chatButton]}
-          onPress={navigateToChat}
-          disabled={!docId}
+        <View style={styles.contentContainer}>
+          {loading && (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={Colors.primary} style={styles.spinner} />
+              <Text style={styles.loadingText}>Loading document...</Text>
+            </View>
+          )}
+          
+          {!showExtractedText ? (
+            <Animated.View 
+              style={[
+                styles.pdfContainer,
+                { opacity: fadeAnim }
+              ]}
+            >
+              <PDFViewer
+                source={source}
+                onLoadComplete={onLoadComplete}
+                onPageChanged={onPageChanged}
+                onError={(error) => {
+                  console.log(error);
+                  setLoading(false);
+                  Alert.alert('Error', 'Failed to load document');
+                }}
+                style={styles.pdf}
+              />
+            </Animated.View>
+          ) : (
+            <Animated.View 
+              style={[
+                styles.textContainer,
+                {
+                  opacity: fadeAnim,
+                  transform: [{ translateY: slideAnim }],
+                }
+              ]}
+            >
+              <ScrollView 
+                style={styles.textScrollView}
+                showsVerticalScrollIndicator={true}
+              >
+                <Text style={styles.extractedText}>{extractedText}</Text>
+              </ScrollView>
+            </Animated.View>
+          )}
+        </View>
+        
+        <Animated.View 
+          style={[
+            styles.footer,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            }
+          ]}
         >
-          <Text style={styles.buttonText}>Ask Questions</Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+          <Animated.View style={{ transform: [{ scale: buttonScaleAnim }] }}>
+            <TouchableOpacity 
+              style={styles.button}
+              onPress={toggleTextView}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.buttonText}>
+                {showExtractedText ? 'View PDF' : 'View Extracted Text'}
+              </Text>
+            </TouchableOpacity>
+          </Animated.View>
+          
+          <TouchableOpacity 
+            style={[styles.button, styles.chatButton]}
+            onPress={navigateToChat}
+            disabled={!docId}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.buttonText}>Ask Questions</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f7',
+    backgroundColor: Colors.lightGray,
   },
-  header: {
-    padding: 15,
-    alignItems: 'center',
+  content: {
+    flex: 1,
+  },
+  pageInfoContainer: {
+    paddingVertical: Spacing.small,
+    paddingHorizontal: Spacing.medium,
+    backgroundColor: Colors.white,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-    backgroundColor: '#ffffff',
-  },
-  backButton: {
-    position: 'absolute',
-    left: 15,
-    padding: 5,
-  },
-  backButtonText: {
-    color: '#3498db',
-    fontSize: 16,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2c3e50',
+    borderBottomColor: Colors.lightGray,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    ...Shadows.soft,
   },
   pageInfo: {
-    fontSize: 14,
-    color: '#7f8c8d',
-    marginTop: 5,
+    fontSize: Typography.size.small,
+    color: Colors.gray,
+  },
+  documentName: {
+    fontSize: Typography.size.small,
+    color: Colors.black,
+    fontWeight: Typography.weight.medium,
+    maxWidth: '60%',
   },
   contentContainer: {
     flex: 1,
     position: 'relative',
   },
+  pdfContainer: {
+    flex: 1,
+    backgroundColor: Colors.lightGray,
+  },
   pdf: {
     flex: 1,
-    width: Dimensions.get('window').width,
-    backgroundColor: '#f5f5f7',
   },
   loadingContainer: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    zIndex: 2,
+    zIndex: ZIndex.overlay,
+  },
+  spinner: {
+    marginBottom: Spacing.medium,
   },
   loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#2c3e50',
+    fontSize: Typography.size.medium,
+    color: Colors.gray,
   },
   textContainer: {
     flex: 1,
-    padding: 15,
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.white,
+  },
+  textScrollView: {
+    flex: 1,
+    padding: Spacing.large,
   },
   extractedText: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: '#2c3e50',
+    fontSize: Typography.size.medium,
+    lineHeight: Typography.lineHeight.normal,
+    color: Colors.black,
   },
   footer: {
     flexDirection: 'row',
-    padding: 15,
+    padding: Spacing.medium,
+    backgroundColor: Colors.white,
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-    backgroundColor: '#ffffff',
+    borderTopColor: Colors.lightGray,
+    ...Shadows.medium,
   },
   button: {
     flex: 1,
-    backgroundColor: '#3498db',
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginHorizontal: 5,
+    backgroundColor: Colors.primary,
+    paddingVertical: Spacing.medium,
+    borderRadius: BorderRadius.medium,
+    marginHorizontal: Spacing.tiny,
     alignItems: 'center',
+    ...Shadows.soft,
   },
   chatButton: {
-    backgroundColor: '#27ae60',
+    backgroundColor: Colors.secondary,
   },
   buttonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
+    color: Colors.white,
+    fontSize: Typography.size.medium,
+    fontWeight: Typography.weight.semibold,
   },
 });
 

@@ -1,4 +1,7 @@
-import React, { useState, useEffect } from 'react';
+/**
+ * Enhanced DocumentListScreen with theme and animations
+ */
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -6,69 +9,196 @@ import {
   FlatList, 
   TouchableOpacity, 
   ActivityIndicator,
-  SafeAreaView 
+  SafeAreaView,
+  Alert,
+  Animated
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import Header from '../components/Header';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import EnhancedHeader from '../components/EnhancedHeader';
+import DocumentCard from '../components/DocumentCard';
+import PDFProcessorService from '../services/PDFProcessorService';
+import AppSideMenu from '../components/AppSideMenu';
+import { Colors, Typography, Spacing, BorderRadius, Shadows, Layout } from '../styles';
+import * as Animations from '../animations';
 
 const DocumentListScreen = () => {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const navigation = useNavigation();
-
-  useEffect(() => {
-    // In a real app, we would load documents from storage
-    // For now, we'll just simulate with dummy data
-    setTimeout(() => {
-      setDocuments([
-        {
-          id: '1',
-          name: 'Cardiology Referral.pdf',
-          date: '2025-05-10',
-          uri: 'dummy-uri-1',
-        },
-        {
-          id: '2',
-          name: 'Medical Imaging Report.pdf',
-          date: '2025-05-08',
-          uri: 'dummy-uri-2',
-        },
-        {
-          id: '3',
-          name: 'Lab Results.pdf',
-          date: '2025-05-05',
-          uri: 'dummy-uri-3',
-        },
-      ]);
+  
+  // Animation refs
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+  
+  // Load documents from storage
+  const loadDocuments = async () => {
+    try {
+      setLoading(true);
+      
+      // Get documents from processor service
+      const processorService = PDFProcessorService.getInstance();
+      const docs = await processorService.getProcessedDocuments();
+      
+      // Sort by date (newest first)
+      const sortedDocs = docs.sort((a, b) => {
+        const dateA = new Date(a.date || 0);
+        const dateB = new Date(b.date || 0);
+        return dateB - dateA;
+      });
+      
+      setDocuments(sortedDocs);
+    } catch (error) {
+      console.error('Error loading documents:', error);
+      Alert.alert('Error', 'Failed to load documents');
+    } finally {
       setLoading(false);
-    }, 1000);
+      setRefreshing(false);
+      
+      // Start animations
+      Animated.parallel([
+        Animations.fadeIn(fadeAnim, 400),
+        Animations.slideInUp(slideAnim, 30, 500),
+      ]).start();
+    }
+  };
+  
+  // Load documents on first render
+  useEffect(() => {
+    loadDocuments();
   }, []);
-
-  const renderItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.documentItem}
-      onPress={() => navigation.navigate('DocumentViewer', { uri: item.uri })}
-    >
-      <View style={styles.documentIcon}>
-        <Text style={styles.documentIconText}>PDF</Text>
-      </View>
-      <View style={styles.documentInfo}>
-        <Text style={styles.documentName} numberOfLines={1}>
-          {item.name}
-        </Text>
-        <Text style={styles.documentDate}>Processed: {item.date}</Text>
-      </View>
-    </TouchableOpacity>
+  
+  // Reload documents when screen is focused
+  useFocusEffect(
+    React.useCallback(() => {
+      loadDocuments();
+      return () => {};
+    }, [])
   );
+  
+  // Handle document selection
+  const handleDocumentPress = (document) => {
+    navigation.navigate('DocumentViewer', { 
+      uri: document.uri,
+      documentId: document.id
+    });
+  };
+  
+  // Handle long press (for document actions)
+  const handleDocumentLongPress = (document) => {
+    Alert.alert(
+      'Document Options',
+      `${document.name}`,
+      [
+        {
+          text: 'View',
+          onPress: () => handleDocumentPress(document),
+        },
+        {
+          text: 'Chat',
+          onPress: () => navigation.navigate('DocumentChat', { documentId: document.id }),
+        },
+        {
+          text: 'Delete',
+          onPress: () => confirmDeleteDocument(document),
+          style: 'destructive',
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+      ]
+    );
+  };
+  
+  // Confirm document deletion
+  const confirmDeleteDocument = (document) => {
+    Alert.alert(
+      'Delete Document',
+      `Are you sure you want to delete "${document.name}"?`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => deleteDocument(document),
+        },
+      ]
+    );
+  };
+  
+  // Delete document
+  const deleteDocument = async (document) => {
+    try {
+      // Get processor service
+      const processorService = PDFProcessorService.getInstance();
+      
+      // TODO: Implement document deletion in PDFProcessorService
+      // For now, just remove from state
+      setDocuments(prev => prev.filter(doc => doc.id !== document.id));
+      
+      // Show success message
+      Alert.alert('Success', 'Document deleted successfully');
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      Alert.alert('Error', 'Failed to delete document');
+    }
+  };
+  
+  // Handle refresh
+  const handleRefresh = () => {
+    setRefreshing(true);
+    loadDocuments();
+  };
+  
+  // Render document item
+  const renderDocumentItem = ({ item, index }) => {
+    // Calculate delay for staggered animation
+    const delay = index * 100;
+    
+    return (
+      <Animated.View
+        style={{
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }],
+          animationDelay: delay,
+        }}
+      >
+        <DocumentCard
+          document={item}
+          onPress={handleDocumentPress}
+          onLongPress={handleDocumentLongPress}
+        />
+      </Animated.View>
+    );
+  };
+  
+  // Toggle menu
+  const toggleMenu = () => {
+    setMenuVisible(!menuVisible);
+  };
 
   return (
     <View style={styles.container}>
-      <Header title="Your Documents" showBackButton={true} />
+      <EnhancedHeader
+        title="Your Documents"
+        onMenuPress={toggleMenu}
+      />
       
-      <SafeAreaView style={styles.contentContainer}>
-        {loading ? (
+      <AppSideMenu
+        isVisible={menuVisible}
+        onClose={() => setMenuVisible(false)}
+        currentScreen="DocumentList"
+      />
+      
+      <SafeAreaView style={styles.content}>
+        {loading && !refreshing ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#3498db" />
+            <ActivityIndicator size="large" color={Colors.primary} style={styles.spinner} />
             <Text style={styles.loadingText}>Loading documents...</Text>
           </View>
         ) : (
@@ -76,9 +206,12 @@ const DocumentListScreen = () => {
             {documents.length > 0 ? (
               <FlatList
                 data={documents}
-                renderItem={renderItem}
+                renderItem={renderDocumentItem}
                 keyExtractor={(item) => item.id}
                 contentContainerStyle={styles.listContainer}
+                showsVerticalScrollIndicator={false}
+                onRefresh={handleRefresh}
+                refreshing={refreshing}
               />
             ) : (
               <View style={styles.emptyContainer}>
@@ -93,6 +226,15 @@ const DocumentListScreen = () => {
             )}
           </>
         )}
+        
+        {documents.length > 0 && (
+          <TouchableOpacity
+            style={styles.addButton}
+            onPress={() => navigation.navigate('DocumentUpload')}
+          >
+            <Text style={styles.addButtonText}>+</Text>
+          </TouchableOpacity>
+        )}
       </SafeAreaView>
     </View>
   );
@@ -101,85 +243,70 @@ const DocumentListScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f7',
+    backgroundColor: Colors.lightGray,
   },
-  contentContainer: {
+  content: {
     flex: 1,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: Colors.lightGray,
+  },
+  spinner: {
+    marginBottom: Spacing.medium,
   },
   loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#2c3e50',
+    fontSize: Typography.size.medium,
+    color: Colors.gray,
   },
   listContainer: {
-    padding: 15,
-  },
-  documentItem: {
-    flexDirection: 'row',
-    backgroundColor: '#ffffff',
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 10,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  documentIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    backgroundColor: '#e74c3c',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 15,
-  },
-  documentIconText: {
-    color: '#ffffff',
-    fontWeight: 'bold',
-  },
-  documentInfo: {
-    flex: 1,
-  },
-  documentName: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#2c3e50',
-    marginBottom: 4,
-  },
-  documentDate: {
-    fontSize: 14,
-    color: '#7f8c8d',
+    padding: Spacing.large,
+    paddingBottom: Spacing.xxlarge, // Extra padding for FAB
   },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    padding: Spacing.large,
+    backgroundColor: Colors.lightGray,
   },
   emptyText: {
-    fontSize: 16,
-    color: '#7f8c8d',
-    marginBottom: 20,
+    fontSize: Typography.size.large,
+    color: Colors.gray,
+    marginBottom: Spacing.large,
     textAlign: 'center',
   },
   uploadButton: {
-    backgroundColor: '#3498db',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
+    backgroundColor: Colors.primary,
+    paddingVertical: Spacing.medium,
+    paddingHorizontal: Spacing.large,
+    borderRadius: BorderRadius.medium,
+    ...Shadows.medium,
   },
   uploadButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
+    color: Colors.white,
+    fontSize: Typography.size.medium,
+    fontWeight: Typography.weight.semibold,
+  },
+  addButton: {
+    position: 'absolute',
+    bottom: Spacing.large,
+    right: Spacing.large,
+    width: 56,
+    height: 56,
+    borderRadius: BorderRadius.round,
+    backgroundColor: Colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...Shadows.strong,
+  },
+  addButtonText: {
+    color: Colors.white,
+    fontSize: 30,
+    fontWeight: Typography.weight.bold,
+    lineHeight: 36,
   },
 });
 

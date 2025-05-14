@@ -1,128 +1,176 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, SafeAreaView } from 'react-native';
+/**
+ * Enhanced Header component with enterprise styling using global styles
+ */
+import React from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  TouchableOpacity, 
+  Platform, 
+  StatusBar,
+  SafeAreaView
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { isWeb } from '../utils/platform';
-import MobileMenu from './MobileMenu';
+import { Colors, Typography, Spacing, BorderRadius, Shadows, ZIndex } from '../styles';
 
-const Header = ({
+const EnhancedHeader = ({
   title = 'MedRec',
   showBackButton = false,
   rightComponent = null,
+  onMenuPress = null,
+  backgroundColor = Colors.white,
+  textColor = Colors.black,
+  elevated = true,
 }) => {
   const navigation = useNavigation();
-  const [menuVisible, setMenuVisible] = useState(false);
 
-  const toggleMenu = () => {
-    setMenuVisible(!menuVisible);
+  const handleBackPress = () => {
+    navigation.goBack();
+  };
+
+  const handleMenuPress = () => {
+    if (onMenuPress) {
+      onMenuPress();
+    }
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView 
+      style={[
+        styles.safeArea, 
+        { backgroundColor },
+        elevated && styles.elevated
+      ]}
+    >
+      <StatusBar 
+        barStyle="dark-content" 
+        backgroundColor={backgroundColor} 
+      />
       <View style={styles.container}>
-        <View style={styles.leftContainer}>
+        <View style={styles.leftSection}>
           {showBackButton ? (
-            <Pressable
-              style={({ pressed }) => [
-                styles.backButton,
-                pressed && styles.buttonPressed
-              ]}
-              onPress={() => navigation.goBack()}
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={handleBackPress}
+              accessibilityLabel="Back"
+              accessibilityRole="button"
             >
-              <Text style={styles.backButtonText}>←</Text>
-            </Pressable>
+              <View style={styles.backIcon}>
+                <View style={styles.backArrow} />
+              </View>
+            </TouchableOpacity>
           ) : (
-            <Pressable
-              style={({ pressed }) => [
-                styles.menuButton,
-                pressed && styles.buttonPressed
-              ]}
-              onPress={toggleMenu}
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={handleMenuPress}
+              accessibilityLabel="Menu"
+              accessibilityRole="button"
             >
-              <Text style={styles.menuButtonText}>☰</Text>
-            </Pressable>
+              <View style={styles.menuIcon}>
+                <View style={styles.menuLine} />
+                <View style={styles.menuLine} />
+                <View style={styles.menuLine} />
+              </View>
+            </TouchableOpacity>
           )}
-          <Text style={styles.title}>{title}</Text>
+          
+          <Text 
+            style={[
+              styles.title, 
+              { color: textColor }
+            ]} 
+            numberOfLines={1}
+          >
+            {title}
+          </Text>
         </View>
-        <View style={styles.rightContainer}>
+        
+        <View style={styles.rightSection}>
           {rightComponent}
         </View>
       </View>
-      
-      <MobileMenu isVisible={menuVisible} onClose={() => setMenuVisible(false)} />
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   safeArea: {
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-    ...(isWeb && {
-      boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.08)',
+    width: '100%',
+    zIndex: ZIndex.header,
+  },
+  elevated: {
+    ...Platform.select({
+      ios: {
+        shadowColor: Colors.black,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 3,
+      },
+      android: {
+        elevation: 4,
+      },
+      web: {
+        boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+      },
     }),
   },
   container: {
+    height: 56,
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    height: 64,
-    paddingHorizontal: 16,
+    paddingHorizontal: Spacing.large,
   },
-  leftContainer: {
+  leftSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  rightSection: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  rightContainer: {
-    flexShrink: 1,
+  iconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: Spacing.small,
   },
   title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#2c3e50',
+    fontSize: Typography.size.large,
+    fontWeight: Typography.weight.semibold,
+    flex: 1,
   },
-  backButton: {
-    marginRight: 16,
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: '#f5f5f7',
-    cursor: isWeb ? 'pointer' : 'default',
-    ...(isWeb ? {} : {
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.1,
-      shadowRadius: 2,
-      elevation: 2,
-    }),
+  menuIcon: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  menuButton: {
-    marginRight: 16,
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#f5f5f7',
-    cursor: isWeb ? 'pointer' : 'default',
-    ...(isWeb ? {} : {
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.1,
-      shadowRadius: 2,
-      elevation: 2,
-    }),
+  menuLine: {
+    width: 20,
+    height: 2,
+    backgroundColor: Colors.black,
+    marginVertical: 2,
+    borderRadius: BorderRadius.small,
   },
-  buttonPressed: {
-    opacity: 0.8,
-    transform: [{ scale: 0.97 }],
+  backIcon: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  backButtonText: {
-    fontSize: 22,
-    color: '#3498db',
-    fontWeight: 'bold',
-  },
-  menuButtonText: {
-    fontSize: 22,
-    color: '#3498db',
-    fontWeight: 'bold',
+  backArrow: {
+    width: 10,
+    height: 10,
+    borderLeftWidth: 2,
+    borderBottomWidth: 2,
+    borderColor: Colors.black,
+    transform: [{ rotate: '45deg' }, { translateX: 2 }],
   },
 });
 
-export default Header;
+export default EnhancedHeader;

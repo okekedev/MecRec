@@ -1,3 +1,6 @@
+/**
+ * Enhanced DocumentChatScreen with theme integration
+ */
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
@@ -10,10 +13,14 @@ import {
   Platform,
   ActivityIndicator,
   SafeAreaView,
+  Animated,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
+import EnhancedHeader from '../components/EnhancedHeader';
 import ChatService from '../services/ChatService';
 import PDFProcessorService from '../services/PDFProcessorService';
+import { Colors, Typography, Spacing, BorderRadius, Shadows, ZIndex } from '../styles';
+import * as Animations from '../animations';
 
 const DocumentChatScreen = () => {
   const route = useRoute();
@@ -30,9 +37,19 @@ const DocumentChatScreen = () => {
   
   const flatListRef = useRef(null);
   
+  // Animation refs
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
+  
   // Load chat history and document text
   useEffect(() => {
     const loadData = async () => {
+      // Start animations
+      Animated.parallel([
+        Animations.fadeIn(fadeAnim, 400),
+        Animations.slideInUp(slideAnim, 50, 500),
+      ]).start();
+
       // Load chat history
       const chatHistory = chatService.getMessages(documentId);
       setMessages(chatHistory);
@@ -108,10 +125,45 @@ const DocumentChatScreen = () => {
     }
   };
   
-  const renderMessage = ({ item }) => {
+  // Message animation values object
+  const getMessageAnimationValue = (index) => {
+    const isNewMessage = index === messages.length - 1;
+    if (isNewMessage && messages.length > 1) {
+      return {
+        opacity: new Animated.Value(0),
+        translateY: new Animated.Value(20)
+      };
+    }
+    return null;
+  };
+  
+  // Trigger animation for new messages
+  const animateNewMessage = (animationValues) => {
+    if (animationValues) {
+      Animated.parallel([
+        Animated.timing(animationValues.opacity, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(animationValues.translateY, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  };
+  
+  const renderMessage = ({ item, index }) => {
     const isUser = item.role === 'user';
+    const animationValues = getMessageAnimationValue(index);
     
-    return (
+    React.useEffect(() => {
+      animateNewMessage(animationValues);
+    }, []);
+    
+    const messageContent = (
       <View
         style={[
           styles.messageContainer,
@@ -121,167 +173,193 @@ const DocumentChatScreen = () => {
         <Text style={[styles.messageText, isUser ? styles.userMessageText : styles.aiMessageText]}>
           {item.content}
         </Text>
-        <Text style={styles.timestamp}>
+        <Text style={[styles.timestamp, isUser ? styles.userTimestamp : styles.aiTimestamp]}>
           {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </Text>
       </View>
     );
+    
+    if (animationValues) {
+      return (
+        <Animated.View
+          style={{
+            opacity: animationValues.opacity,
+            transform: [{ translateY: animationValues.translateY }],
+          }}
+        >
+          {messageContent}
+        </Animated.View>
+      );
+    }
+    
+    return messageContent;
   };
   
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Text style={styles.backButtonText}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Document Assistant</Text>
-      </View>
-      
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        renderItem={renderMessage}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.messagesList}
-        onLayout={() => flatListRef.current?.scrollToEnd()}
+    <View style={styles.container}>
+      <EnhancedHeader
+        title="Document Assistant"
+        showBackButton={true}
       />
       
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={100}
-      >
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.input}
-            value={inputText}
-            onChangeText={setInputText}
-            placeholder="Ask a question about the document..."
-            multiline
-            maxLength={500}
-            onSubmitEditing={handleSend}
+      <SafeAreaView style={styles.content}>
+        <Animated.View
+          style={[
+            styles.chatContainer,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            }
+          ]}
+        >
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            renderItem={renderMessage}
+            keyExtractor={item => item.id}
+            contentContainerStyle={styles.messagesList}
+            onLayout={() => flatListRef.current?.scrollToEnd()}
           />
           
-          <TouchableOpacity
-            style={[styles.sendButton, inputText.trim() === '' && styles.disabledSendButton]}
-            onPress={handleSend}
-            disabled={inputText.trim() === '' || loading}
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={100}
           >
-            {loading ? (
-              <ActivityIndicator color="#ffffff" size="small" />
-            ) : (
-              <Text style={styles.sendButtonText}>Send</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+            <View style={styles.inputContainer}>
+              <TextInput
+                style={styles.input}
+                value={inputText}
+                onChangeText={setInputText}
+                placeholder="Ask a question about the document..."
+                placeholderTextColor={Colors.gray}
+                multiline
+                maxLength={500}
+                onSubmitEditing={handleSend}
+              />
+              
+              <TouchableOpacity
+                style={[
+                  styles.sendButton,
+                  inputText.trim() === '' && styles.disabledSendButton
+                ]}
+                onPress={handleSend}
+                disabled={inputText.trim() === '' || loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color={Colors.white} size="small" />
+                ) : (
+                  <View style={styles.sendIcon}>
+                    <View style={styles.sendArrow} />
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        </Animated.View>
+      </SafeAreaView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f7',
+    backgroundColor: Colors.lightGray,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-    backgroundColor: '#ffffff',
-  },
-  backButton: {
-    padding: 5,
-  },
-  backButtonText: {
-    color: '#3498db',
-    fontSize: 16,
-  },
-  headerTitle: {
+  content: {
     flex: 1,
-    textAlign: 'center',
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    marginRight: 40, // To center the title despite the back button
+  },
+  chatContainer: {
+    flex: 1,
+    backgroundColor: Colors.lightGray,
   },
   messagesList: {
-    padding: 15,
-    paddingBottom: 20,
+    padding: Spacing.medium,
+    paddingBottom: Spacing.large,
   },
   messageContainer: {
-    borderRadius: 15,
-    padding: 12,
-    marginBottom: 10,
+    borderRadius: BorderRadius.medium,
+    padding: Spacing.medium,
+    marginBottom: Spacing.medium,
     maxWidth: '80%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 1,
-    elevation: 1,
+    ...Shadows.soft,
   },
   userMessageContainer: {
-    backgroundColor: '#3498db',
+    backgroundColor: Colors.primary,
     alignSelf: 'flex-end',
-    borderBottomRightRadius: 5,
+    borderBottomRightRadius: Spacing.tiny,
   },
   aiMessageContainer: {
-    backgroundColor: '#ffffff',
+    backgroundColor: Colors.white,
     alignSelf: 'flex-start',
-    borderBottomLeftRadius: 5,
+    borderBottomLeftRadius: Spacing.tiny,
   },
   messageText: {
-    fontSize: 16,
-    lineHeight: 22,
+    fontSize: Typography.size.medium,
+    lineHeight: Typography.lineHeight.normal,
   },
   userMessageText: {
-    color: '#ffffff',
+    color: Colors.white,
   },
   aiMessageText: {
-    color: '#2c3e50',
+    color: Colors.black,
   },
   timestamp: {
-    fontSize: 10,
-    marginTop: 5,
-    opacity: 0.7,
+    fontSize: Typography.size.tiny,
+    marginTop: Spacing.tiny,
     alignSelf: 'flex-end',
-    color: '#f5f5f7',
+  },
+  userTimestamp: {
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  aiTimestamp: {
+    color: Colors.gray,
   },
   inputContainer: {
     flexDirection: 'row',
-    padding: 10,
-    backgroundColor: '#ffffff',
+    padding: Spacing.medium,
+    backgroundColor: Colors.white,
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
+    borderTopColor: Colors.lightGray,
+    ...Shadows.medium,
   },
   input: {
     flex: 1,
-    backgroundColor: '#f5f5f7',
-    borderRadius: 20,
-    paddingHorizontal: 15,
-    paddingVertical: 10,
+    backgroundColor: Colors.lightGray,
+    borderRadius: BorderRadius.large,
+    paddingHorizontal: Spacing.medium,
+    paddingVertical: Spacing.small,
     maxHeight: 100,
-    fontSize: 16,
+    fontSize: Typography.size.medium,
+    color: Colors.black,
   },
   sendButton: {
-    backgroundColor: '#3498db',
-    borderRadius: 25,
-    width: 50,
-    height: 50,
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.round,
+    width: 44,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 10,
+    marginLeft: Spacing.small,
+    ...Shadows.soft,
   },
   disabledSendButton: {
-    backgroundColor: '#95a5a6',
+    backgroundColor: Colors.gray,
+    opacity: 0.7,
   },
-  sendButtonText: {
-    color: '#ffffff',
-    fontWeight: 'bold',
+  sendIcon: {
+    width: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sendArrow: {
+    width: 18,
+    height: 18,
+    borderTopWidth: 2,
+    borderRightWidth: 2,
+    borderColor: Colors.white,
+    transform: [{ rotate: '45deg' }, { translateX: -4 }],
   },
 });
 

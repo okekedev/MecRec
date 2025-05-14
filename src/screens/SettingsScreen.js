@@ -1,4 +1,7 @@
-import React, { useState, useEffect } from 'react';
+/**
+ * Enhanced SettingsScreen with theme and animations
+ */
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,12 +12,16 @@ import {
   ActivityIndicator,
   ScrollView,
   Alert,
+  Animated,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import Header from '../components/Header';
+import EnhancedHeader from '../components/EnhancedHeader';
+import AppSideMenu from '../components/AppSideMenu';
 import OllamaService from '../services/OllamaService';
 import PDFProcessorService from '../services/PDFProcessorService';
 import ChatService from '../services/ChatService';
+import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../styles';
+import * as Animations from '../animations';
 
 const SettingsScreen = () => {
   const navigation = useNavigation();
@@ -22,7 +29,7 @@ const SettingsScreen = () => {
   const pdfProcessor = PDFProcessorService.getInstance();
   const chatService = ChatService.getInstance();
   
-  // Initial settings from services
+  // Get initial configuration from services
   const initialConfig = ollamaService.getConfig();
   
   // State
@@ -33,8 +40,22 @@ const SettingsScreen = () => {
   const [connectionStatus, setConnectionStatus] = useState('');
   const [availableModels, setAvailableModels] = useState([]);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
+  
+  // Animation refs
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
+  const buttonScale = useRef(new Animated.Value(1)).current;
+  
+  // Apply animations on mount
+  useEffect(() => {
+    Animated.parallel([
+      Animations.fadeIn(fadeAnim, 500),
+      Animations.slideInUp(slideAnim, 50, 600),
+    ]).start();
+  }, []);
 
-  // Test connection
+  // Test connection to Ollama
   const testConnection = async () => {
     setTesting(true);
     setConnectionStatus('Testing connection...');
@@ -77,6 +98,9 @@ const SettingsScreen = () => {
   // Save settings
   const saveSettings = () => {
     try {
+      // Animate button
+      Animations.pulse(buttonScale).start();
+      
       // Update Ollama settings
       ollamaService.setBaseUrl(ollamaUrl);
       ollamaService.setDefaultModel(ollamaModel);
@@ -95,13 +119,40 @@ const SettingsScreen = () => {
       Alert.alert('Error', `Failed to save settings: ${error.message}`);
     }
   };
+  
+  // Toggle menu
+  const toggleMenu = () => {
+    setMenuVisible(!menuVisible);
+  };
 
   return (
     <View style={styles.container}>
-      <Header title="Settings" showBackButton={true} />
+      <EnhancedHeader
+        title="Settings"
+        showBackButton={true}
+        onMenuPress={toggleMenu}
+      />
       
-      <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.contentContainer}>
-        <View style={styles.section}>
+      <AppSideMenu
+        isVisible={menuVisible}
+        onClose={() => setMenuVisible(false)}
+        currentScreen="Settings"
+      />
+      
+      <ScrollView
+        style={styles.scrollContainer}
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+      >
+        <Animated.View
+          style={[
+            styles.card,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+            }
+          ]}
+        >
           <Text style={styles.sectionTitle}>AI Integration</Text>
           
           <View style={styles.settingRow}>
@@ -109,13 +160,28 @@ const SettingsScreen = () => {
             <Switch
               value={useAI}
               onValueChange={setUseAI}
-              trackColor={{ false: '#767577', true: '#81b0ff' }}
-              thumbColor={useAI ? '#3498db' : '#f4f3f4'}
+              trackColor={{ false: Colors.lightGray, true: Colors.primaryLight }}
+              thumbColor={useAI ? Colors.primary : Colors.gray}
             />
           </View>
-        </View>
+          
+          <Text style={styles.settingDescription}>
+            When enabled, the app will use AI to extract information from documents 
+            and provide intelligent responses in the chat. When disabled, only basic 
+            text extraction will be used.
+          </Text>
+        </Animated.View>
         
-        <View style={styles.section}>
+        <Animated.View
+          style={[
+            styles.card,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
+              marginTop: Spacing.large,
+            }
+          ]}
+        >
           <Text style={styles.sectionTitle}>Ollama Configuration</Text>
           
           <Text style={styles.settingLabel}>Ollama URL</Text>
@@ -124,18 +190,20 @@ const SettingsScreen = () => {
             value={ollamaUrl}
             onChangeText={setOllamaUrl}
             placeholder="http://localhost:11434"
+            placeholderTextColor={Colors.gray}
             autoCapitalize="none"
             autoCorrect={false}
           />
           
           <View style={styles.buttonRow}>
             <TouchableOpacity
-              style={styles.testButton}
+              style={[styles.testButton, testing && styles.disabledButton]}
               onPress={testConnection}
               disabled={testing}
+              activeOpacity={0.8}
             >
               {testing ? (
-                <ActivityIndicator size="small" color="#ffffff" />
+                <ActivityIndicator size="small" color={Colors.white} />
               ) : (
                 <Text style={styles.buttonText}>Test Connection</Text>
               )}
@@ -143,14 +211,16 @@ const SettingsScreen = () => {
           </View>
           
           {connectionStatus ? (
-            <Text style={styles.statusText}>
-              {connectionStatus}
-            </Text>
+            <View style={styles.statusContainer}>
+              <Text style={styles.statusText}>
+                {connectionStatus}
+              </Text>
+            </View>
           ) : null}
           
           <Text style={styles.settingLabel}>Ollama Model</Text>
           {loadingModels ? (
-            <ActivityIndicator size="small" color="#3498db" style={styles.modelSpinner} />
+            <ActivityIndicator size="small" color={Colors.primary} style={styles.modelSpinner} />
           ) : (
             availableModels.length > 0 ? (
               <View style={styles.modelSelector}>
@@ -180,19 +250,34 @@ const SettingsScreen = () => {
                 value={ollamaModel}
                 onChangeText={setOllamaModel}
                 placeholder="Model name (e.g., llama3, mistral)"
+                placeholderTextColor={Colors.gray}
                 autoCapitalize="none"
                 autoCorrect={false}
               />
             )
           )}
-        </View>
+          
+          <Text style={styles.settingDescription}>
+            Ollama is an open-source platform for running large language models locally.
+            You can download models from https://ollama.ai.
+          </Text>
+        </Animated.View>
         
-        <TouchableOpacity
-          style={styles.saveButton}
-          onPress={saveSettings}
+        <Animated.View
+          style={{
+            marginTop: Spacing.large,
+            marginBottom: Spacing.xlarge,
+            transform: [{ scale: buttonScale }],
+          }}
         >
-          <Text style={styles.saveButtonText}>Save Settings</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.saveButton}
+            onPress={saveSettings}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.saveButtonText}>Save Settings</Text>
+          </TouchableOpacity>
+        </Animated.View>
       </ScrollView>
     </View>
   );
@@ -201,114 +286,123 @@ const SettingsScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f7',
+    backgroundColor: Colors.lightGray,
   },
   scrollContainer: {
     flex: 1,
   },
   contentContainer: {
-    padding: 20,
+    padding: Spacing.large,
   },
-  section: {
-    marginBottom: 24,
-    backgroundColor: '#ffffff',
-    borderRadius: 10,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+  card: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.medium,
+    padding: Spacing.large,
+    ...Shadows.medium,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    marginBottom: 16,
+    fontSize: Typography.size.large,
+    fontWeight: Typography.weight.semibold,
+    color: Colors.black,
+    marginBottom: Spacing.medium,
   },
   settingRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: Spacing.medium,
   },
   settingLabel: {
-    fontSize: 16,
-    color: '#2c3e50',
-    marginBottom: 8,
+    fontSize: Typography.size.medium,
+    color: Colors.black,
+    marginBottom: Spacing.small,
+  },
+  settingDescription: {
+    fontSize: Typography.size.small,
+    color: Colors.gray,
+    lineHeight: Typography.lineHeight.normal,
+    marginTop: Spacing.small,
   },
   input: {
-    backgroundColor: '#f8f9fa',
+    backgroundColor: Colors.lightGray,
+    borderRadius: BorderRadius.medium,
+    padding: Spacing.medium,
+    fontSize: Typography.size.medium,
+    color: Colors.black,
+    marginBottom: Spacing.medium,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 6,
-    padding: 12,
-    fontSize: 16,
-    marginBottom: 16,
+    borderColor: 'transparent',
   },
   buttonRow: {
-    flexDirection: 'row',
-    marginBottom: 16,
+    marginBottom: Spacing.medium,
   },
   testButton: {
-    backgroundColor: '#3498db',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 6,
-    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+    paddingVertical: Spacing.medium,
+    paddingHorizontal: Spacing.large,
+    borderRadius: BorderRadius.medium,
     alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'flex-start',
+    ...Shadows.soft,
+  },
+  disabledButton: {
+    backgroundColor: Colors.gray,
+    opacity: 0.7,
   },
   buttonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '500',
+    color: Colors.white,
+    fontSize: Typography.size.medium,
+    fontWeight: Typography.weight.semibold,
+  },
+  statusContainer: {
+    backgroundColor: Colors.lightGray,
+    borderRadius: BorderRadius.medium,
+    padding: Spacing.medium,
+    marginBottom: Spacing.medium,
   },
   statusText: {
-    marginBottom: 16,
-    padding: 10,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
+    fontSize: Typography.size.small,
+    color: Colors.black,
   },
   modelSpinner: {
-    marginVertical: 16,
+    marginVertical: Spacing.medium,
   },
   modelSelector: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginBottom: 16,
+    marginBottom: Spacing.medium,
   },
   modelOption: {
-    backgroundColor: '#f1f2f6',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 30,
-    marginRight: 10,
-    marginBottom: 10,
+    backgroundColor: Colors.lightGray,
+    paddingVertical: Spacing.small,
+    paddingHorizontal: Spacing.medium,
+    borderRadius: BorderRadius.large,
+    marginRight: Spacing.small,
+    marginBottom: Spacing.small,
   },
   modelOptionSelected: {
-    backgroundColor: '#3498db',
+    backgroundColor: Colors.primary,
   },
   modelOptionText: {
-    color: '#2c3e50',
-    fontSize: 14,
+    color: Colors.black,
+    fontSize: Typography.size.small,
   },
   modelOptionTextSelected: {
-    color: '#ffffff',
+    color: Colors.white,
+    fontWeight: Typography.weight.semibold,
   },
   saveButton: {
-    backgroundColor: '#2ecc71',
-    paddingVertical: 16,
-    borderRadius: 8,
+    backgroundColor: Colors.secondary,
+    paddingVertical: Spacing.medium,
+    borderRadius: BorderRadius.medium,
     alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 30,
+    ...Shadows.medium,
   },
   saveButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: 'bold',
+    color: Colors.white,
+    fontSize: Typography.size.medium,
+    fontWeight: Typography.weight.semibold,
   },
 });
 
