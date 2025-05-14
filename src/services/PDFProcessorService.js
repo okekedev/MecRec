@@ -1,9 +1,9 @@
 /**
- * Enhanced PDFProcessorService with reference tracking and improved OCR
+ * PDFProcessorService with parallel OCR processing
  */
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
-import PDFTextExtractionService from './PDFTextExtractionService';
+import ParallelPDFTextExtractionService from './ParallelPDFTextExtractionService';
 import MedicalFormExtractor from './MedicalFormExtractor';
 import DocumentReferenceService from './DocumentReferenceService';
 import OllamaService from './OllamaService';
@@ -14,7 +14,10 @@ class PDFProcessorService {
   constructor() {
     // Use in-memory cache only - no persistence
     this.documentsCache = new Map();
-    this.textExtractionService = PDFTextExtractionService.getInstance();
+    
+    // Use the parallel text extraction service for improved performance
+    this.textExtractionService = ParallelPDFTextExtractionService.getInstance();
+    
     this.formExtractor = MedicalFormExtractor.getInstance();
     this.referenceService = DocumentReferenceService.getInstance();
     this.ollamaService = OllamaService.getInstance();
@@ -31,7 +34,6 @@ class PDFProcessorService {
   
   /**
    * Set whether to use AI for processing
-   * @param {boolean} useAI - Whether to use AI
    */
   setUseAI(useAI) {
     this.useAI = useAI;
@@ -40,8 +42,6 @@ class PDFProcessorService {
   
   /**
    * Configure Ollama service
-   * @param {string} baseUrl - Ollama API base URL
-   * @param {string} model - Ollama model name
    */
   configureOllama(baseUrl, model) {
     this.ollamaService.setBaseUrl(baseUrl);
@@ -76,7 +76,7 @@ class PDFProcessorService {
       this.isProcessing = true;
       console.log('Processing document:', name);
       
-      // Extract text from the PDF
+      // Extract text from the PDF using parallel OCR
       const extractionResult = await this.textExtractionService.extractText(uri);
       
       // If processing was canceled or failed

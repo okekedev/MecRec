@@ -1,3 +1,4 @@
+// src/navigation/AppNavigator.js - Update to include new screens
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
@@ -7,6 +8,8 @@ import DocumentUploadScreen from '../screens/DocumentUploadScreen';
 import DocumentViewerScreen from '../screens/DocumentViewerScreen';
 import DocumentListScreen from '../screens/DocumentListScreen';
 import DocumentChatScreen from '../screens/DocumentChatScreen';
+import DocumentReviewScreen from '../screens/DocumentReviewScreen'; // New
+import PDFPreviewScreen from '../screens/PDFPreviewScreen'; // New
 import SettingsScreen from '../screens/SettingsScreen';
 
 const Stack = createStackNavigator();
@@ -41,6 +44,16 @@ const AppNavigator = () => {
           name="DocumentChat" 
           component={DocumentChatScreen}
           options={{ title: 'Document Chat' }}
+        />
+        <Stack.Screen 
+          name="DocumentReview" 
+          component={DocumentReviewScreen}
+          options={{ title: 'Document Review' }}
+        />
+        <Stack.Screen 
+          name="PDFPreview" 
+          component={PDFPreviewScreen}
+          options={{ title: 'PDF Preview' }}
         />
         <Stack.Screen 
           name="Settings" 

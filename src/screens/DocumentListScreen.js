@@ -18,7 +18,7 @@ import EnhancedHeader from '../components/EnhancedHeader';
 import AppSideMenu from '../components/AppSideMenu';
 import OCRProgressIndicator from '../components/OCRProgressIndicator';
 import PDFProcessorService from '../services/PDFProcessorService';
-import PDFTextExtractionService from '../services/PDFTextExtractionService';
+import PDFTextExtractionService from '../services/ParallelPDFTextExtractionService';
 import { pickPdfDocument, saveDocumentToAppStorage } from '../utils/documentUtils';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../styles';
 import * as Animations from '../animations';

@@ -415,57 +415,52 @@ class OllamaService {
    */
   async extractInformation(text, schema, model = this.defaultModel) {
     try {
-      // Create a prompt that asks for structured information
+      // Create a prompt that asks for structured information with explicit JSON formatting
       const schemaDescription = Object.entries(schema)
         .map(([key, description]) => `- ${key}: ${description}`)
         .join('\n');
       
       const prompt = `
-Extract the following information from the text, formatted as JSON:
+Extract the following information from the text into a JSON object:
 ${schemaDescription}
 
-If a field is not found, leave it null or empty string.
-Return only valid JSON, with the field names exactly as specified.
-For each field, include a brief explanation of where you found this information in the document.
+VERY IMPORTANT: Your response must be a valid JSON object that can be parsed with JSON.parse().
+If a field is not found, set it to null or an empty string.
+Do not include any explanatory text, markdown, or comments outside the JSON structure.
 
 TEXT:
 ${text}
-`;
 
-      const systemPrompt = `You are an AI assistant specialized in extracting structured information from medical documents. 
-Your task is to extract specific fields of information and return them in a clean JSON format.
-Only return the JSON object, nothing else.
-
-Format your response as:
+Response format must be EXACTLY like this:
 {
   "fieldName1": "extracted value",
   "fieldName2": "extracted value",
-  ...
   "_references": {
     "fieldName1": {
-      "text": "The exact text snippet from which the value was extracted",
-      "location": "Section of the document where this was found"
+      "text": "The text snippet where this information was found",
+      "location": "The section name where this was found"
     },
-    "fieldName2": {...}
+    "fieldName2": { ... }
   }
-}`;
+}
+
+Do not include any text before or after the JSON. Return only the JSON object.
+`;
+
+      const systemPrompt = `You are an AI assistant specialized in extracting structured information from medical documents. 
+Your task is to extract specific fields of information and return them in a clean, valid JSON format.
+Return ONLY the JSON object with no additional text, ensuring it can be parsed directly with JSON.parse().`;
 
       // Process text to find potential paragraph boundaries for references
       const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim().length > 0);
       console.log(`Document split into ${paragraphs.length} paragraphs for reference tracking`);
-      
-      // Save indices of paragraphs to generate reference metadata
-      const paragraphIndices = {};
-      for (let i = 0; i < paragraphs.length; i++) {
-        paragraphIndices[paragraphs[i].slice(0, 50)] = i;
-      }
       
       // Use extraction prompt to get structured data
       const result = await this.generateCompletion(prompt, model, systemPrompt, {
         temperature: 0.1, // Low temperature for more deterministic output
       });
 
-      // Try to parse the response as JSON
+      // Try to parse the response as JSON with robust error handling
       try {
         // Find the first { and last } in the response to extract just the JSON part
         const jsonStart = result.indexOf('{');
@@ -474,54 +469,62 @@ Format your response as:
         if (jsonStart >= 0 && jsonEnd > jsonStart) {
           const jsonStr = result.substring(jsonStart, jsonEnd);
           
-          const parsedResult = JSON.parse(jsonStr);
-          
-          // Add metadata about extraction
-          parsedResult.extractionMethod = 'ai';
-          parsedResult.modelUsed = model;
-          parsedResult.extractionDate = new Date().toISOString();
-          
-          // If no _references field was created, add it
-          if (!parsedResult._references) {
-            parsedResult._references = {};
+          try {
+            const parsedResult = JSON.parse(jsonStr);
             
-            // Try to create references for each field
-            for (const [field, value] of Object.entries(parsedResult)) {
-              // Skip metadata fields or empty values
-              if (field.startsWith('_') || value === null || value === undefined || value === '') {
-                continue;
-              }
+            // Add metadata about extraction
+            parsedResult.extractionMethod = 'ai';
+            parsedResult.modelUsed = model;
+            parsedResult.extractionDate = new Date().toISOString();
+            
+            // If no _references field was created, add it
+            if (!parsedResult._references) {
+              parsedResult._references = {};
               
-              // Find a paragraph containing this value
-              const containingParagraph = paragraphs.find(p => 
-                p.includes(value) || 
-                (typeof value === 'string' && p.toLowerCase().includes(value.toLowerCase()))
-              );
-              
-              if (containingParagraph) {
-                parsedResult._references[field] = {
-                  text: containingParagraph,
-                  location: this.determineSectionType(containingParagraph),
-                  value: value
-                };
+              // Try to create references for each field
+              for (const [field, value] of Object.entries(parsedResult)) {
+                // Skip metadata fields or empty values
+                if (field.startsWith('_') || value === null || value === undefined || value === '') {
+                  continue;
+                }
+                
+                // Find a paragraph containing this value
+                const containingParagraph = paragraphs.find(p => 
+                  p.includes(value) || 
+                  (typeof value === 'string' && p.toLowerCase().includes(value.toLowerCase()))
+                );
+                
+                if (containingParagraph) {
+                  parsedResult._references[field] = {
+                    text: containingParagraph,
+                    location: this.determineSectionType(containingParagraph),
+                    value: value
+                  };
+                }
               }
             }
+            
+            return parsedResult;
+          } catch (jsonError) {
+            console.error('Failed to parse extracted JSON:', jsonError);
+            console.log('Problematic JSON string:', jsonStr);
+            // Continue to fallback methods
           }
-          
-          return parsedResult;
         }
         
-        // If we couldn't find JSON brackets, try parsing the whole response
-        const parsedResult = JSON.parse(result);
-        parsedResult.extractionMethod = 'ai';
-        parsedResult.modelUsed = model;
-        return parsedResult;
-      } catch (parseError) {
-        console.error('Failed to parse extracted information:', parseError);
-        console.error('Raw response:', result);
+        // If JSON extraction failed, try to parse the entire response
+        try {
+          const parsedResult = JSON.parse(result);
+          parsedResult.extractionMethod = 'ai';
+          parsedResult.modelUsed = model;
+          return parsedResult;
+        } catch (wholeParseError) {
+          console.error('Failed to parse whole response as JSON:', wholeParseError);
+          // Continue to fallback methods
+        }
         
-        // Try to extract any JSON-like content
-        const possibleJsonMatch = result.match(/{[^{}]*({[^{}]*})*[^{}]*}/);
+        // Try to extract any JSON-like content using a more forgiving regex
+        const possibleJsonMatch = result.match(/{[\s\S]*}/);
         if (possibleJsonMatch) {
           try {
             const extractedJson = JSON.parse(possibleJsonMatch[0]);
@@ -531,18 +534,21 @@ Format your response as:
               extractionMethod: 'ai-partial',
               parsingError: true
             };
-          } catch (e) {
-            console.error('Failed to parse partial JSON match');
+          } catch (regexError) {
+            console.error('Failed to parse regex-matched JSON:', regexError);
           }
         }
         
-        // Return an object with the raw text and error info as fallback
-        return {
-          rawExtraction: result,
-          extractionMethod: 'ai-failed',
-          parsingError: true,
-          errorMessage: parseError.message
-        };
+        // If all parsing attempts fail, fall back to extracting structured data manually
+        console.warn('All JSON parsing attempts failed, using fallback extraction method');
+        return this.extractStructuredDataFromText(result, schema, text, paragraphs);
+        
+      } catch (parseError) {
+        console.error('Failed to parse extracted information:', parseError);
+        console.error('Raw response:', result);
+        
+        // Fall back to structured data extraction
+        return this.extractStructuredDataFromText(result, schema, text, paragraphs);
       }
     } catch (error) {
       console.error('Information extraction error:', error);
@@ -552,6 +558,159 @@ Format your response as:
         timestamp: new Date().toISOString()
       };
     }
+  }
+  
+  /**
+   * Extract structured data from text when JSON parsing fails
+   * @param {string} result - Raw text from Ollama
+   * @param {object} schema - Schema of fields to extract
+   * @param {string} originalText - Original document text
+   * @param {array} paragraphs - Paragraphs from the document
+   * @returns {object} Extracted structured data
+   */
+  extractStructuredDataFromText(result, schema, originalText, paragraphs = []) {
+    console.log('Using fallback extraction method for non-JSON response');
+    
+    // Create a basic structure matching the schema
+    const extractedData = {};
+    const references = {};
+    
+    // Initialize fields from schema with empty values
+    Object.keys(schema).forEach(key => {
+      extractedData[key] = '';
+    });
+    
+    // Try to extract each field using patterns and the Ollama response
+    for (const [field, description] of Object.entries(schema)) {
+      // First try to find the field in the Ollama response
+      // Look for patterns like "fieldName: value" or "fieldName is value"
+      let fieldLabel = field.replace(/([A-Z])/g, ' $1').toLowerCase();
+      const patterns = [
+        new RegExp(`"${field}"\\s*:\\s*"([^"]+)"`, 'i'),  // Look for "field": "value"
+        new RegExp(`${fieldLabel}\\s*:\\s*([^\\n.,]+)`, 'i'),  // Look for field: value
+        new RegExp(`${fieldLabel}\\s+is\\s+([^\\n.,]+)`, 'i'),  // Look for field is value
+        new RegExp(`${description}\\s*:\\s*([^\\n.,]+)`, 'i'),  // Look for description: value
+      ];
+      
+      // Try each pattern on the Ollama response
+      for (const pattern of patterns) {
+        const match = result.match(pattern);
+        if (match && match[1] && match[1].trim().length > 0) {
+          extractedData[field] = match[1].trim();
+          break;
+        }
+      }
+      
+      // If we didn't find a value in the Ollama response, try the original text
+      if (!extractedData[field] && originalText) {
+        // Create field-specific patterns based on the schema
+        const textPatterns = this.getFieldSpecificPatterns(field, description);
+        
+        // Try each pattern on the original text
+        for (const pattern of textPatterns) {
+          const match = originalText.match(pattern);
+          if (match && match[1] && match[1].trim().length > 0) {
+            extractedData[field] = match[1].trim();
+            
+            // Add reference for this field
+            const matchContext = this.getTextSurroundingMatch(originalText, match[0], 100);
+            references[field] = {
+              text: matchContext,
+              location: this.determineSectionType(matchContext),
+              value: extractedData[field]
+            };
+            
+            break;
+          }
+        }
+      }
+    }
+    
+    // Add metadata and references
+    extractedData.extractionMethod = 'ai-fallback';
+    extractedData.extractionDate = new Date().toISOString();
+    extractedData._references = references;
+    
+    return extractedData;
+  }
+  
+  /**
+   * Get field-specific regex patterns for extraction
+   * @param {string} field - Field name
+   * @param {string} description - Field description
+   * @returns {Array} Array of regex patterns
+   */
+  getFieldSpecificPatterns(field, description) {
+    // Convert camelCase to space-separated words
+    const fieldWords = field.replace(/([A-Z])/g, ' $1').toLowerCase();
+    
+    // Common patterns that work for most fields
+    const commonPatterns = [
+      new RegExp(`(?:${fieldWords}|${description})\\s*:\\s*([^\\n.,]+)`, 'i'),
+      new RegExp(`(?:${fieldWords}|${description})\\s+is\\s+([^\\n.,]+)`, 'i'),
+    ];
+    
+    // Field-specific patterns
+    switch (field) {
+      case 'patientName':
+        return [
+          /(?:patient(?:'s)?\s+name|name\s+of\s+patient)[\s:]+([^.\n,]+)/i,
+          /(?:patient|name)[\s:]+([^.\n,]+)/i,
+          ...commonPatterns
+        ];
+        
+      case 'patientDOB':
+      case 'dateOfBirth':
+        return [
+          /(?:date\s+of\s+birth|DOB|birth\s+date)[\s:]+([^.\n,]+)/i,
+          /(?:born\s+on)[\s:]+([^.\n,]+)/i,
+          ...commonPatterns
+        ];
+        
+      case 'patientGender':
+      case 'gender':
+        return [
+          /(?:gender|sex)[\s:]+([^.\n,]+)/i,
+          /(?:gender|sex)[\s:]+(?:is|was)[\s:]+([^.\n,]+)/i,
+          ...commonPatterns
+        ];
+        
+      case 'diagnosis':
+        return [
+          /(?:diagnosis|assessment|impression)[\s:]+([^.\n]+)/i,
+          /(?:diagnosed with|diagnoses include)[\s:]+([^.\n]+)/i,
+          ...commonPatterns
+        ];
+        
+      case 'referringPhysician':
+        return [
+          /(?:referring physician|referred by)[\s:]+([^.\n,]+)/i,
+          /(?:dr\.|doctor)[\s:]+([^.\n,]+)/i,
+          ...commonPatterns
+        ];
+        
+      // Default case - use common patterns
+      default:
+        return commonPatterns;
+    }
+  }
+  
+  /**
+   * Get text surrounding a match for context
+   * @param {string} text - Full text
+   * @param {string} match - The matched text
+   * @param {number} charsBefore - Characters to include before match
+   * @param {number} charsAfter - Characters to include after match
+   * @returns {string} Text with surrounding context
+   */
+  getTextSurroundingMatch(text, match, charsBefore = 50, charsAfter = 50) {
+    const index = text.indexOf(match);
+    if (index === -1) return match;
+    
+    const start = Math.max(0, index - charsBefore);
+    const end = Math.min(text.length, index + match.length + charsAfter);
+    
+    return text.substring(start, end);
   }
   
   /**
