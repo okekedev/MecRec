@@ -38,7 +38,10 @@ const SettingsScreen = () => {
   const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434');
   const [extractionPrompt, setExtractionPrompt] = useState(
     `Extract the following information from the text into a JSON object:
-- insurance: Patient's insurance provider
+- patientName: Patient's full name
+- patientDOB: Patient's date of birth
+- primaryInsurance: Patient's primary insurance provider
+- secondaryInsurance: Patient's secondary insurance provider (if any)
 - location: Treatment or facility location
 - dx: Diagnosis (Dx)
 - pcp: Primary Care Provider (PCP)
@@ -83,6 +86,14 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
         // For now, we'll just use the defaults
         const currentConfig = ollamaService.getConfig();
         setOllamaUrl(currentConfig.baseUrl || 'http://localhost:11434');
+        
+        // Also load current prompts if available
+        if (currentConfig.extractionPrompt) {
+          setExtractionPrompt(currentConfig.extractionPrompt);
+        }
+        if (currentConfig.systemPrompt) {
+          setSystemPrompt(currentConfig.systemPrompt);
+        }
       } catch (error) {
         console.error('Error loading settings:', error);
       }
@@ -136,8 +147,9 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
       ollamaService.setBaseUrl(ollamaUrl);
       ollamaService.setDefaultModel('llama3.2'); // Hard-coded to always use llama3.2
       
-      // Store extraction prompts (in a real app, you'd save these to storage)
-      // This would update a method in OllamaService to use these custom prompts
+      // Update the prompts in the service
+      ollamaService.setExtractionPrompt(extractionPrompt);
+      ollamaService.setSystemPrompt(systemPrompt);
       
       // Update PDF processor settings
       pdfProcessor.setUseAI(true); // Always use AI
@@ -163,7 +175,10 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
           onPress: () => {
             setExtractionPrompt(
               `Extract the following information from the text into a JSON object:
-- insurance: Patient's insurance provider
+- patientName: Patient's full name
+- patientDOB: Patient's date of birth
+- primaryInsurance: Patient's primary insurance provider
+- secondaryInsurance: Patient's secondary insurance provider (if any)
 - location: Treatment or facility location
 - dx: Diagnosis (Dx)
 - pcp: Primary Care Provider (PCP)
@@ -371,11 +386,12 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
             textAlignVertical="top"
           />
           
-          <Text style={styles.settingDescription}>
-            These prompts control how the AI extracts information from medical documents.
-            The main extraction prompt defines which fields to extract, while the system
-            context provides general guidance to the AI.
-          </Text>
+          {/* Add separator and more spacing before description */}
+          <View style={styles.descriptionContainer}>
+            <Text style={styles.settingDescription}>
+              These prompts control how the AI extracts information from medical documents.
+            </Text>
+          </View>
         </Animated.View>
         
         <Animated.View
@@ -426,7 +442,7 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
                 The following fields are required for the application to function properly:
               </Text>
               <Text style={styles.codeBlock}>
-                insurance, location, dx, pcp, dc, wounds, antibiotics, cardiacDrips, labs, faceToFace, history, mentalHealthState, additionalComments
+                patientName, patientDOB, primaryInsurance, secondaryInsurance, location, dx, pcp, dc, wounds, antibiotics, cardiacDrips, labs, faceToFace, history, mentalHealthState, additionalComments
               </Text>
               
               <Text style={styles.modalSubtitle}>System Context</Text>
@@ -577,11 +593,18 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.small,
     fontWeight: Typography.weight.medium,
   },
+  // Container for description text to add visual separation
+  descriptionContainer: {
+    marginTop: Spacing.large,
+    paddingTop: Spacing.medium,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f4f8',
+  },
   settingDescription: {
     fontSize: Typography.size.small,
     color: Colors.gray,
     lineHeight: Typography.lineHeight.normal,
-    marginTop: Spacing.small,
+    marginBottom: Spacing.small,
   },
   input: {
     backgroundColor: '#f8fafc',

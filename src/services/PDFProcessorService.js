@@ -17,7 +17,7 @@ class PDFProcessorService {
     // Use the parallel text extraction service for improved performance
     this.textExtractionService = ParallelPDFTextExtractionService.getInstance();
     
-    this.formExtractor = MedicalFormExtractor.getInstance();
+    // Remove reference to MedicalFormExtractor
     this.referenceService = DocumentReferenceService.getInstance();
     this.ollamaService = OllamaService.getInstance();
     this.useAI = true;
@@ -36,7 +36,7 @@ class PDFProcessorService {
    */
   setUseAI(useAI) {
     this.useAI = useAI;
-    this.formExtractor.setUseAI(useAI);
+    // Remove reference to formExtractor
   }
   
   /**
@@ -45,8 +45,7 @@ class PDFProcessorService {
   configureOllama(baseUrl, model) {
     this.ollamaService.setBaseUrl(baseUrl);
     this.ollamaService.setDefaultModel(model);
-    // Pass configuration to form extractor
-    this.formExtractor.setUseAI(this.useAI);
+    // Remove reference to formExtractor
   }
   
   /**
@@ -93,9 +92,27 @@ class PDFProcessorService {
       const id = Date.now().toString();
       const date = new Date().toISOString().split('T')[0];
       
-      // Extract form data using the form extractor service
+      // Extract form data - simplified since MedicalFormExtractor is not available
       const extractedText = extractionResult.text || '';
-      const formData = await this.formExtractor.extractFormData(extractedText, id);
+      
+      // Create a simple formData object with empty placeholders
+      const formData = {
+        extractionMethod: 'basic',
+        extractionDate: new Date().toISOString(),
+        insurance: '',
+        location: '',
+        dx: '',
+        pcp: '',
+        dc: '',
+        wounds: '',
+        antibiotics: '',
+        cardiacDrips: '',
+        labs: '',
+        faceToFace: '',
+        history: '',
+        mentalHealthState: '',
+        additionalComments: ''
+      };
       
       // Process document for references
       const references = this.referenceService.processDocument(id, extractedText);
@@ -264,7 +281,8 @@ class PDFProcessorService {
   getFieldReference(documentId, fieldName) {
     const document = this.documentsCache.get(documentId);
     if (document && document.formData) {
-      return this.formExtractor.getFieldReference(document.formData, fieldName);
+      // Simplified reference retrieval since formExtractor is not available
+      return null;
     }
     return null;
   }

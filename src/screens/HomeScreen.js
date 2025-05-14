@@ -18,6 +18,14 @@ import PDFProcessorService from '../services/PDFProcessorService';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../styles';
 import * as Animations from '../animations';
 
+// Import icons from Expo vector icons
+import { 
+  MaterialIcons, 
+  FontAwesome5, 
+  Ionicons, 
+  MaterialCommunityIcons 
+} from '@expo/vector-icons';
+
 const HomeScreen = () => {
   const navigation = useNavigation();
   const [loading, setLoading] = useState(false);
@@ -80,10 +88,14 @@ const HomeScreen = () => {
                 </Text>
               </View>
               
-              {/* Logo or icon placeholder */}
+              {/* Logo from assets */}
               <View style={styles.logoContainer}>
                 <View style={styles.logo}>
-                  <Text style={styles.logoText}>MR</Text>
+                  <Image 
+                    source={require('../assets/icon.png')} 
+                    style={styles.logoImage}
+                    resizeMode="contain"
+                  />
                 </View>
               </View>
             </View>
@@ -112,7 +124,7 @@ const HomeScreen = () => {
             <View style={styles.documentWorkflow}>
               <View style={styles.workflowStep}>
                 <View style={[styles.stepIcon, styles.uploadIcon]}>
-                  <View style={styles.uploadArrow} />
+                  <MaterialIcons name="file-upload" size={24} color={Colors.primary} />
                 </View>
                 <Text style={styles.stepText}>Upload</Text>
               </View>
@@ -121,7 +133,7 @@ const HomeScreen = () => {
               
               <View style={styles.workflowStep}>
                 <View style={[styles.stepIcon, styles.reviewIcon]}>
-                  <View style={styles.checkmark} />
+                  <MaterialIcons name="rate-review" size={24} color={Colors.secondary} />
                 </View>
                 <Text style={styles.stepText}>Review</Text>
               </View>
@@ -130,7 +142,7 @@ const HomeScreen = () => {
               
               <View style={styles.workflowStep}>
                 <View style={[styles.stepIcon, styles.pdfIcon]}>
-                  <View style={styles.document} />
+                  <FontAwesome5 name="file-pdf" size={22} color={Colors.accent} />
                 </View>
                 <Text style={styles.stepText}>Report</Text>
               </View>
@@ -162,7 +174,7 @@ const HomeScreen = () => {
                 onPress={() => navigation.navigate('DocumentUpload')}
               >
                 <View style={[styles.actionIcon, styles.actionUploadIcon]}>
-                  <View style={styles.actionUploadArrow} />
+                  <Ionicons name="document-text-outline" size={28} color={Colors.primary} />
                 </View>
                 <Text style={styles.actionLabel}>Upload & Review</Text>
               </TouchableOpacity>
@@ -172,8 +184,7 @@ const HomeScreen = () => {
                 onPress={() => navigation.navigate('Settings')}
               >
                 <View style={[styles.actionIcon, styles.actionSettingsIcon]}>
-                  <View style={styles.gearOuter} />
-                  <View style={styles.gearInner} />
+                  <Ionicons name="settings-outline" size={28} color={Colors.accent} />
                 </View>
                 <Text style={styles.actionLabel}>Settings</Text>
               </TouchableOpacity>
@@ -191,12 +202,20 @@ const HomeScreen = () => {
             ]}
           >
             <Text style={styles.systemInfoTitle}>About MedRec</Text>
-            <Text style={styles.systemInfoText}>
-              MedRec simplifies the clinical document review process by extracting key medical information for verification by healthcare professionals.
-            </Text>
-            <Text style={styles.systemInfoText}>
-              The system uses advanced OCR and AI to identify important clinical data points, supporting efficient and accurate medical record processing.
-            </Text>
+            
+            <View style={styles.infoRow}>
+              <MaterialCommunityIcons name="text-recognition" size={20} color={Colors.primary} style={styles.infoIcon} />
+              <Text style={styles.systemInfoText}>
+                MedRec simplifies the clinical document review process by extracting key medical information for verification by healthcare professionals.
+              </Text>
+            </View>
+            
+            <View style={styles.infoRow}>
+              <MaterialCommunityIcons name="brain" size={20} color={Colors.primary} style={styles.infoIcon} />
+              <Text style={styles.systemInfoText}>
+                The system uses advanced OCR and AI to identify important clinical data points, supporting efficient and accurate medical record processing.
+              </Text>
+            </View>
           </Animated.View>
         </ScrollView>
       </SafeAreaView>
@@ -243,22 +262,23 @@ const styles = StyleSheet.create({
     color: Colors.gray,
   },
   logoContainer: {
-    marginLeft: Spacing.medium,
-  },
-  logo: {
-    width: 50,
-    height: 50,
-    borderRadius: 12,
-    backgroundColor: Colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    ...Shadows.medium,
-  },
-  logoText: {
-    color: Colors.white,
-    fontSize: Typography.size.large,
-    fontWeight: Typography.weight.bold,
-  },
+  marginLeft: Spacing.medium,
+},
+logo: {
+  width: 50,
+  height: 50,
+  borderRadius: 12,
+  backgroundColor: Colors.white,
+  justifyContent: 'center',
+  alignItems: 'center',
+  padding: 6, // Add padding inside the container
+  ...Shadows.medium,
+  overflow: 'hidden',
+},
+logoImage: {
+  width: '100%',  // This will respect the padding
+  height: '100%', // This will respect the padding
+},
   mainActionCard: {
     backgroundColor: Colors.white,
     borderRadius: BorderRadius.large,
@@ -319,33 +339,6 @@ const styles = StyleSheet.create({
   pdfIcon: {
     backgroundColor: '#fbeae9', // Light red
   },
-  uploadArrow: {
-    width: 0,
-    height: 0,
-    backgroundColor: 'transparent',
-    borderStyle: 'solid',
-    borderLeftWidth: 8,
-    borderRightWidth: 8,
-    borderBottomWidth: 12,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderBottomColor: Colors.primary,
-  },
-  checkmark: {
-    width: 12,
-    height: 6,
-    borderLeftWidth: 2,
-    borderBottomWidth: 2,
-    borderColor: Colors.secondary,
-    transform: [{ rotate: '-45deg' }, { translateY: -2 }],
-  },
-  document: {
-    width: 14,
-    height: 18,
-    borderWidth: 2,
-    borderColor: Colors.accent,
-    borderRadius: 1,
-  },
   stepText: {
     fontSize: Typography.size.small,
     fontWeight: Typography.weight.medium,
@@ -404,33 +397,6 @@ const styles = StyleSheet.create({
   actionSettingsIcon: {
     backgroundColor: '#fbeae9', // Light red
   },
-  actionUploadArrow: {
-    width: 0,
-    height: 0,
-    backgroundColor: 'transparent',
-    borderStyle: 'solid',
-    borderLeftWidth: 8,
-    borderRightWidth: 8,
-    borderBottomWidth: 12,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderBottomColor: Colors.primary,
-  },
-  gearOuter: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    borderColor: Colors.accent,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  gearInner: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: Colors.accent,
-  },
   actionLabel: {
     fontSize: Typography.size.small,
     fontWeight: Typography.weight.medium,
@@ -448,10 +414,18 @@ const styles = StyleSheet.create({
     color: Colors.black,
     marginBottom: Spacing.medium,
   },
+  infoRow: {
+    flexDirection: 'row',
+    marginBottom: Spacing.medium,
+  },
+  infoIcon: {
+    marginRight: Spacing.small,
+    marginTop: 2,
+  },
   systemInfoText: {
+    flex: 1,
     fontSize: Typography.size.small,
     color: Colors.gray,
-    marginBottom: Spacing.medium,
     lineHeight: 20,
   },
 });

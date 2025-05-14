@@ -10,6 +10,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import HomeScreen from '../screens/HomeScreen';
 import DocumentUploadScreen from '../screens/DocumentUploadScreen';
 import DocumentReviewScreen from '../screens/DocumentReviewScreen';
+import PreviewPDFScreen from '../screens/PreviewPDFScreen'; // Fixed import
 import SettingsScreen from '../screens/SettingsScreen';
 
 const Stack = createStackNavigator();
@@ -83,7 +84,7 @@ const AppNavigator = () => {
         {/* PDF generation and preview */}
         <Stack.Screen 
           name="PDFPreview" 
-          component={PDFPreviewScreen}
+          component={PreviewPDFScreen} // Fixed component reference
           options={{ 
             title: 'Clinical Report',
             // Slide up animation for report preview
