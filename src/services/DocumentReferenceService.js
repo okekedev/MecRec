@@ -1,7 +1,5 @@
 /**
  * Document Reference Service for tracking sources of information in documents
- * This service helps identify and track the origins of extracted information
- * Used for providing source references in AI responses
  */
 class DocumentReferenceService {
   static instance;
@@ -25,6 +23,11 @@ class DocumentReferenceService {
    * @returns {Object} Reference metadata
    */
   processDocument(documentId, documentText) {
+    // Skip if text is empty
+    if (!documentText || documentText.trim() === '') {
+      return { documentId, totalParagraphs: 0, paragraphs: [] };
+    }
+    
     // Split document into paragraphs/sections
     const paragraphs = this.splitIntoParagraphs(documentText);
     
@@ -61,34 +64,6 @@ class DocumentReferenceService {
   splitIntoParagraphs(text) {
     // First try to split by double newlines (paragraphs)
     let paragraphs = text.split(/\n\s*\n/);
-    
-    // If that gives us too few or too many sections, try different approaches
-    if (paragraphs.length <= 1) {
-      // Try single newlines
-      paragraphs = text.split(/\n/);
-    } else if (paragraphs.length > 30) {
-      // Too many paragraphs, try to merge some
-      const mergedParagraphs = [];
-      let currentSection = '';
-      
-      for (const para of paragraphs) {
-        // If paragraph is very short, merge with previous
-        if (para.length < 20 && currentSection) {
-          currentSection += '\n\n' + para;
-        } else if (currentSection) {
-          mergedParagraphs.push(currentSection);
-          currentSection = para;
-        } else {
-          currentSection = para;
-        }
-      }
-      
-      if (currentSection) {
-        mergedParagraphs.push(currentSection);
-      }
-      
-      paragraphs = mergedParagraphs;
-    }
     
     // Filter out empty paragraphs and trim
     return paragraphs

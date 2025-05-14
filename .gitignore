@@ -21,7 +21,8 @@ DerivedData
 *.ipa
 *.xcuserstate
 **/.xcode.env.local
-
+# Build outputs
+public/
 # Android/IntelliJ
 #
 build/
@@ -55,7 +56,7 @@ yarn-error.log
 
 # Bundle artifact
 *.jsbundle
-
+.expo/
 # Ruby / CocoaPods
 **/Pods/
 /vendor/bundle/
@@ -66,6 +67,21 @@ yarn-error.log
 # testing
 /coverage
 
+# Web build outputs
+web-build/
+dist/
+
+# Caches
+.cache/
+.webpack/
+
+# Tesseract temporary data
+.tesseract/
+
+# PDF.js worker files - ALLOW these files to be included in git
+# !public/pdf.worker.min.js 
+# !public/pdf.worker.js
+
 # Yarn
 .yarn/*
 !.yarn/patches
@@ -73,3 +89,22 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Temporary fix files
+crypto-polyfill.js
+fix-uuid-warning.sh
+fix-crypto.sh
+fix-all.sh
+
+# Editor directories and files
+.vscode/
+.idea/
+*.sw*
+*.bak

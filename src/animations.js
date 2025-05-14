@@ -4,14 +4,14 @@
 import { Animated, Easing, Platform } from 'react-native';
 
 // Standard durations for consistency
-const Durations = {
+export const Durations = {
   short: 150,
   medium: 300,
   long: 500,
 };
 
 // Standard easing functions
-const Easings = {
+export const Easings = {
   standard: Easing.bezier(0.4, 0.0, 0.2, 1), // Material Design standard easing
   accelerate: Easing.bezier(0.4, 0.0, 1.0, 1.0), // For elements exiting the screen
   decelerate: Easing.bezier(0.0, 0.0, 0.2, 1.0), // For elements entering the screen

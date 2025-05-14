@@ -1,9 +1,15 @@
-import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Dimensions } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, StyleSheet, Dimensions, Text, ActivityIndicator } from 'react-native';
+import * as pdfjs from 'pdfjs-dist/legacy/build/pdf';
+
+// Define the worker source for web
+if (typeof window !== 'undefined' && 'Worker' in window) {
+  pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@2.16.105/legacy/build/pdf.worker.min.js';
+}
 
 /**
- * Web-only PDF Viewer Component
- * Uses iframe to display PDFs and supports taking screenshots of PDF frames
+ * Enhanced PDF Viewer Component
+ * Uses canvas to display PDFs and supports taking screenshots for OCR
  */
 const PDFViewer = ({
   source,
@@ -14,79 +20,220 @@ const PDFViewer = ({
   onScreenshot
 }) => {
   const containerRef = useRef(null);
-  const iframeRef = useRef(null);
+  const [loading, setLoading] = useState(true);
+  const [numPages, setNumPages] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
   
   useEffect(() => {
     // Only run this code in web environment
     if (typeof window !== 'undefined' && window.document) {
-      // Simulate initial loading events
-      setTimeout(() => {
-        if (onLoadComplete) {
-          onLoadComplete(5); // Simulate 5 pages by default
-        }
-        
-        if (onPageChanged) {
-          onPageChanged(1);
-        }
-      }, 1000);
-      
-      // If we have a container reference, try to attach an iframe
-      if (containerRef.current) {
+      const loadPDF = async () => {
         try {
-          // Get the DOM node
-          const domNode = containerRef.current;
+          setLoading(true);
           
-          // Create an iframe
-          const iframe = document.createElement('iframe');
-          iframe.src = source.uri;
-          iframe.style.width = '100%';
-          iframe.style.height = '100%';
-          iframe.style.border = 'none';
+          // Load the PDF document directly using PDF.js (already imported)
+          const loadingTask = pdfjs.getDocument(source.uri);
+          const pdf = await loadingTask.promise;
           
-          // Add event listeners for iframe loaded
-          iframe.onload = () => {
-            console.log('PDF iframe loaded');
-            
-            // If we need a screenshot capability for OCR
-            if (onScreenshot) {
-              setTimeout(() => {
-                try {
-                  captureIframeScreenshot(iframe).then(imageDataUrl => {
-                    console.log('Captured PDF screenshot for OCR');
-                    onScreenshot(imageDataUrl);
-                  });
-                } catch (e) {
-                  console.error('Error capturing PDF screenshot:', e);
-                }
-              }, 2000); // Give the PDF time to render
-            }
-          };
+          // Get the number of pages
+          const pageCount = pdf.numPages;
+          setNumPages(pageCount);
           
-          // Clear any existing content
-          while (domNode.firstChild) {
-            domNode.removeChild(domNode.firstChild);
+          if (onLoadComplete) {
+            onLoadComplete(pageCount);
           }
           
-          // Add the iframe directly to the container
-          domNode.appendChild(iframe);
-          iframeRef.current = iframe;
+          // Get the first page
+          const page = await pdf.getPage(1);
           
-          // Success message
-          console.log('PDF iframe added to container');
+          // Render the page to a canvas
+          const viewport = page.getViewport({ scale: 1.0 });
+          
+          // If we have a container reference, create a canvas
+          if (containerRef.current) {
+            try {
+              // Get the DOM node
+              const domNode = containerRef.current;
+              
+              // Clear any existing content
+              while (domNode.firstChild) {
+                domNode.removeChild(domNode.firstChild);
+              }
+              
+              // Create a canvas element
+              const canvas = document.createElement('canvas');
+              const context = canvas.getContext('2d');
+              
+              // Set dimensions to match viewport
+              canvas.width = viewport.width;
+              canvas.height = viewport.height;
+              canvas.style.width = '100%';
+              canvas.style.height = '100%';
+              canvas.style.border = 'none';
+              
+              // Add the canvas to the container
+              domNode.appendChild(canvas);
+              
+              // Render the PDF page to the canvas
+              await page.render({
+                canvasContext: context,
+                viewport: viewport
+              }).promise;
+              
+              console.log('PDF page rendered to canvas');
+              
+              // Set current page
+              setCurrentPage(1);
+              if (onPageChanged) {
+                onPageChanged(1);
+              }
+              
+              // If we need a screenshot capability for OCR
+              if (onScreenshot) {
+                // Take a screenshot of the canvas
+                const imageDataUrl = canvas.toDataURL('image/png');
+                console.log('Captured PDF screenshot for OCR');
+                onScreenshot(imageDataUrl);
+              }
+              
+              setLoading(false);
+              
+              // Add page navigation controls if more than one page
+              if (pageCount > 1) {
+                // Create navigation buttons
+                const navContainer = document.createElement('div');
+                navContainer.style.position = 'absolute';
+                navContainer.style.bottom = '10px';
+                navContainer.style.left = '0';
+                navContainer.style.right = '0';
+                navContainer.style.display = 'flex';
+                navContainer.style.justifyContent = 'center';
+                navContainer.style.gap = '10px';
+                navContainer.style.padding = '5px';
+                
+                // Previous button
+                const prevButton = document.createElement('button');
+                prevButton.textContent = 'Prev';
+                prevButton.style.padding = '5px 10px';
+                prevButton.style.backgroundColor = '#3498db';
+                prevButton.style.color = 'white';
+                prevButton.style.border = 'none';
+                prevButton.style.borderRadius = '4px';
+                prevButton.style.cursor = 'pointer';
+                prevButton.disabled = true; // Disabled on first page
+                
+                // Next button
+                const nextButton = document.createElement('button');
+                nextButton.textContent = 'Next';
+                nextButton.style.padding = '5px 10px';
+                nextButton.style.backgroundColor = '#3498db';
+                nextButton.style.color = 'white';
+                nextButton.style.border = 'none';
+                nextButton.style.borderRadius = '4px';
+                nextButton.style.cursor = 'pointer';
+                
+                // Page indicator
+                const pageIndicator = document.createElement('div');
+                pageIndicator.textContent = `Page 1 of ${pageCount}`;
+                pageIndicator.style.display = 'flex';
+                pageIndicator.style.alignItems = 'center';
+                pageIndicator.style.color = '#333';
+                
+                // Function to change page
+                const changePage = async (pageNum) => {
+                  try {
+                    // Update current page
+                    setCurrentPage(pageNum);
+                    if (onPageChanged) {
+                      onPageChanged(pageNum);
+                    }
+                    
+                    // Update button states
+                    prevButton.disabled = pageNum === 1;
+                    nextButton.disabled = pageNum === pageCount;
+                    
+                    // Update page indicator
+                    pageIndicator.textContent = `Page ${pageNum} of ${pageCount}`;
+                    
+                    // Get the page
+                    const page = await pdf.getPage(pageNum);
+                    
+                    // Render the page to canvas
+                    const viewport = page.getViewport({ scale: 1.0 });
+                    
+                    // Update canvas dimensions if needed
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height;
+                    
+                    // Clear canvas
+                    context.clearRect(0, 0, canvas.width, canvas.height);
+                    
+                    // Render to canvas
+                    await page.render({
+                      canvasContext: context,
+                      viewport: viewport
+                    }).promise;
+                    
+                    // If we need a screenshot for OCR
+                    if (onScreenshot) {
+                      const imageDataUrl = canvas.toDataURL('image/png');
+                      onScreenshot(imageDataUrl, pageNum);
+                    }
+                  } catch (error) {
+                    console.error('Error changing page:', error);
+                  }
+                };
+                
+                // Add click handlers
+                prevButton.onclick = async () => {
+                  if (currentPage > 1) {
+                    const newPage = currentPage - 1;
+                    await changePage(newPage);
+                  }
+                };
+                
+                nextButton.onclick = async () => {
+                  if (currentPage < pageCount) {
+                    const newPage = currentPage + 1;
+                    await changePage(newPage);
+                  }
+                };
+                
+                // Add buttons to container
+                navContainer.appendChild(prevButton);
+                navContainer.appendChild(pageIndicator);
+                navContainer.appendChild(nextButton);
+                
+                // Add container to DOM
+                domNode.appendChild(navContainer);
+              }
+            } catch (error) {
+              console.error('Error setting up PDF canvas:', error);
+              setLoading(false);
+              if (onError) {
+                onError(error);
+              }
+            }
+          }
         } catch (error) {
-          console.error('Error setting up PDF iframe:', error);
+          console.error('Error loading PDF:', error);
+          setLoading(false);
           if (onError) {
             onError(error);
           }
         }
-      }
+      };
+      
+      loadPDF();
     }
     
     // Return cleanup function
     return () => {
-      if (containerRef.current && iframeRef.current) {
+      if (containerRef.current) {
         try {
-          containerRef.current.removeChild(iframeRef.current);
+          while (containerRef.current.firstChild) {
+            containerRef.current.removeChild(containerRef.current.firstChild);
+          }
         } catch (e) {
           // Ignore cleanup errors
         }
@@ -94,51 +241,15 @@ const PDFViewer = ({
     };
   }, [source.uri, onLoadComplete, onPageChanged, onError, onScreenshot]);
   
-  /**
-   * Capture screenshot of iframe content for OCR processing
-   */
-  const captureIframeScreenshot = async (iframe) => {
-    return new Promise((resolve, reject) => {
-      try {
-        // Create a canvas element
-        const canvas = document.createElement('canvas');
-        
-        // Set dimensions to match iframe content
-        canvas.width = iframe.clientWidth;
-        canvas.height = iframe.clientHeight;
-        
-        // Get the canvas context and draw the iframe content
-        const ctx = canvas.getContext('2d');
-        
-        // Create a new image and set its source to the iframe
-        const img = new Image();
-        
-        // Use html2canvas or similar library if available
-        // For this simple implementation, we'll try to draw the iframe directly
-        // Note: Due to security restrictions, this may not work for cross-origin PDFs
-        
-        // Since direct drawing is likely to fail due to CORS, we'll simulate a placeholder image
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = '#000000';
-        ctx.font = '20px Arial';
-        ctx.fillText('PDF Content for OCR', 50, 50);
-        
-        // Convert canvas to data URL
-        const dataUrl = canvas.toDataURL('image/png');
-        resolve(dataUrl);
-      } catch (e) {
-        console.error('Error capturing iframe:', e);
-        reject(e);
-      }
-    });
-  };
-  
   return (
-    <View 
-      ref={containerRef} 
-      style={[styles.container, style]} 
-    />
+    <View ref={containerRef} style={[styles.container, style]}>
+      {loading && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#3498db" />
+          <Text style={styles.loadingText}>Loading PDF...</Text>
+        </View>
+      )}
+    </View>
   );
 };
 
@@ -147,6 +258,22 @@ const styles = StyleSheet.create({
     flex: 1,
     width: Dimensions.get('window').width,
     backgroundColor: '#f5f5f7',
+    position: 'relative',
+  },
+  loadingContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#555',
   }
 });
 

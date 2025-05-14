@@ -1,15 +1,22 @@
 # MedRec PDF Processor
 
-A React Native application for processing medical referral documents. This app allows you to upload and view PDF documents, extract text (via direct methods and OCR), and ask questions about the document using an AI-powered chat interface.
+A React Native application for processing medical referral documents with parallel OCR capabilities. This app allows you to upload and view PDF documents, extract text (via direct methods and OCR), and ask questions about the document using an AI-powered chat interface.
 
 ## Features
 
 - Upload and process PDF documents
-- Extract text using both direct extraction and OCR
+- Extract text using both direct extraction and parallel OCR
 - Generate embeddings for semantic search
 - AI-powered chat interface for document questions
 - Form extraction for medical referral data
 - Cross-platform: works on Android, iOS, and Web
+
+## Latest Updates
+
+- Added parallel OCR processing for significantly faster text extraction
+- Optimized PDF processing with multiple Tesseract workers
+- Improved UI responsiveness during OCR processing
+- Fixed compatibility issues with PDF.js and Tesseract.js
 
 ## Project Structure
 
@@ -84,8 +91,6 @@ npm install webpack webpack-cli webpack-dev-server babel-loader html-webpack-plu
 npm run web
 ```
 
-Note: The full React Native Web version may encounter compatibility issues due to the complex interaction of React Native modules with the web platform.
-
 ## Web Compatibility
 
 The application has been designed to work on web browsers with platform-specific implementations for:
@@ -93,12 +98,25 @@ The application has been designed to work on web browsers with platform-specific
 - PDF viewing
 - Document picking
 - File system operations
+- OCR processing with Tesseract.js
+- Parallel processing for improved performance
 
-Due to web platform limitations, some features may work differently on web:
-- Document storage is temporary (files aren't saved between sessions)
-- PDF manipulation capabilities are more limited
-- Native device features aren't accessible
+### Performance Notes
+
+- The parallel OCR implementation significantly improves processing time for multi-page documents
+- For optimal performance, the app creates multiple Tesseract workers (default: 3)
+- Memory usage increases with parallel processing, but the speed improvement is substantial
+- Configure the `maxWorkers` value in `ParallelPDFTextExtractionService.js` to adjust the balance between speed and resource usage
+
+## Troubleshooting
+
+If you encounter issues with PDF.js or Tesseract.js, try these solutions:
+
+1. **PDF.js Worker Issues**: Update the worker source URL in `PDFTextExtractionService.js` if needed
+2. **Tesseract.js Worker Issues**: Adjust the maxWorkers setting or try switching back to sequential processing
+3. **Memory Issues**: Reduce maxWorkers if your device runs out of memory during processing
+4. **Web Bundling Issues**: Run `npm start -- --clear-cache` to clear bundler cache
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the LICENSE file for details
