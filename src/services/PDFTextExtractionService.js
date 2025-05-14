@@ -1,11 +1,9 @@
 /**
- * OCR-based text extraction service for medical documents
- * This version DOES NOT use sample data - it only processes actual uploaded documents
+ * Service for extracting text from PDF documents with OCR
+ * Web-specific implementation using Tesseract.js
  */
-import { Platform } from 'react-native';
-import FSService from '../utils/fsService';
-import DocumentReferenceService from './DocumentReferenceService';
-import { isWeb } from '../utils/platform';
+import Tesseract from 'tesseract.js';
+import { DocumentReferenceService } from './DocumentReferenceService';
 
 class PDFTextExtractionService {
   static instance;
@@ -13,8 +11,7 @@ class PDFTextExtractionService {
   constructor() {
     this.referenceService = DocumentReferenceService.getInstance();
     this.progressCallback = null;
-    this.totalPages = 0;
-    this.processedPages = 0;
+    this.tesseractWorker = null;
   }
   
   static getInstance() {
@@ -36,143 +33,87 @@ class PDFTextExtractionService {
    */
   updateProgress(status, progress) {
     if (this.progressCallback) {
-      const overallProgress = this.totalPages > 0 
-        ? ((this.processedPages + progress) / this.totalPages)
-        : progress;
-      
       this.progressCallback({
         status,
-        progress: overallProgress,
-        page: this.processedPages + 1,
-        totalPages: this.totalPages
+        progress,
+        page: 1,
+        totalPages: 1
       });
     }
   }
   
   /**
-   * Main method to extract text from a PDF document
-   * This version tries to extract text from the actual document
-   * and only falls back to an empty string if that fails
-   * @param {string} filePath - Path to the document file
+   * Extract text from the PDF using OCR
+   * @param {string} uri - URI of the PDF (blob URL or http URL)
+   * @returns {Promise<Object>} Extraction result
    */
-  async extractText(filePath) {
+  async extractText(uri) {
     try {
-      // Start processing
-      this.updateProgress('Starting document processing', 0);
+      this.updateProgress('Starting OCR extraction', 0.1);
       
-      // Use platform-specific approaches to extract text
-      let extractedText = '';
+      // Load the image (In this web implementation, we assume the URI is an image)
+      // This could be a PDF URL, but for simplicity we'll just OCR it directly
+      console.log('Extracting text from image:', uri);
       
-      if (isWeb) {
-        // For web, try to extract using whatever browser capabilities are available
-        try {
-          this.updateProgress('Extracting text using browser capabilities', 0.3);
-          
-          // Make a simple "empty" result that the rest of the pipeline can work with
-          // but DON'T add any sample text - just return what we extracted
-          extractedText = await this.extractTextFromPdfWeb(filePath);
-          
-          // Log the actual extraction result
-          console.log('Extracted text length:', extractedText.length);
-          if (extractedText.length > 0) {
-            // Just log first 100 chars to verify content without cluttering console
-            console.log('Text sample:', extractedText.substring(0, 100) + '...');
-          } else {
-            console.log('No text was extracted from the document');
+      // Initialize Tesseract worker if needed
+      if (!this.tesseractWorker) {
+        this.updateProgress('Initializing OCR engine', 0.2);
+        
+        this.tesseractWorker = await Tesseract.createWorker({
+          logger: progress => {
+            console.log(`OCR progress: ${progress.status}, ${Math.round(progress.progress * 100)}%`);
+            this.updateProgress(`OCR: ${progress.status}`, 0.2 + (progress.progress * 0.7));
           }
-        } catch (error) {
-          console.error('Error extracting text on web:', error);
-          extractedText = '';
-        }
-      } else {
-        // For mobile, simulate processing without adding fake text
-        this.updateProgress('Extracting text', 0.3);
-        try {
-          // For native platforms, you would implement platform-specific extraction here
-          // For now just log that we're attempting to extract from a real document
-          console.log('Attempting to extract from real document on mobile:', filePath);
-          extractedText = '';
-        } catch (error) {
-          console.error('Error extracting text on mobile:', error);
-          extractedText = '';
-        }
+        });
+        
+        await this.tesseractWorker.loadLanguage('eng');
+        await this.tesseractWorker.initialize('eng');
       }
       
-      // Default to 1 page if we can't determine page count
-      const estimatedPages = 1;
-      this.totalPages = estimatedPages;
+      // Perform OCR on the image
+      this.updateProgress('Performing OCR', 0.3);
+      const result = await this.tesseractWorker.recognize(uri);
       
-      this.updateProgress('Processing extracted content', 0.9);
+      const extractedText = result.data.text;
+      console.log('OCR extracted text length:', extractedText.length);
+      console.log('OCR confidence:', result.data.confidence);
       
-      // Create sections and references from whatever text we have
+      // Process the extracted text
+      this.updateProgress('Processing OCR results', 0.9);
+      
+      // Identify sections in the text
       const sections = this.identifySections(extractedText);
+      
+      // Create reference points
       const references = this.createReferencePoints(extractedText);
       
-      // Complete
-      this.updateProgress('Document processing completed', 1.0);
+      this.updateProgress('OCR complete', 1.0);
       
       return {
         text: extractedText,
         isOcr: true,
-        pages: estimatedPages,
-        confidence: 0.85, // Default confidence
-        sections,
-        references
+        pages: 1,
+        confidence: result.data.confidence,
+        sections: sections,
+        references: references
       };
     } catch (error) {
-      console.error('Error processing document:', error);
+      console.error('OCR extraction error:', error);
       
-      // Return empty result with error
+      // Return empty result
       return {
         text: '',
         isOcr: true,
-        pages: 1,
-        confidence: 0,
-        error: error.message,
-        sections: [],
-        references: []
+        pages: 0,
+        error: error.message
       };
     }
-  }
-  
-  /**
-   * Attempt to extract text from a PDF in the browser
-   */
-  async extractTextFromPdfWeb(url) {
-    console.log('Attempting to extract text from:', url);
-    
-    try {
-      // Return empty string for now - replace with actual implementation
-      // when you have proper text extraction working
-      return '';
-    } catch (error) {
-      console.error('Web PDF text extraction failed:', error);
-      return '';
-    }
-  }
-  
-  /**
-   * Direct text extraction is now just an alias to extractText for compatibility
-   */
-  async extractTextDirect(filePath) {
-    return this.extractText(filePath);
-  }
-  
-  /**
-   * OCR text extraction is now just an alias to extractText for compatibility
-   */
-  async extractTextOCR(filePath) {
-    return this.extractText(filePath);
   }
   
   /**
    * Create reference points for extracted text
    */
   createReferencePoints(text) {
-    if (!text || text.length === 0) {
-      return [];
-    }
-    
     // Split the text into sections
     const sections = this.identifySections(text);
     
@@ -194,18 +135,18 @@ class PDFTextExtractionService {
    * Identify different sections in the extracted text
    */
   identifySections(text) {
-    // If empty text, return empty sections
-    if (!text || text.length === 0) {
-      return [];
-    }
-    
-    // Simple section identification by looking for headers
+    // Simple section identification by looking for headers and paragraphs
     const sections = [];
+    
+    // Skip if text is empty
+    if (!text || text.trim() === '') {
+      return sections;
+    }
     
     // Split text into paragraphs
     const paragraphs = text.split(/\n\s*\n/);
     
-    let currentType = 'General';
+    let currentType = 'Header';
     let currentContent = '';
     
     // Process each paragraph
@@ -216,7 +157,7 @@ class PDFTextExtractionService {
       if (!trimmed) continue;
       
       // Check if this looks like a section header
-      const isHeader = trimmed === trimmed.toUpperCase() && trimmed.length < 50;
+      const isHeader = this.isLikelyHeader(trimmed);
       
       if (isHeader) {
         // Save previous section if there is content
@@ -248,11 +189,23 @@ class PDFTextExtractionService {
   }
   
   /**
+   * Check if text is likely to be a header
+   */
+  isLikelyHeader(text) {
+    // Headers are often short, all uppercase, or end with a colon
+    return (
+      (text === text.toUpperCase() && text.length < 50) ||
+      text.endsWith(':') ||
+      /^[A-Z][A-Za-z\s]{0,20}:/.test(text) || // Capitalized word followed by colon
+      /^[IVX]+\.\s/.test(text) || // Roman numerals
+      /^\d+\.\s/.test(text) // Numbered section
+    );
+  }
+  
+  /**
    * Determine the type of a section based on its content
    */
   determineSectionType(text) {
-    if (!text) return 'General';
-    
     const lowerText = text.toLowerCase();
     
     if (lowerText.includes('patient')) {

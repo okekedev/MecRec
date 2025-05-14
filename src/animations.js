@@ -1,7 +1,7 @@
 /**
  * Animation utility for creating consistent animations throughout the app
  */
-import { Animated, Easing } from 'react-native';
+import { Animated, Easing, Platform } from 'react-native';
 
 // Standard durations for consistency
 const Durations = {
@@ -19,6 +19,12 @@ const Easings = {
   bounce: Easing.bezier(0.175, 0.885, 0.32, 1.275), // Bouncy effects
 };
 
+// Helper function to create animation config with platform-specific useNativeDriver
+const getAnimationConfig = (config) => ({
+  ...config,
+  useNativeDriver: Platform.OS !== 'web', // Only use native driver on native platforms
+});
+
 /**
  * Creates an opacity animation
  * @param {Animated.Value} value - Animated value to animate
@@ -33,12 +39,11 @@ export const fadeAnimation = (
   duration = Durations.medium,
   easing = Easings.standard
 ) => {
-  return Animated.timing(value, {
+  return Animated.timing(value, getAnimationConfig({
     toValue,
     duration,
     easing,
-    useNativeDriver: true,
-  });
+  }));
 };
 
 /**
@@ -55,12 +60,11 @@ export const translateAnimation = (
   duration = Durations.medium,
   easing = Easings.standard
 ) => {
-  return Animated.timing(value, {
+  return Animated.timing(value, getAnimationConfig({
     toValue,
     duration,
     easing,
-    useNativeDriver: true,
-  });
+  }));
 };
 
 /**
@@ -77,12 +81,11 @@ export const scaleAnimation = (
   duration = Durations.medium,
   easing = Easings.standard
 ) => {
-  return Animated.timing(value, {
+  return Animated.timing(value, getAnimationConfig({
     toValue,
     duration,
     easing,
-    useNativeDriver: true,
-  });
+  }));
 };
 
 /**
@@ -182,12 +185,11 @@ export const zoomOut = (scale, toValue = 0.8, duration = Durations.medium) => {
  * @returns {Animated.CompositeAnimation} Animation object
  */
 export const bounce = (value, toValue = 1, friction = 3) => {
-  return Animated.spring(value, {
+  return Animated.spring(value, getAnimationConfig({
     toValue,
     friction,
     tension: 40,
-    useNativeDriver: true,
-  });
+  }));
 };
 
 /**
@@ -199,18 +201,16 @@ export const bounce = (value, toValue = 1, friction = 3) => {
 export const pulse = (scale, duration = Durations.long) => {
   scale.setValue(1);
   return Animated.sequence([
-    Animated.timing(scale, {
+    Animated.timing(scale, getAnimationConfig({
       toValue: 1.05,
       duration: duration / 2,
       easing: Easings.decelerate,
-      useNativeDriver: true,
-    }),
-    Animated.timing(scale, {
+    })),
+    Animated.timing(scale, getAnimationConfig({
       toValue: 1,
       duration: duration / 2,
       easing: Easings.decelerate,
-      useNativeDriver: true,
-    }),
+    })),
   ]);
 };
 
@@ -224,31 +224,26 @@ export const pulse = (scale, duration = Durations.long) => {
 export const shake = (translateX, intensity = 10, duration = Durations.medium) => {
   translateX.setValue(0);
   return Animated.sequence([
-    Animated.timing(translateX, {
+    Animated.timing(translateX, getAnimationConfig({
       toValue: intensity,
       duration: duration / 5,
-      useNativeDriver: true,
-    }),
-    Animated.timing(translateX, {
+    })),
+    Animated.timing(translateX, getAnimationConfig({
       toValue: -intensity,
       duration: duration / 5,
-      useNativeDriver: true,
-    }),
-    Animated.timing(translateX, {
+    })),
+    Animated.timing(translateX, getAnimationConfig({
       toValue: intensity / 2,
       duration: duration / 5,
-      useNativeDriver: true,
-    }),
-    Animated.timing(translateX, {
+    })),
+    Animated.timing(translateX, getAnimationConfig({
       toValue: -intensity / 2,
       duration: duration / 5,
-      useNativeDriver: true,
-    }),
-    Animated.timing(translateX, {
+    })),
+    Animated.timing(translateX, getAnimationConfig({
       toValue: 0,
       duration: duration / 5,
-      useNativeDriver: true,
-    }),
+    })),
   ]);
 };
 
@@ -288,20 +283,18 @@ export const useFadeIn = (duration = Durations.medium) => {
 export const buttonPressAnimation = (scale) => {
   return {
     onPressIn: () => {
-      Animated.timing(scale, {
+      Animated.timing(scale, getAnimationConfig({
         toValue: 0.95,
         duration: Durations.short,
         easing: Easings.standard,
-        useNativeDriver: true,
-      }).start();
+      })).start();
     },
     onPressOut: () => {
-      Animated.timing(scale, {
+      Animated.timing(scale, getAnimationConfig({
         toValue: 1,
         duration: Durations.short,
         easing: Easings.standard,
-        useNativeDriver: true,
-      }).start();
+      })).start();
     },
   };
 };

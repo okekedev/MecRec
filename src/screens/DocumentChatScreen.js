@@ -1,5 +1,5 @@
 /**
- * Updated DocumentChatScreen with correct reference imports
+ * Updated DocumentChatScreen with reference highlighting capabilities
  */
 import React, { useState, useRef, useEffect } from 'react';
 import {
@@ -16,12 +16,57 @@ import {
   Animated,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import EnhancedHeader from '../components/EnhancedHeader'; // Fixed import path
-import ReferenceView from '../screens/ReferenceView';
+import EnhancedHeader from '../components/EnhancedHeader';
+import ReferencesView from '../components/ReferencesView';
 import ChatService from '../services/ChatService';
 import PDFProcessorService from '../services/PDFProcessorService';
 import { Colors, Typography, Spacing, BorderRadius, Shadows, ZIndex } from '../styles';
 import * as Animations from '../animations';
+
+// Message Item Component to properly handle hooks
+const MessageItem = React.memo(({ item, index, onShowReferences, animateNewMessage, getMessageAnimationValue }) => {
+  const isUser = item.role === 'user';
+  const animationValues = getMessageAnimationValue(index);
+  const hasReferences = !isUser && item.references && item.references.length > 0;
+  
+  // Now useEffect is used within a proper component
+  React.useEffect(() => {
+    if (animationValues) {
+      animateNewMessage(animationValues);
+    }
+  }, [animationValues, animateNewMessage]);
+  
+  return (
+    <TouchableOpacity
+      style={[
+        styles.messageContainer,
+        isUser ? styles.userMessageContainer : styles.aiMessageContainer,
+      ]}
+      activeOpacity={isUser ? 1 : 0.8}
+      onPress={() => !isUser && onShowReferences(item)}
+      disabled={isUser || item.id === 'initial'}
+    >
+      <Text style={[styles.messageText, isUser ? styles.userMessageText : styles.aiMessageText]}>
+        {item.content}
+      </Text>
+      
+      <View style={styles.messageFooter}>
+        <Text style={[styles.timestamp, isUser ? styles.userTimestamp : styles.aiTimestamp]}>
+          {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </Text>
+        
+        {hasReferences && (
+          <TouchableOpacity
+            style={styles.referencesButton}
+            onPress={() => onShowReferences(item)}
+          >
+            <Text style={styles.referencesButtonText}>View Sources</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+});
 
 const DocumentChatScreen = () => {
   const route = useRoute();
@@ -51,8 +96,18 @@ const DocumentChatScreen = () => {
     const loadData = async () => {
       // Start animations
       Animated.parallel([
-        Animations.fadeIn(fadeAnim, 400),
-        Animations.slideInUp(slideAnim, 50, 500),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 400,
+          easing: Animations.Easings.decelerate,
+          useNativeDriver: Platform.OS !== 'web',
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 500,
+          easing: Animations.Easings.decelerate,
+          useNativeDriver: Platform.OS !== 'web',
+        }),
       ]).start();
 
       // Load chat history
@@ -174,74 +229,31 @@ const DocumentChatScreen = () => {
   const animateNewMessage = (animationValues) => {
     if (animationValues) {
       Animated.parallel([
-        Animations.timing(animationValues.opacity, {
+        Animated.timing(animationValues.opacity, {
           toValue: 1,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
-        Animations.timing(animationValues.translateY, {
+        Animated.timing(animationValues.translateY, {
           toValue: 0,
           duration: 300,
-          useNativeDriver: true,
+          useNativeDriver: Platform.OS !== 'web',
         }),
       ]).start();
     }
   };
   
+  // Render function - now uses the MessageItem component
   const renderMessage = ({ item, index }) => {
-    const isUser = item.role === 'user';
-    const animationValues = getMessageAnimationValue(index);
-    const hasReferences = !isUser && item.references && item.references.length > 0;
-    
-    React.useEffect(() => {
-      animateNewMessage(animationValues);
-    }, []);
-    
-    const messageContent = (
-      <TouchableOpacity
-        style={[
-          styles.messageContainer,
-          isUser ? styles.userMessageContainer : styles.aiMessageContainer,
-        ]}
-        activeOpacity={isUser ? 1 : 0.8}
-        onPress={() => !isUser && handleShowReferences(item)}
-        disabled={isUser || item.id === 'initial'}
-      >
-        <Text style={[styles.messageText, isUser ? styles.userMessageText : styles.aiMessageText]}>
-          {item.content}
-        </Text>
-        
-        <View style={styles.messageFooter}>
-          <Text style={[styles.timestamp, isUser ? styles.userTimestamp : styles.aiTimestamp]}>
-            {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </Text>
-          
-          {hasReferences && (
-            <TouchableOpacity
-              style={styles.referencesButton}
-              onPress={() => handleShowReferences(item)}
-            >
-              <Text style={styles.referencesButtonText}>View Sources</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </TouchableOpacity>
+    return (
+      <MessageItem
+        item={item}
+        index={index}
+        onShowReferences={handleShowReferences}
+        animateNewMessage={animateNewMessage}
+        getMessageAnimationValue={getMessageAnimationValue}
+      />
     );
-    
-    if (animationValues) {
-      return (
-        <Animated.View
-          style={{
-            opacity: animationValues.opacity,
-            transform: [{ translateY: animationValues.translateY }],
-          }}
-        >
-          {messageContent}
-        </Animated.View>
-      );
-    }
-    
-    return messageContent;
   };
   
   return (
@@ -306,7 +318,7 @@ const DocumentChatScreen = () => {
           </KeyboardAvoidingView>
         </Animated.View>
         
-        <ReferenceView
+        <ReferencesView
           isVisible={showReferences}
           onClose={() => setShowReferences(false)}
           references={currentReferences}
@@ -318,7 +330,6 @@ const DocumentChatScreen = () => {
   );
 };
 
-// The styles object remains unchanged
 const styles = StyleSheet.create({
   container: {
     flex: 1,
