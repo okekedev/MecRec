@@ -1,5 +1,5 @@
 /**
- * Enhanced Header component with enterprise styling using global styles
+ * EnhancedHeader.js - Modern clinical header component
  */
 import React from 'react';
 import { 
@@ -19,8 +19,8 @@ const EnhancedHeader = ({
   showBackButton = false,
   rightComponent = null,
   onMenuPress = null,
-  backgroundColor = Colors.white,
-  textColor = Colors.black,
+  backgroundColor = '#ffffff',
+  textColor = '#2c3e50',
   elevated = true,
 }) => {
   const navigation = useNavigation();
@@ -67,10 +67,8 @@ const EnhancedHeader = ({
               accessibilityLabel="Menu"
               accessibilityRole="button"
             >
-              <View style={styles.menuIcon}>
-                <View style={styles.menuLine} />
-                <View style={styles.menuLine} />
-                <View style={styles.menuLine} />
+              <View style={styles.logoIcon}>
+                <Text style={styles.logoText}>MR</Text>
               </View>
             </TouchableOpacity>
           )}
@@ -90,6 +88,13 @@ const EnhancedHeader = ({
           {rightComponent}
         </View>
       </View>
+      
+      {/* Modern line indicator */}
+      {elevated && (
+        <View style={styles.headerIndicator}>
+          <View style={styles.headerIndicatorInner} />
+        </View>
+      )}
     </SafeAreaView>
   );
 };
@@ -104,14 +109,14 @@ const styles = StyleSheet.create({
       ios: {
         shadowColor: Colors.black,
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 3,
+        shadowOpacity: 0.08,
+        shadowRadius: 5,
       },
       android: {
         elevation: 4,
       },
       web: {
-        boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+        boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06)',
       },
     }),
   },
@@ -132,30 +137,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: Spacing.small,
+    marginRight: Spacing.medium,
   },
   title: {
     fontSize: Typography.size.large,
     fontWeight: Typography.weight.semibold,
     flex: 1,
   },
-  menuIcon: {
-    width: 24,
-    height: 24,
+  logoIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  menuLine: {
-    width: 20,
-    height: 2,
-    backgroundColor: Colors.black,
-    marginVertical: 2,
-    borderRadius: BorderRadius.small,
+  logoText: {
+    fontSize: Typography.size.small,
+    fontWeight: Typography.weight.bold,
+    color: Colors.white,
   },
   backIcon: {
     width: 24,
@@ -170,6 +175,16 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
     borderColor: Colors.black,
     transform: [{ rotate: '45deg' }, { translateX: 2 }],
+  },
+  headerIndicator: {
+    alignItems: 'center',
+    paddingBottom: 4,
+  },
+  headerIndicatorInner: {
+    width: 40,
+    height: 3,
+    backgroundColor: Colors.primaryLight,
+    borderRadius: 2,
   },
 });
 

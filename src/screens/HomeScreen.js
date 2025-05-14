@@ -1,7 +1,7 @@
 /**
- * Enhanced HomeScreen component with updated UI
+ * HomeScreen.js - Modern clinical dashboard focused on document review
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,85 +10,47 @@ import {
   ScrollView,
   SafeAreaView,
   Animated,
+  Image,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import EnhancedHeader from '../components/EnhancedHeader';
-import AppSideMenu from '../components/AppSideMenu';
-import DocumentCard from '../components/DocumentCard';
 import PDFProcessorService from '../services/PDFProcessorService';
-import { Colors, Typography, Spacing, BorderRadius, Shadows, Layout } from '../styles';
+import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../styles';
 import * as Animations from '../animations';
 
 const HomeScreen = () => {
   const navigation = useNavigation();
-  const [menuVisible, setMenuVisible] = useState(false);
-  const [recentDocuments, setRecentDocuments] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   
   // Animation values
-  const fadeAnim = React.useRef(new Animated.Value(0)).current;
-  const slideAnim = React.useRef(new Animated.Value(50)).current;
-  const statsScale = React.useRef(new Animated.Value(0.9)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+  const cardScale = useRef(new Animated.Value(0.95)).current;
   
-  // Load recent documents
+  // Start animations on component mount
   useEffect(() => {
-    const loadDocuments = async () => {
-      try {
-        setLoading(true);
-        
-        // Get processor service
-        const processorService = PDFProcessorService.getInstance();
-        
-        // Load documents
-        const documents = await processorService.getProcessedDocuments();
-        
-        // Get most recent documents
-        const recent = documents
-          .sort((a, b) => new Date(b.date) - new Date(a.date))
-          .slice(0, 3);
-        
-        setRecentDocuments(recent);
-      } catch (error) {
-        console.error('Error loading documents:', error);
-      } finally {
-        setLoading(false);
-        
-        // Animate in
-        Animated.parallel([
-          Animations.fadeIn(fadeAnim, 400),
-          Animations.slideInUp(slideAnim, 50, 500),
-          Animations.zoomIn(statsScale, 0.9, 600),
-        ]).start();
-      }
-    };
-    
-    loadDocuments();
+    Animated.parallel([
+      Animations.fadeIn(fadeAnim, 500),
+      Animations.slideInUp(slideAnim, 30, 600),
+      Animations.zoomIn(cardScale, 0.95, 700)
+    ]).start();
   }, []);
   
-  // Toggle menu
-  const toggleMenu = () => {
-    setMenuVisible(!menuVisible);
-  };
-  
-  // Metrics data
-  const metricsData = {
-    processed: recentDocuments.length,
-    pendingReview: 0,
-    references: recentDocuments.reduce((total, doc) => total + (doc.references || 0), 0),
-  };
+  // Get the current date for display
+  const currentDate = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
   
   return (
     <View style={styles.container}>
       <EnhancedHeader
-        title="MedRec Dashboard"
-        onMenuPress={toggleMenu}
-      />
-      
-      <AppSideMenu
-        isVisible={menuVisible}
-        onClose={() => setMenuVisible(false)}
-        currentScreen="Home"
-        userName="Dr. Sarah Johnson" // In a real app, this would come from user auth state
+        title="MedRec"
+        backgroundColor="#ffffff"
+        textColor="#2c3e50"
+        elevated={true}
       />
       
       <SafeAreaView style={styles.content}>
@@ -97,7 +59,7 @@ const HomeScreen = () => {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Welcome section */}
+          {/* Welcome section with date */}
           <Animated.View 
             style={[
               styles.welcomeSection,
@@ -107,46 +69,91 @@ const HomeScreen = () => {
               }
             ]}
           >
-            <Text style={styles.welcomeTitle}>
-              Welcome to MedRec
-            </Text>
-            <Text style={styles.welcomeSubtitle}>
-              Medical Referral Document Processor
-            </Text>
+            <View style={styles.welcomeContent}>
+              <View>
+                <Text style={styles.welcomeDate}>{currentDate}</Text>
+                <Text style={styles.welcomeTitle}>
+                  Medical Document Review System
+                </Text>
+                <Text style={styles.welcomeSubtitle}>
+                  Process, review, and generate clinical reports
+                </Text>
+              </View>
+              
+              {/* Logo or icon placeholder */}
+              <View style={styles.logoContainer}>
+                <View style={styles.logo}>
+                  <Text style={styles.logoText}>MR</Text>
+                </View>
+              </View>
+            </View>
           </Animated.View>
           
-          {/* Metrics section */}
+          {/* Main action card */}
           <Animated.View 
             style={[
-              styles.metricsContainer,
+              styles.mainActionCard,
               {
                 opacity: fadeAnim,
-                transform: [{ scale: statsScale }]
+                transform: [{ scale: cardScale }]
               }
             ]}
           >
-            <View style={styles.metricCard}>
-              <Text style={styles.metricValue}>{metricsData.processed}</Text>
-              <Text style={styles.metricLabel}>Documents</Text>
-            </View>
-            
-            <View style={[styles.metricCard, styles.primaryMetricCard]}>
-              <Text style={[styles.metricValue, styles.primaryMetricValue]}>
-                {metricsData.pendingReview}
-              </Text>
-              <Text style={[styles.metricLabel, styles.primaryMetricLabel]}>
-                Pending Review
+            <View style={styles.cardHeader}>
+              <View style={styles.cardTitleContainer}>
+                <View style={styles.cardTitleIcon} />
+                <Text style={styles.cardTitle}>Document Processing</Text>
+              </View>
+              <Text style={styles.cardSubtitle}>
+                Upload and review medical documents
               </Text>
             </View>
             
-            <View style={styles.metricCard}>
-              <Text style={styles.metricValue}>{metricsData.references}</Text>
-              <Text style={styles.metricLabel}>References</Text>
+            <View style={styles.documentWorkflow}>
+              <View style={styles.workflowStep}>
+                <View style={[styles.stepIcon, styles.uploadIcon]}>
+                  <View style={styles.uploadArrow} />
+                </View>
+                <Text style={styles.stepText}>Upload</Text>
+              </View>
+              
+              <View style={styles.stepConnector} />
+              
+              <View style={styles.workflowStep}>
+                <View style={[styles.stepIcon, styles.reviewIcon]}>
+                  <View style={styles.checkmark} />
+                </View>
+                <Text style={styles.stepText}>Review</Text>
+              </View>
+              
+              <View style={styles.stepConnector} />
+              
+              <View style={styles.workflowStep}>
+                <View style={[styles.stepIcon, styles.pdfIcon]}>
+                  <View style={styles.document} />
+                </View>
+                <Text style={styles.stepText}>Report</Text>
+              </View>
             </View>
+            
+            <TouchableOpacity
+              style={styles.beginButton}
+              onPress={() => navigation.navigate('DocumentUpload')}
+            >
+              <Text style={styles.beginButtonText}>Begin Document Review</Text>
+            </TouchableOpacity>
           </Animated.View>
           
-          {/* Actions section */}
-          <View style={styles.actionsSection}>
+          {/* Quick actions */}
+          <Animated.View
+            style={[
+              styles.quickActions,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }]
+              }
+            ]}
+          >
             <Text style={styles.sectionTitle}>Quick Actions</Text>
             
             <View style={styles.actionButtonsContainer}>
@@ -154,87 +161,43 @@ const HomeScreen = () => {
                 style={styles.actionButton}
                 onPress={() => navigation.navigate('DocumentUpload')}
               >
-                <View style={[styles.actionIcon, styles.uploadIcon]}>
-                  <View style={styles.uploadArrow} />
+                <View style={[styles.actionIcon, styles.actionUploadIcon]}>
+                  <View style={styles.actionUploadArrow} />
                 </View>
-                <Text style={styles.actionLabel}>Upload</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={() => navigation.navigate('DocumentList')}
-              >
-                <View style={[styles.actionIcon, styles.documentsIcon]}>
-                  <View style={styles.docSquare} />
-                  <View style={styles.docCorner} />
-                </View>
-                <Text style={styles.actionLabel}>Documents</Text>
+                <Text style={styles.actionLabel}>Upload & Review</Text>
               </TouchableOpacity>
               
               <TouchableOpacity
                 style={styles.actionButton}
                 onPress={() => navigation.navigate('Settings')}
               >
-                <View style={[styles.actionIcon, styles.settingsIcon]}>
+                <View style={[styles.actionIcon, styles.actionSettingsIcon]}>
                   <View style={styles.gearOuter} />
                   <View style={styles.gearInner} />
                 </View>
                 <Text style={styles.actionLabel}>Settings</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </Animated.View>
           
-          {/* Recent documents section */}
-          <View style={styles.recentSection}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Recent Documents</Text>
-              
-              <TouchableOpacity
-                onPress={() => navigation.navigate('DocumentList')}
-              >
-                <Text style={styles.seeAllButton}>See All</Text>
-              </TouchableOpacity>
-            </View>
-            
-            {loading ? (
-              <View style={styles.loadingContainer}>
-                <Text style={styles.loadingText}>Loading documents...</Text>
-              </View>
-            ) : recentDocuments.length > 0 ? (
-              <View style={styles.documentsList}>
-                {recentDocuments.map((document, index) => (
-                  <DocumentCard
-                    key={document.id || index}
-                    document={document}
-                    onPress={() => 
-                      navigation.navigate('DocumentViewer', { 
-                        uri: document.uri,
-                        documentId: document.id
-                      })
-                    }
-                    onLongPress={() => {
-                      // Show document actions menu
-                      // (In a real app, this would show options like delete, share, etc.)
-                    }}
-                  />
-                ))}
-              </View>
-            ) : (
-              <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>
-                  No documents processed yet
-                </Text>
-                <TouchableOpacity
-                  style={styles.emptyButton}
-                  onPress={() => navigation.navigate('DocumentUpload')}
-                >
-                  <Text style={styles.emptyButtonText}>
-                    Upload Document
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
+          {/* System info section */}
+          <Animated.View
+            style={[
+              styles.systemInfo,
+              {
+                opacity: fadeAnim,
+                transform: [{ translateY: slideAnim }]
+              }
+            ]}
+          >
+            <Text style={styles.systemInfoTitle}>About MedRec</Text>
+            <Text style={styles.systemInfoText}>
+              MedRec simplifies the clinical document review process by extracting key medical information for verification by healthcare professionals.
+            </Text>
+            <Text style={styles.systemInfoText}>
+              The system uses advanced OCR and AI to identify important clinical data points, supporting efficient and accurate medical record processing.
+            </Text>
+          </Animated.View>
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -244,7 +207,7 @@ const HomeScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.lightGray,
+    backgroundColor: '#f7f9fc', // Lighter, clinical background
   },
   content: {
     flex: 1,
@@ -254,9 +217,20 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: Spacing.large,
+    paddingBottom: Spacing.xxlarge,
   },
   welcomeSection: {
     marginBottom: Spacing.large,
+  },
+  welcomeContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  welcomeDate: {
+    fontSize: Typography.size.small,
+    color: Colors.gray,
+    marginBottom: Spacing.small,
   },
   welcomeTitle: {
     fontSize: Typography.size.xxlarge,
@@ -268,41 +242,134 @@ const styles = StyleSheet.create({
     fontSize: Typography.size.medium,
     color: Colors.gray,
   },
-  metricsContainer: {
+  logoContainer: {
+    marginLeft: Spacing.medium,
+  },
+  logo: {
+    width: 50,
+    height: 50,
+    borderRadius: 12,
+    backgroundColor: Colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...Shadows.medium,
+  },
+  logoText: {
+    color: Colors.white,
+    fontSize: Typography.size.large,
+    fontWeight: Typography.weight.bold,
+  },
+  mainActionCard: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.large,
+    padding: Spacing.large,
+    marginBottom: Spacing.large,
+    ...Shadows.medium,
+  },
+  cardHeader: {
+    marginBottom: Spacing.large,
+  },
+  cardTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.small,
+  },
+  cardTitleIcon: {
+    width: 4,
+    height: 18,
+    backgroundColor: Colors.primary,
+    borderRadius: 2,
+    marginRight: Spacing.small,
+  },
+  cardTitle: {
+    fontSize: Typography.size.large,
+    fontWeight: Typography.weight.bold,
+    color: Colors.black,
+  },
+  cardSubtitle: {
+    fontSize: Typography.size.medium,
+    color: Colors.gray,
+    paddingLeft: Spacing.small + 4,
+  },
+  documentWorkflow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: Spacing.xlarge,
+    alignItems: 'center',
+    marginBottom: Spacing.large,
+    paddingHorizontal: Spacing.small,
   },
-  metricCard: {
+  workflowStep: {
+    alignItems: 'center',
+  },
+  stepIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Spacing.small,
+    ...Shadows.soft,
+  },
+  uploadIcon: {
+    backgroundColor: '#e8f4fc', // Light blue
+  },
+  reviewIcon: {
+    backgroundColor: '#e8f7ef', // Light green
+  },
+  pdfIcon: {
+    backgroundColor: '#fbeae9', // Light red
+  },
+  uploadArrow: {
+    width: 0,
+    height: 0,
+    backgroundColor: 'transparent',
+    borderStyle: 'solid',
+    borderLeftWidth: 8,
+    borderRightWidth: 8,
+    borderBottomWidth: 12,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderBottomColor: Colors.primary,
+  },
+  checkmark: {
+    width: 12,
+    height: 6,
+    borderLeftWidth: 2,
+    borderBottomWidth: 2,
+    borderColor: Colors.secondary,
+    transform: [{ rotate: '-45deg' }, { translateY: -2 }],
+  },
+  document: {
+    width: 14,
+    height: 18,
+    borderWidth: 2,
+    borderColor: Colors.accent,
+    borderRadius: 1,
+  },
+  stepText: {
+    fontSize: Typography.size.small,
+    fontWeight: Typography.weight.medium,
+    color: Colors.black,
+  },
+  stepConnector: {
+    height: 1,
     flex: 1,
-    backgroundColor: Colors.white,
+    backgroundColor: '#e2e8f0',
+    marginHorizontal: Spacing.small,
+  },
+  beginButton: {
+    backgroundColor: Colors.primary,
     borderRadius: BorderRadius.medium,
     padding: Spacing.medium,
     alignItems: 'center',
-    marginHorizontal: Spacing.tiny,
     ...Shadows.soft,
   },
-  primaryMetricCard: {
-    backgroundColor: Colors.primary,
-    marginHorizontal: Spacing.small,
-  },
-  metricValue: {
-    fontSize: Typography.size.xxlarge,
-    fontWeight: Typography.weight.bold,
-    color: Colors.black,
-    marginBottom: Spacing.tiny,
-  },
-  metricLabel: {
-    fontSize: Typography.size.small,
-    color: Colors.gray,
-  },
-  primaryMetricValue: {
+  beginButtonText: {
     color: Colors.white,
+    fontSize: Typography.size.medium,
+    fontWeight: Typography.weight.semibold,
   },
-  primaryMetricLabel: {
-    color: Colors.white,
-  },
-  actionsSection: {
+  quickActions: {
     marginBottom: Spacing.large,
   },
   sectionTitle: {
@@ -320,7 +387,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.medium,
     padding: Spacing.medium,
     alignItems: 'center',
-    width: '30%',
+    width: '48%',
     ...Shadows.soft,
   },
   actionIcon: {
@@ -331,16 +398,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.small,
   },
-  uploadIcon: {
-    backgroundColor: Colors.primaryLight,
+  actionUploadIcon: {
+    backgroundColor: '#e8f4fc', // Light blue
   },
-  documentsIcon: {
-    backgroundColor: Colors.secondaryLight,
+  actionSettingsIcon: {
+    backgroundColor: '#fbeae9', // Light red
   },
-  settingsIcon: {
-    backgroundColor: Colors.accentLight,
-  },
-  uploadArrow: {
+  actionUploadArrow: {
     width: 0,
     height: 0,
     backgroundColor: 'transparent',
@@ -351,23 +415,6 @@ const styles = StyleSheet.create({
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
     borderBottomColor: Colors.primary,
-  },
-  docSquare: {
-    width: 16,
-    height: 20,
-    borderWidth: 2,
-    borderColor: Colors.secondary,
-    borderRadius: 2,
-  },
-  docCorner: {
-    width: 6,
-    height: 6,
-    borderTopWidth: 2,
-    borderRightWidth: 2,
-    borderColor: Colors.secondary,
-    position: 'absolute',
-    top: 2,
-    right: 2,
   },
   gearOuter: {
     width: 22,
@@ -389,56 +436,23 @@ const styles = StyleSheet.create({
     fontWeight: Typography.weight.medium,
     color: Colors.black,
   },
-  recentSection: {
-    marginBottom: Spacing.large,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.medium,
-  },
-  seeAllButton: {
-    fontSize: Typography.size.small,
-    color: Colors.primary,
-    fontWeight: Typography.weight.medium,
-  },
-  documentsList: {
-    marginTop: Spacing.small,
-  },
-  loadingContainer: {
-    padding: Spacing.xlarge,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingText: {
-    fontSize: Typography.size.medium,
-    color: Colors.gray,
-  },
-  emptyContainer: {
-    padding: Spacing.xlarge,
-    alignItems: 'center',
-    justifyContent: 'center',
+  systemInfo: {
     backgroundColor: Colors.white,
     borderRadius: BorderRadius.medium,
+    padding: Spacing.large,
     ...Shadows.soft,
   },
-  emptyText: {
-    fontSize: Typography.size.medium,
-    color: Colors.gray,
-    marginBottom: Spacing.large,
-    textAlign: 'center',
-  },
-  emptyButton: {
-    backgroundColor: Colors.primary,
-    paddingVertical: Spacing.medium,
-    paddingHorizontal: Spacing.large,
-    borderRadius: BorderRadius.medium,
-  },
-  emptyButtonText: {
-    color: Colors.white,
+  systemInfoTitle: {
     fontSize: Typography.size.medium,
     fontWeight: Typography.weight.semibold,
+    color: Colors.black,
+    marginBottom: Spacing.medium,
+  },
+  systemInfoText: {
+    fontSize: Typography.size.small,
+    color: Colors.gray,
+    marginBottom: Spacing.medium,
+    lineHeight: 20,
   },
 });
 

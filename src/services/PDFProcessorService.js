@@ -4,7 +4,6 @@
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 import ParallelPDFTextExtractionService from './ParallelPDFTextExtractionService';
-import MedicalFormExtractor from './MedicalFormExtractor';
 import DocumentReferenceService from './DocumentReferenceService';
 import OllamaService from './OllamaService';
 

@@ -1,4 +1,4 @@
-// src/components/ReviewField.js
+// src/components/ReviewField.js (UI modernization)
 import React, { useState } from 'react';
 import {
   View,
@@ -6,7 +6,8 @@ import {
   TextInput,
   StyleSheet,
   TouchableOpacity,
-  Switch
+  Switch,
+  Animated
 } from 'react-native';
 import { Colors, Typography, Spacing, BorderRadius } from '../styles';
 
@@ -21,79 +22,150 @@ const ReviewField = ({
   multiline = false
 }) => {
   const [showSource, setShowSource] = useState(false);
+  const [expanded] = useState(new Animated.Value(0));
+  
+  // Toggle source visibility with animation
+  const toggleSource = () => {
+    const toValue = showSource ? 0 : 1;
+    
+    Animated.timing(expanded, {
+      toValue,
+      duration: 300,
+      useNativeDriver: false
+    }).start();
+    
+    setShowSource(!showSource);
+  };
+  
+  // Calculate animation height
+  const maxHeight = expanded.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 200]
+  });
   
   return (
-    <View style={styles.container}>
-      <View style={styles.headerRow}>
-        <Text style={styles.label}>{label}</Text>
-        <View style={styles.reviewToggle}>
-          <Text style={[
-            styles.reviewStatus,
-            isReviewed ? styles.reviewedStatus : styles.notReviewedStatus
-          ]}>
-            {isReviewed ? 'Reviewed' : 'Not Reviewed'}
-          </Text>
-          <Switch
-            value={isReviewed}
-            onValueChange={onReviewChange}
-            trackColor={{ false: Colors.lightGray, true: Colors.primaryLight }}
-            thumbColor={isReviewed ? Colors.primary : Colors.gray}
+    <View style={modernStyles.container}>
+      <View style={modernStyles.fieldCard}>
+        <View style={modernStyles.headerRow}>
+          <View style={modernStyles.labelContainer}>
+            <View style={[
+              modernStyles.statusIndicator,
+              isReviewed ? modernStyles.reviewedIndicator : modernStyles.pendingIndicator
+            ]} />
+            <Text style={modernStyles.label}>{label}</Text>
+          </View>
+          <View style={modernStyles.reviewToggle}>
+            <Text style={[
+              modernStyles.reviewStatus,
+              isReviewed ? modernStyles.reviewedStatus : modernStyles.pendingStatus
+            ]}>
+              {isReviewed ? 'Reviewed' : 'Pending'}
+            </Text>
+            <Switch
+              value={isReviewed}
+              onValueChange={onReviewChange}
+              trackColor={{ false: '#eceef1', true: Colors.primaryLight }}
+              thumbColor={isReviewed ? Colors.primary : '#9e9e9e'}
+              ios_backgroundColor="#eceef1"
+            />
+          </View>
+        </View>
+        
+        {/* Field value input */}
+        <View style={[
+          modernStyles.inputContainer,
+          isReviewed && modernStyles.reviewedInputContainer
+        ]}>
+          <TextInput
+            style={[
+              modernStyles.input,
+              multiline && modernStyles.multilineInput,
+              isReviewed && modernStyles.reviewedInput
+            ]}
+            value={value}
+            onChangeText={onValueChange}
+            placeholder="No information found"
+            placeholderTextColor="#9e9e9e"
+            multiline={multiline}
+            numberOfLines={multiline ? 3 : 1}
           />
         </View>
-      </View>
-      
-      <TextInput
-        style={[
-          styles.input,
-          multiline && styles.multilineInput,
-          isReviewed && styles.reviewedInput
-        ]}
-        value={value}
-        onChangeText={onValueChange}
-        placeholder="No information found"
-        placeholderTextColor={Colors.gray}
-        multiline={multiline}
-        numberOfLines={multiline ? 3 : 1}
-      />
-      
-      {sourceText && (
-        <View style={styles.sourceContainer}>
-          <TouchableOpacity
-            style={styles.sourceToggle}
-            onPress={() => setShowSource(!showSource)}
-          >
-            <Text style={styles.sourceToggleText}>
-              {showSource ? 'Hide Source' : 'Show Source'}
-            </Text>
-          </TouchableOpacity>
-          
-          {showSource && (
-            <View style={styles.sourceContent}>
-              {sourceType && (
-                <Text style={styles.sourceType}>
-                  {sourceType}
-                </Text>
-              )}
-              <Text style={styles.sourceText}>
-                {sourceText}
+        
+        {/* Source reference section */}
+        {sourceText && (
+          <View style={modernStyles.sourceContainer}>
+            <TouchableOpacity
+              style={modernStyles.sourceToggle}
+              onPress={toggleSource}
+            >
+              <Text style={modernStyles.sourceToggleText}>
+                {showSource ? 'Hide Source Context' : 'Show Source Context'}
               </Text>
-            </View>
-          )}
-        </View>
-      )}
+              <View style={[
+                modernStyles.toggleArrow,
+                showSource && modernStyles.toggleArrowUp
+              ]} />
+            </TouchableOpacity>
+            
+            <Animated.View 
+              style={[
+                modernStyles.sourceContentContainer,
+                { maxHeight }
+              ]}
+            >
+              <View style={modernStyles.sourceContent}>
+                {sourceType && (
+                  <Text style={modernStyles.sourceType}>
+                    Found in: {sourceType}
+                  </Text>
+                )}
+                <Text style={modernStyles.sourceText}>
+                  {sourceText}
+                </Text>
+              </View>
+            </Animated.View>
+          </View>
+        )}
+      </View>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
+const modernStyles = StyleSheet.create({
   container: {
-    marginBottom: Spacing.large,
+    marginBottom: Spacing.medium,
+  },
+  fieldCard: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.medium,
+    borderWidth: 1,
+    borderColor: '#edf0f7',
+    overflow: 'hidden',
   },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.small,
+    padding: Spacing.medium,
+    borderBottomWidth: 1,
+    borderBottomColor: '#edf0f7',
+    backgroundColor: '#f8fafc',
+  },
+  labelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: Spacing.small,
+  },
+  pendingIndicator: {
+    backgroundColor: '#9e9e9e',
+  },
+  reviewedIndicator: {
+    backgroundColor: Colors.success,
   },
   label: {
     fontSize: Typography.size.medium,
@@ -109,43 +181,74 @@ const styles = StyleSheet.create({
     marginRight: Spacing.small,
   },
   reviewedStatus: {
-    color: Colors.secondary,
+    color: Colors.success,
+    fontWeight: Typography.weight.medium,
   },
-  notReviewedStatus: {
-    color: Colors.gray,
+  pendingStatus: {
+    color: '#9e9e9e',
+  },
+  inputContainer: {
+    padding: Spacing.medium,
+    backgroundColor: Colors.white,
+  },
+  reviewedInputContainer: {
+    backgroundColor: Colors.white,
+    borderLeftWidth: 2,
+    borderLeftColor: Colors.success,
   },
   input: {
-    backgroundColor: Colors.lightGray,
-    borderRadius: BorderRadius.medium,
-    padding: Spacing.medium,
     fontSize: Typography.size.medium,
     color: Colors.black,
+    padding: Spacing.small,
+    backgroundColor: '#f8fafc',
+    borderRadius: BorderRadius.small,
     borderWidth: 1,
-    borderColor: 'transparent',
+    borderColor: '#edf0f7',
   },
   multilineInput: {
     minHeight: 80,
     textAlignVertical: 'top',
   },
   reviewedInput: {
-    borderColor: Colors.secondary,
     backgroundColor: Colors.white,
+    borderColor: '#edf0f7',
   },
   sourceContainer: {
-    marginTop: Spacing.small,
+    borderTopWidth: 1,
+    borderTopColor: '#edf0f7',
   },
   sourceToggle: {
-    paddingVertical: Spacing.small,
+    padding: Spacing.medium,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#f8fafc',
   },
   sourceToggleText: {
     fontSize: Typography.size.small,
     color: Colors.primary,
+    fontWeight: Typography.weight.medium,
+  },
+  toggleArrow: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderLeftColor: 'transparent',
+    borderRightWidth: 5,
+    borderRightColor: 'transparent',
+    borderTopWidth: 0,
+    borderBottomWidth: 5,
+    borderBottomColor: Colors.primary,
+  },
+  toggleArrowUp: {
+    transform: [{ rotate: '180deg' }],
+  },
+  sourceContentContainer: {
+    overflow: 'hidden',
   },
   sourceContent: {
-    backgroundColor: Colors.primaryLight,
     padding: Spacing.medium,
-    borderRadius: BorderRadius.medium,
-    marginTop: Spacing.tiny,
+    backgroundColor: Colors.primaryLight,
   },
   sourceType: {
     fontSize: Typography.size.small,
@@ -156,6 +259,7 @@ const styles = StyleSheet.create({
   sourceText: {
     fontSize: Typography.size.small,
     color: Colors.black,
+    lineHeight: 20,
   },
 });
 
