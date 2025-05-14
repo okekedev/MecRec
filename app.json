@@ -28,7 +28,7 @@
       "package": "com.medrec.app"
     },
     "web": {
-      "favicon": "./src/assets/favicon.png"
+      "favicon": null
     },
     "plugins": [
       "expo-document-picker",

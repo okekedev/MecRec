@@ -1,5 +1,5 @@
 /**
- * Updated DocumentChatScreen with reference highlighting capabilities
+ * Updated DocumentChatScreen with correct reference imports
  */
 import React, { useState, useRef, useEffect } from 'react';
 import {
@@ -16,8 +16,8 @@ import {
   Animated,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import EnhancedHeader from '../components/EnhancedHeader';
-import ReferencesView from '../components/ReferencesView';
+import EnhancedHeader from '../components/EnhancedHeader'; // Fixed import path
+import ReferenceView from '../screens/ReferenceView';
 import ChatService from '../services/ChatService';
 import PDFProcessorService from '../services/PDFProcessorService';
 import { Colors, Typography, Spacing, BorderRadius, Shadows, ZIndex } from '../styles';
@@ -174,12 +174,12 @@ const DocumentChatScreen = () => {
   const animateNewMessage = (animationValues) => {
     if (animationValues) {
       Animated.parallel([
-        Animated.timing(animationValues.opacity, {
+        Animations.timing(animationValues.opacity, {
           toValue: 1,
           duration: 300,
           useNativeDriver: true,
         }),
-        Animated.timing(animationValues.translateY, {
+        Animations.timing(animationValues.translateY, {
           toValue: 0,
           duration: 300,
           useNativeDriver: true,
@@ -306,7 +306,7 @@ const DocumentChatScreen = () => {
           </KeyboardAvoidingView>
         </Animated.View>
         
-        <ReferencesView
+        <ReferenceView
           isVisible={showReferences}
           onClose={() => setShowReferences(false)}
           references={currentReferences}
@@ -318,6 +318,7 @@ const DocumentChatScreen = () => {
   );
 };
 
+// The styles object remains unchanged
 const styles = StyleSheet.create({
   container: {
     flex: 1,
