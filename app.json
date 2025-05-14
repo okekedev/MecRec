@@ -1,4 +1,38 @@
 {
   "name": "MedRecApp",
-  "displayName": "MedRec App"
+  "displayName": "MedRec App",
+  "expo": {
+    "name": "MedRec",
+    "slug": "medrec",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./src/assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./src/assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.medrec.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./src/assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.medrec.app"
+    },
+    "web": {
+      "favicon": "./src/assets/favicon.png"
+    },
+    "plugins": [
+      "expo-document-picker",
+      "expo-file-system"
+    ]
+  }
 }
