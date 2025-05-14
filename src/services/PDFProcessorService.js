@@ -1,4 +1,5 @@
 import * as FileSystem from 'expo-file-system';
+import { Platform } from 'react-native';
 import PDFTextExtractionService from './PDFTextExtractionService';
 import MedicalFormExtractor from './MedicalFormExtractor';
 
@@ -106,10 +107,21 @@ class PDFProcessorService {
     try {
       // In a real app, this would save to AsyncStorage or a similar persistence mechanism
       const documentsData = JSON.stringify(Array.from(this.documentsCache.entries()));
-      const path = `${FileSystem.documentDirectory}processed_documents.json`;
       
-      await FileSystem.writeAsStringAsync(path, documentsData);
-      console.log('Documents saved to:', path);
+      if (Platform.OS === 'web') {
+        // For web, use localStorage
+        try {
+          localStorage.setItem('processed_documents', documentsData);
+          console.log('Documents saved to localStorage');
+        } catch (e) {
+          console.log('Could not save to localStorage:', e);
+        }
+      } else {
+        // For native platforms, use FileSystem
+        const path = `${FileSystem.documentDirectory}processed_documents.json`;
+        await FileSystem.writeAsStringAsync(path, documentsData);
+        console.log('Documents saved to:', path);
+      }
     } catch (error) {
       console.error('Error saving documents:', error);
     }
@@ -120,17 +132,34 @@ class PDFProcessorService {
    */
   async loadProcessedDocuments() {
     try {
-      const path = `${FileSystem.documentDirectory}processed_documents.json`;
-      const exists = await FileSystem.getInfoAsync(path);
-      
-      if (exists.exists) {
-        const data = await FileSystem.readAsStringAsync(path);
-        const documents = JSON.parse(data);
-        
-        this.documentsCache = new Map(documents);
-        console.log(`Loaded ${this.documentsCache.size} documents from storage`);
+      if (Platform.OS === 'web') {
+        // For web, use localStorage
+        try {
+          const data = localStorage.getItem('processed_documents');
+          if (data) {
+            const documents = JSON.parse(data);
+            this.documentsCache = new Map(documents);
+            console.log(`Loaded ${this.documentsCache.size} documents from localStorage`);
+          } else {
+            console.log('No saved documents found in localStorage');
+          }
+        } catch (e) {
+          console.log('Could not load from localStorage:', e);
+        }
       } else {
-        console.log('No saved documents found');
+        // For native platforms, use FileSystem
+        const path = `${FileSystem.documentDirectory}processed_documents.json`;
+        const exists = await FileSystem.getInfoAsync(path);
+        
+        if (exists.exists) {
+          const data = await FileSystem.readAsStringAsync(path);
+          const documents = JSON.parse(data);
+          
+          this.documentsCache = new Map(documents);
+          console.log(`Loaded ${this.documentsCache.size} documents from storage`);
+        } else {
+          console.log('No saved documents found');
+        }
       }
     } catch (error) {
       console.error('Error loading documents:', error);

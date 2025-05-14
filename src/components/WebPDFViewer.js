@@ -15,86 +15,64 @@ const WebPDFViewer = ({
 
   useEffect(() => {
     // Only run this code in web environment
-    if (isWeb) {
-      // Use a function to isolate DOM operations
-      const setupIframe = () => {
-        // Safely access document through the window global
-        if (typeof window !== 'undefined' && window.document) {
-          // Create an iframe to embed the PDF
-          const iframe = window.document.createElement('iframe');
+    if (isWeb && typeof window !== 'undefined' && window.document) {
+      // Simplified approach for web PDF viewing
+      
+      // Simulate loading
+      setTimeout(() => {
+        if (onLoadComplete) {
+          onLoadComplete(5); // Simulate 5 pages
+        }
+        
+        if (onPageChanged) {
+          onPageChanged(1);
+        }
+      }, 1000);
+      
+      // If we have a container reference, try to attach an iframe
+      if (containerRef.current) {
+        try {
+          // Get the DOM node
+          const domNode = containerRef.current;
+          
+          // Create an iframe
+          const iframe = document.createElement('iframe');
           iframe.src = source.uri;
           iframe.style.width = '100%';
           iframe.style.height = '100%';
           iframe.style.border = 'none';
           
-          // Simulate page count (real implementation would extract from the PDF)
-          if (onLoadComplete) {
-            // Simulating 5 pages
-            setTimeout(() => onLoadComplete(5), 1000);
+          // Clear any existing content
+          while (domNode.firstChild) {
+            domNode.removeChild(domNode.firstChild);
           }
           
-          // Add load event listener
-          iframe.onload = () => {
-            if (onLoadComplete) {
-              // Simulating 5 pages
-              onLoadComplete(5);
-            }
-          };
+          // Add the iframe directly to the container
+          domNode.appendChild(iframe);
+          iframeRef.current = iframe;
           
-          // Add error event listener
-          iframe.onerror = () => {
-            if (onError) {
-              onError(new Error('Failed to load PDF'));
-            }
-          };
-          
-          // Append the iframe to the container
-          if (containerRef.current) {
-            // Use a safer approach to get the DOM node
-            const domNode = containerRef.current;
-            
-            // Create a div container for the PDF
-            const container = window.document.createElement('div');
-            container.id = 'pdf-container';
-            container.style.width = '100%';
-            container.style.height = '100%';
-            container.appendChild(iframe);
-            
-            // React Native Web will render View as a div
-            // Find a way to attach our content to it
-            if (domNode._reactInternals && domNode.appendChild) {
-              domNode.appendChild(container);
-              iframeRef.current = iframe;
-            } else {
-              // Alternative approach if the above doesn't work
-              const div = window.document.getElementById('pdf-container');
-              if (div) {
-                div.appendChild(iframe);
-                iframeRef.current = iframe;
-              } else {
-                console.warn('Could not find container for PDF viewer');
-              }
-            }
+          // Success message
+          console.log('PDF iframe added to container');
+        } catch (error) {
+          console.error('Error setting up PDF iframe:', error);
+          if (onError) {
+            onError(error);
           }
-          
-          // Return cleanup function
-          return () => {
-            if (iframeRef.current) {
-              const container = window.document.getElementById('pdf-container');
-              if (container && container.contains(iframeRef.current)) {
-                container.removeChild(iframeRef.current);
-              }
-            }
-          };
         }
-      };
-      
-      return setupIframe();
+      }
     }
     
-    // Return empty cleanup function for non-web platforms
-    return () => {};
-  }, [source.uri, onLoadComplete, onError]);
+    // Return cleanup function
+    return () => {
+      if (containerRef.current && iframeRef.current) {
+        try {
+          containerRef.current.removeChild(iframeRef.current);
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+      }
+    };
+  }, [source.uri, onLoadComplete, onPageChanged, onError]);
 
   return (
     <View ref={containerRef} style={[styles.container, style]} />
