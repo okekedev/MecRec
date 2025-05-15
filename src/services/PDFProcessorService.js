@@ -229,32 +229,32 @@ class PDFProcessorService {
         formData.error = 'No text was extracted from the document';
       }
       
-      // Process document for references
+      // Process document with granular sections
       this.updateProgress('processing', 0.9, 'Creating References', 'Processing document sections');
-      const references = this.referenceService.processDocument(id, extractedText);
+      const enhancedReferences = this.processDocumentWithGranularSections(id, extractedText);
       
-      // Generate embeddings for all paragraphs at once to improve field reference matching
-      const paragraphEmbeddings = [];
+      // Generate embeddings for all sections at once
+      const sectionEmbeddings = [];
       try {
         if (this.useAI) {
           const testConnection = await this.ollamaService.testConnection();
           if (testConnection) {
             this.updateProgress('processing', 0.93, 'Generating Embeddings', 'Creating semantic document index');
             
-            // Generate embeddings for each paragraph to prepare for field matching
-            if (references && references.paragraphs) {
-              for (const paragraph of references.paragraphs) {
+            // Generate embeddings for sections to prepare for field matching
+            if (enhancedReferences && enhancedReferences.sections) {
+              for (const section of enhancedReferences.sections) {
                 try {
-                  const embedding = await this.ollamaService.generateEmbeddings(paragraph.text);
-                  paragraphEmbeddings.push({
-                    paragraph,
+                  const embedding = await this.ollamaService.generateEmbeddings(section.text);
+                  sectionEmbeddings.push({
+                    section,
                     embedding
                   });
                 } catch (embErr) {
-                  console.warn('Error generating paragraph embedding:', embErr);
+                  console.warn('Error generating section embedding:', embErr);
                 }
               }
-              console.log(`Generated embeddings for ${paragraphEmbeddings.length} paragraphs`);
+              console.log(`Generated embeddings for ${sectionEmbeddings.length} sections`);
             }
             
             // Ensure field references exist
@@ -263,7 +263,7 @@ class PDFProcessorService {
             }
             
             // For each extracted field, find its source in the document
-            await this.createFieldReferencesWithEmbeddings(formData, extractedText, references, paragraphEmbeddings);
+            await this.createFieldReferencesWithGranularSections(formData, extractedText, enhancedReferences, sectionEmbeddings);
           }
         }
       } catch (embeddingError) {
@@ -282,8 +282,8 @@ class PDFProcessorService {
         ocrConfidence: extractionResult.confidence,
         pages: extractionResult.pages || 1,
         formData,
-        references: references,
-        paragraphEmbeddings,
+        references: enhancedReferences,
+        sectionEmbeddings: sectionEmbeddings.length // Just store the count for debugging
       };
       
       // Add logging to debug field structure
@@ -308,16 +308,244 @@ class PDFProcessorService {
   }
   
   /**
-   * Create field references using pre-generated paragraph embeddings
-   * This is a more efficient approach that works with the numbered list format
+   * Process document to create enhanced references with granular sections
+   * @param {string} documentId - Unique ID of the document
+   * @param {string} documentText - Full text of the document
+   * @returns {Object} Reference metadata with granular sections
+   */
+  processDocumentWithGranularSections(documentId, documentText) {
+    // Skip if text is empty
+    if (!documentText || documentText.trim() === '') {
+      return { documentId, totalSections: 0, sections: [] };
+    }
+    
+    // Split document into sections
+    const sections = this.splitIntoGranularSections(documentText);
+    
+    // Create reference metadata
+    const referenceData = {
+      documentId,
+      totalSections: sections.length,
+      sections: sections.map((section, index) => ({
+        id: `s-${index}`,
+        text: section.text,
+        index,
+        type: section.type,
+        // Calculate start and end position in the original text
+        position: {
+          start: documentText.indexOf(section.text),
+          end: documentText.indexOf(section.text) + section.text.length
+        }
+      }))
+    };
+    
+    return referenceData;
+  }
+  
+  /**
+   * Split document text into meaningful sections with type detection
+   * @param {string} text - Document text
+   * @returns {Array} Array of section objects with text and type
+   */
+  splitIntoGranularSections(text) {
+    // Split by double newlines first
+    const paragraphs = text.split(/\n\s*\n/)
+      .map(p => p.trim())
+      .filter(p => p.length > 0);
+    
+    // Group paragraphs into sections based on headers
+    const sections = [];
+    let currentSection = { text: '', type: 'General' };
+    
+    // Keywords that indicate specific section types
+    const sectionKeywords = {
+      'Patient Information': ['patient', 'name', 'dob', 'date of birth', 'demographics', 'personal'],
+      'Insurance': ['insurance', 'coverage', 'policy', 'payer', 'financial'],
+      'Diagnosis': ['diagnosis', 'dx', 'impression', 'assessment', 'problem', 'condition'],
+      'Provider': ['provider', 'physician', 'doctor', 'pcp', 'attending', 'consultant'],
+      'Medications': ['medication', 'med', 'prescription', 'drug', 'antibiotic', 'cardiac'],
+      'History': ['history', 'hx', 'past medical', 'pmh', 'previous'],
+      'Physical Exam': ['examination', 'exam', 'physical', 'findings', 'wound', 'vitals'],
+      'Labs': ['laboratory', 'lab', 'test', 'results', 'values', 'blood work'],
+      'Discharge': ['discharge', 'dc', 'disposition', 'follow-up', 'follow up'],
+      'Mental Status': ['mental', 'psychiatric', 'psychological', 'cognitive', 'mood', 'behavior'],
+      'Treatment': ['treatment', 'plan', 'recommendation', 'intervention', 'therapy']
+    };
+    
+    for (const paragraph of paragraphs) {
+      // Check if this looks like a header
+      const isHeader = this.isLikelyHeader(paragraph);
+      
+      if (isHeader) {
+        // If we had content in the current section, add it to sections
+        if (currentSection.text.length > 0) {
+          sections.push({ ...currentSection });
+        }
+        
+        // Start a new section
+        const sectionType = this.determineSectionType(paragraph, sectionKeywords);
+        currentSection = {
+          text: paragraph,
+          type: sectionType
+        };
+      } else {
+        // Add to current section with a separator if needed
+        if (currentSection.text.length > 0) {
+          currentSection.text += '\n\n';
+        }
+        currentSection.text += paragraph;
+      }
+    }
+    
+    // Add the last section
+    if (currentSection.text.length > 0) {
+      sections.push(currentSection);
+    }
+    
+    // For sections that are too large, try to split them further
+    const refinedSections = [];
+    const MAX_SECTION_LENGTH = 800; // Characters
+    
+    for (const section of sections) {
+      if (section.text.length > MAX_SECTION_LENGTH) {
+        // Try to split into smaller subsections
+        const subsections = this.splitLargeSection(section.text, section.type);
+        refinedSections.push(...subsections);
+      } else {
+        refinedSections.push(section);
+      }
+    }
+    
+    return refinedSections;
+  }
+  
+  /**
+   * Check if text is likely to be a header
+   * @param {string} text - Text to check
+   * @returns {boolean} Whether text is likely a header
+   */
+  isLikelyHeader(text) {
+    // Headers are often short, all uppercase, or end with a colon
+    return (
+      // All uppercase short text
+      (text === text.toUpperCase() && text.length < 50) ||
+      // Ends with colon
+      text.endsWith(':') ||
+      // Capitalized word followed by colon
+      /^[A-Z][A-Za-z\s]{0,20}:/.test(text) ||
+      // Roman numerals
+      /^[IVX]+\.\s/.test(text) ||
+      // Numbered section
+      /^\d+\.\s/.test(text) ||
+      // Very short line (likely a title)
+      (text.length < 30 && text.split(/\s+/).length <= 5)
+    );
+  }
+  
+  /**
+   * Split a large section into smaller subsections
+   * @param {string} text - Section text
+   * @param {string} parentType - Parent section type
+   * @returns {Array} Array of subsections
+   */
+  splitLargeSection(text, parentType) {
+    // Split by sentences or paragraph breaks
+    const sentences = text.split(/(?<=[.!?])\s+/);
+    const subsections = [];
+    let currentSubsection = { text: '', type: parentType };
+    let currentLength = 0;
+    const TARGET_LENGTH = 400; // Target subsection length
+    
+    for (const sentence of sentences) {
+      if (currentLength + sentence.length > TARGET_LENGTH && currentLength > 0) {
+        // Finalize current subsection
+        subsections.push({ ...currentSubsection });
+        
+        // Start new subsection
+        currentSubsection = { 
+          text: sentence, 
+          type: `${parentType} (cont.)` 
+        };
+        currentLength = sentence.length;
+      } else {
+        // Add to current subsection with a space if needed
+        if (currentLength > 0) {
+          currentSubsection.text += ' ';
+        }
+        currentSubsection.text += sentence;
+        currentLength += sentence.length;
+      }
+    }
+    
+    // Add the last subsection
+    if (currentSubsection.text.length > 0) {
+      subsections.push(currentSubsection);
+    }
+    
+    return subsections;
+  }
+  
+  /**
+   * Determine the type of a section based on its content
+   * @param {string} text - Section text
+   * @param {Object} sectionKeywords - Keywords for each section type
+   * @returns {string} Section type
+   */
+  determineSectionType(text, sectionKeywords) {
+    const lowerText = text.toLowerCase();
+    
+    // Check for known section types based on keywords
+    for (const [type, keywords] of Object.entries(sectionKeywords)) {
+      for (const keyword of keywords) {
+        if (lowerText.includes(keyword)) {
+          return type;
+        }
+      }
+    }
+    
+    // Custom detection for common section headers
+    if (lowerText.includes('patient') && (lowerText.includes('information') || lowerText.includes('details'))) {
+      return 'Patient Information';
+    }
+    
+    if (lowerText.includes('referring') && (lowerText.includes('physician') || lowerText.includes('doctor'))) {
+      return 'Referring Physician';
+    }
+    
+    if (lowerText.includes('diagnosis') || lowerText.includes('assessment') || lowerText.includes('impression')) {
+      return 'Diagnosis';
+    }
+    
+    if (lowerText.includes('history')) {
+      return 'Medical History';
+    }
+    
+    if (lowerText.includes('medication') || lowerText.includes('prescription')) {
+      return 'Medications';
+    }
+    
+    if (lowerText.includes('insurance')) {
+      return 'Insurance Information';
+    }
+    
+    if (lowerText.includes('reason') && lowerText.includes('referral')) {
+      return 'Referral Reason';
+    }
+    
+    // Default section type
+    return 'Document Section';
+  }
+  
+  /**
+   * Create field references with granular sections
    * @param {Object} formData - Extracted form data
    * @param {string} text - Full document text
-   * @param {Object} references - Document references
+   * @param {Object} references - Document references with granular sections
    * @param {Array} paragraphEmbeddings - Pre-generated paragraph embeddings
    */
-  async createFieldReferencesWithEmbeddings(formData, text, references, paragraphEmbeddings) {
-    // Skip if no references or paragraph embeddings
-    if (!references || !references.paragraphs || !paragraphEmbeddings || paragraphEmbeddings.length === 0) {
+  async createFieldReferencesWithGranularSections(formData, text, references, paragraphEmbeddings) {
+    // Skip if no references or sections
+    if (!references || !references.sections || references.sections.length === 0) {
       return;
     }
     
@@ -326,9 +554,25 @@ class PDFProcessorService {
       formData._references = {};
     }
     
-    console.log("Creating field references for all fields using pre-generated embeddings");
+    console.log(`Creating field references using ${references.sections.length} granular sections`);
     
-    // For each field with content, try to find its source
+    // Generate embeddings for each section
+    const sectionEmbeddings = [];
+    for (const section of references.sections) {
+      try {
+        const embedding = await this.ollamaService.generateEmbeddings(section.text);
+        sectionEmbeddings.push({
+          section,
+          embedding
+        });
+      } catch (error) {
+        console.warn(`Error generating embedding for section: ${error.message}`);
+      }
+    }
+    
+    console.log(`Generated embeddings for ${sectionEmbeddings.length} sections`);
+    
+    // For each field with content, find the most specific section that matches
     for (const [field, value] of Object.entries(formData)) {
       // Skip metadata fields or empty values
       if (field.startsWith('_') || 
@@ -341,102 +585,278 @@ class PDFProcessorService {
       }
       
       try {
-        // First try exact text matching (fastest)
         let foundRef = false;
         
-        // For each paragraph, check if it contains the exact field value
-        for (const paragraphEmb of paragraphEmbeddings) {
-          const paragraph = paragraphEmb.paragraph;
-          if (paragraph.text.includes(value)) {
+        // 1. First check for exact matches in specific section types
+        // Map fields to their likely section types
+        const fieldTypeMappings = {
+          'patientName': ['Patient Name', 'Patient Information', 'Demographics'],
+          'patientDOB': ['Date of Birth', 'Patient Information', 'Demographics'],
+          'insurance': ['Insurance', 'Financial', 'Coverage'],
+          'location': ['Location', 'Facility', 'Hospital'],
+          'dx': ['Diagnosis', 'Assessment', 'Impression'],
+          'pcp': ['Provider', 'Physician', 'Doctor', 'PCP'],
+          'dc': ['Discharge', 'Disposition'],
+          'wounds': ['Physical Exam', 'Assessment', 'Wounds'],
+          'antibiotics': ['Medications', 'Antibiotics', 'Treatment'],
+          'cardiacDrips': ['Medications', 'Cardiac', 'Treatment'],
+          'labs': ['Laboratory', 'Labs', 'Results'],
+          'faceToFace': ['Encounter', 'Visit', 'Face to Face'],
+          'history': ['History', 'Past Medical History', 'Medical History'],
+          'mentalHealthState': ['Mental Health', 'Psychological', 'Psychiatric'],
+          'additionalComments': ['Comments', 'Notes', 'Additional']
+        };
+        
+        // Get the relevant section types for this field
+        const relevantTypes = fieldTypeMappings[field] || [];
+        
+        // First look for exact value matches in sections of relevant types
+        const typedExactMatches = references.sections.filter(section => {
+          // Check if section type matches and contains the exact value
+          return (
+            relevantTypes.some(type => section.type.toLowerCase().includes(type.toLowerCase())) &&
+            section.text.includes(value)
+          );
+        });
+        
+        if (typedExactMatches.length > 0) {
+          // Sort by text length (shorter is more specific)
+          typedExactMatches.sort((a, b) => a.text.length - b.text.length);
+          
+          // Use the most specific (shortest) match
+          formData._references[field] = {
+            text: typedExactMatches[0].text,
+            location: typedExactMatches[0].type,
+            matchType: 'exact-typed'
+          };
+          foundRef = true;
+        }
+        
+        // 2. If no typed exact match, try exact match in any section
+        if (!foundRef) {
+          const exactMatches = references.sections.filter(section => section.text.includes(value));
+          
+          if (exactMatches.length > 0) {
+            // Sort by text length (shorter is more specific)
+            exactMatches.sort((a, b) => a.text.length - b.text.length);
+            
+            // Use the most specific (shortest) match
             formData._references[field] = {
-              text: paragraph.text,
-              location: paragraph.type,
+              text: exactMatches[0].text,
+              location: exactMatches[0].type,
               matchType: 'exact'
             };
             foundRef = true;
-            break;
           }
         }
         
-        // If no exact match, try semantic search using paragraph embeddings
-        if (!foundRef && value.length > 3) {
+        // 3. If no exact match, try semantic search with pre-generated embeddings
+        if (!foundRef && value.length > 3 && sectionEmbeddings.length > 0) {
           // Generate embedding for the field value
           const fieldEmbedding = await this.ollamaService.generateEmbeddings(value);
           
-          // Calculate similarity with each paragraph embedding
-          const scoredParagraphs = paragraphEmbeddings.map(pe => ({
-            paragraph: pe.paragraph,
-            score: this.ollamaService.cosineSimilarity(fieldEmbedding, pe.embedding)
+          // Score all sections by similarity
+          const scoredSections = sectionEmbeddings.map(se => ({
+            section: se.section,
+            score: this.ollamaService.cosineSimilarity(fieldEmbedding, se.embedding)
           }));
           
           // Sort by similarity score
-          scoredParagraphs.sort((a, b) => b.score - a.score);
+          scoredSections.sort((a, b) => b.score - a.score);
           
-          // Use top result if score is good enough
-          if (scoredParagraphs.length > 0 && scoredParagraphs[0].score > 0.4) {
-            const topMatch = scoredParagraphs[0];
+          // If we have relevant types, prioritize sections of those types
+          const typedScoredSections = scoredSections.filter(ss => 
+            relevantTypes.some(type => ss.section.type.toLowerCase().includes(type.toLowerCase()))
+          );
+          
+          // Use type-specific match if good score, otherwise use best overall match
+          if (typedScoredSections.length > 0 && typedScoredSections[0].score > 0.35) {
+            // Use best match of relevant type
             formData._references[field] = {
-              text: topMatch.paragraph.text,
-              location: topMatch.paragraph.type,
+              text: typedScoredSections[0].section.text,
+              location: typedScoredSections[0].section.type,
+              matchType: 'semantic-typed',
+              score: typedScoredSections[0].score
+            };
+            foundRef = true;
+          } else if (scoredSections.length > 0 && scoredSections[0].score > 0.35) {
+            // Use best overall match
+            formData._references[field] = {
+              text: scoredSections[0].section.text,
+              location: scoredSections[0].section.type,
               matchType: 'semantic',
-              score: topMatch.score
+              score: scoredSections[0].score
             };
             foundRef = true;
           }
         }
         
-        // If still no match, try keyword matching
+        // 4. If still no match, try keyword matching with more advanced techniques
         if (!foundRef) {
-          // Extract keywords from the field value
-          const keywords = value.toLowerCase()
-            .split(/\s+/)
-            .filter(word => word.length > 3 && !['with', 'this', 'that', 'from', 'have', 'were', 'because', 'about'].includes(word));
+          // Extract significant keywords from the field value
+          const keywords = this.extractSignificantKeywords(value);
           
-          // Score paragraphs by keyword matches
-          const keywordMatches = [];
-          
-          for (const paragraphEmb of paragraphEmbeddings) {
-            const paragraph = paragraphEmb.paragraph;
-            const paragraphText = paragraph.text.toLowerCase();
-            let matchCount = 0;
+          if (keywords.length > 0) {
+            // Score sections by keyword matches
+            const keywordMatches = [];
             
-            // Count matching keywords
-            for (const keyword of keywords) {
-              if (paragraphText.includes(keyword)) {
-                matchCount++;
+            for (const section of references.sections) {
+              const sectionText = section.text.toLowerCase();
+              let matchCount = 0;
+              let weightedScore = 0;
+              
+              // Calculate weighted score based on keyword importance
+              for (const keyword of keywords) {
+                if (sectionText.includes(keyword.term.toLowerCase())) {
+                  matchCount++;
+                  weightedScore += keyword.weight;
+                }
+              }
+              
+              if (matchCount > 0) {
+                keywordMatches.push({
+                  section,
+                  matchCount,
+                  weightedScore,
+                  relevantType: relevantTypes.some(type => 
+                    section.type.toLowerCase().includes(type.toLowerCase())
+                  ),
+                  score: weightedScore / keywords.reduce((sum, k) => sum + k.weight, 0)
+                });
               }
             }
             
-            if (matchCount > 0) {
-              keywordMatches.push({
-                paragraph,
-                matchCount,
-                score: matchCount / keywords.length
-              });
+            // First try with relevant types
+            const typedKeywordMatches = keywordMatches.filter(km => km.relevantType);
+            
+            // Sort by weighted score
+            keywordMatches.sort((a, b) => b.weightedScore - a.weightedScore);
+            typedKeywordMatches.sort((a, b) => b.weightedScore - a.weightedScore);
+            
+            // Use best match (prioritize typed matches)
+            if (typedKeywordMatches.length > 0) {
+              formData._references[field] = {
+                text: typedKeywordMatches[0].section.text,
+                location: typedKeywordMatches[0].section.type,
+                matchType: 'keyword-typed',
+                score: typedKeywordMatches[0].score
+              };
+              foundRef = true;
+            } else if (keywordMatches.length > 0) {
+              formData._references[field] = {
+                text: keywordMatches[0].section.text,
+                location: keywordMatches[0].section.type,
+                matchType: 'keyword',
+                score: keywordMatches[0].score
+              };
+              foundRef = true;
             }
           }
+        }
+        
+        // 5. If we found a reference with a very long text, try to extract just the relevant part
+        if (foundRef && formData._references[field] && formData._references[field].text.length > 200) {
+          const shortenedText = this.extractRelevantTextSnippet(
+            formData._references[field].text, 
+            value,
+            100 // Context size before and after the match
+          );
           
-          // Sort by match count
-          keywordMatches.sort((a, b) => b.matchCount - a.matchCount);
-          
-          // Use top result if any matches found
-          if (keywordMatches.length > 0) {
-            const topKeywordMatch = keywordMatches[0];
-            formData._references[field] = {
-              text: topKeywordMatch.paragraph.text,
-              location: topKeywordMatch.paragraph.type,
-              matchType: 'keyword',
-              matchCount: topKeywordMatch.matchCount,
-              score: topKeywordMatch.score
-            };
+          if (shortenedText && shortenedText.length < formData._references[field].text.length) {
+            // Update with the shorter, more focused text
+            formData._references[field].text = shortenedText;
+            formData._references[field].isSnippet = true;
           }
         }
       } catch (error) {
-        console.warn(`Error finding reference for field ${field}:`, error);
+        console.warn(`Error finding granular reference for field ${field}:`, error);
       }
     }
     
-    console.log(`Created references for ${Object.keys(formData._references).length} fields using embeddings`);
+    console.log(`Created granular references for ${Object.keys(formData._references).length} fields`);
+  }
+  
+  /**
+   * Extract significant keywords from text
+   * @param {string} text - Text to analyze
+   * @returns {Array} Weighted keywords
+   */
+  extractSignificantKeywords(text) {
+    if (!text || typeof text !== 'string') return [];
+    
+    // Split into words
+    const words = text.toLowerCase().split(/\W+/).filter(w => w.length > 1);
+    
+    // Remove common stopwords
+    const stopwords = ['the', 'and', 'is', 'in', 'to', 'with', 'for', 'on', 'at', 'from', 
+                       'this', 'that', 'these', 'those', 'it', 'its', 'was', 'were', 'be', 
+                       'been', 'has', 'have', 'had', 'do', 'does', 'did', 'a', 'an', 'by', 
+                       'but', 'or', 'as', 'of', 'are', 'not', 'no', 'nor'];
+    
+    const filteredWords = words.filter(word => !stopwords.includes(word));
+    
+    // Calculate word frequency
+    const wordFrequency = {};
+    for (const word of filteredWords) {
+      wordFrequency[word] = (wordFrequency[word] || 0) + 1;
+    }
+    
+    // Convert to weighted keywords
+    const keywords = Object.entries(wordFrequency).map(([term, count]) => {
+      // Calculate weight based on length and frequency
+      const lengthWeight = Math.min(term.length / 2, 2);  // Longer words are more important
+      const frequencyWeight = Math.min(count, 3);         // More frequent words are more important
+      
+      // Adjust weight for medical terms
+      const medicalTerms = ['diagnosis', 'patient', 'provider', 'medication', 'treatment', 
+                           'doctor', 'nurse', 'hospital', 'clinic', 'referral', 'labs', 
+                           'results', 'test', 'symptoms', 'condition', 'wound', 'cardiac',
+                           'history', 'assessment', 'discharge', 'admitted', 'care', 'medical'];
+      
+      const isMedicalTerm = medicalTerms.some(mt => term.includes(mt) || mt.includes(term));
+      const medicalBoost = isMedicalTerm ? 1.5 : 1.0;
+      
+      return {
+        term,
+        count,
+        weight: lengthWeight * frequencyWeight * medicalBoost
+      };
+    });
+    
+    // Sort by weight (highest first)
+    keywords.sort((a, b) => b.weight - a.weight);
+    
+    // Return top keywords (up to 10)
+    return keywords.slice(0, 10);
+  }
+  
+  /**
+   * Extract a relevant text snippet around a value
+   * @param {string} fullText - Full text to extract from
+   * @param {string} value - Value to find
+   * @param {number} contextSize - Characters of context before and after
+   * @returns {string} Extracted snippet
+   */
+  extractRelevantTextSnippet(fullText, value, contextSize = 100) {
+    if (!fullText || !value) return fullText;
+    
+    // Find the position of the value in the text
+    const index = fullText.indexOf(value);
+    
+    if (index === -1) return fullText; // Value not found
+    
+    // Calculate start and end positions with context
+    const start = Math.max(0, index - contextSize);
+    const end = Math.min(fullText.length, index + value.length + contextSize);
+    
+    // Extract the snippet
+    let snippet = fullText.substring(start, end).trim();
+    
+    // Add ellipsis if we trimmed the text
+    if (start > 0) snippet = '...' + snippet;
+    if (end < fullText.length) snippet = snippet + '...';
+    
+    return snippet;
   }
   
   /**

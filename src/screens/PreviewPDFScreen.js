@@ -150,7 +150,7 @@ const PDFPreviewScreen = () => {
       doc.setFontSize(20);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(41, 128, 185); // Professional blue
-      doc.text('Medical Document Review Report', 15, 40);
+      doc.text('Referral Review Report', 15, 40);
       
       // Add clinical document ID and date
       doc.setFontSize(10);

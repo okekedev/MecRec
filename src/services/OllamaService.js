@@ -443,81 +443,130 @@ Common medical abbreviations:
     }
   }
 
-  /**
-   * Generate semantic embeddings for text
-   * Used for similarity comparisons and reference tracking
-   * IMPORTANT: This function is still needed for embeddings even with the numbered list approach
-   */
-  async generateEmbeddings(text, model = this.defaultModel) {
-    if (!model) {
-      model = this.defaultModel;
-    }
-    
-    // Limit text length for embeddings to avoid performance issues
-    const processedText = text.length > 8000 ? text.substring(0, 8000) : text;
-    
-    console.log(`Generating embeddings with model: ${model}`);
-    console.log(`Text length for embeddings: ${processedText.length} characters`);
-    
-    try {
-      // Try first API format (newer versions)
-      const requestData = {
-        model,
-        prompt: processedText,
-      };
-
-      const requestUrl = `${this.baseUrl}/api/embeddings`;
-      console.log('Sending embeddings request to:', requestUrl);
-      
-      const response = await fetch(requestUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData),
-      });
-
-      if (!response.ok) {
-        // If embedding endpoint fails, try the alternative embed endpoint that some Ollama versions use
-        console.warn('Embeddings endpoint failed, trying alternate endpoint');
-        return this.generateEmbeddingsAlternate(processedText, model);
+    /**
+     * Generate embeddings for text
+     * This function has been tuned to work especially well with medical text snippets
+     * @param {string} text - The text to generate embeddings for
+     * @param {string} model - The model to use
+     * @returns {Promise<Array>} - Array of embedding values
+     */
+    async generateEmbeddings(text, model = this.defaultModel) {
+      if (!model) {
+        model = this.defaultModel;
       }
-
-      const data = await response.json();
-      console.log('Embeddings response received, processing...');
       
-      // Handle different response formats for embeddings
-      if (data.embedding) {
-        console.log('Embedding vector length:', data.embedding.length);
-        return data.embedding;
-      } else if (data.embeddings && Array.isArray(data.embeddings) && data.embeddings.length > 0) {
-        console.log('Embedding vector length:', data.embeddings[0].length);
-        return data.embeddings[0];
-      } else if (Array.isArray(data) && data.length > 0) {
-        console.log('Embedding vector length:', data.length);
-        return data;
-      } else {
-        console.warn('Unexpected embeddings response format:', data);
-        
-        // Fallback to simple random embeddings (only for demonstration)
-        console.warn('Falling back to random embeddings');
-        return this.generateRandomEmbeddings(128);
-      }
-    } catch (error) {
-      console.error('Ollama embeddings error:', error);
+      // Medical preprocessing - enhance text with medical context markers
+      const processedText = this.preprocessMedicalText(text);
       
-      // Try alternate endpoint on error
+      console.log(`Generating embeddings with model: ${model}`);
+      console.log(`Text length for embeddings: ${processedText.length} characters`);
+      
       try {
-        return await this.generateEmbeddingsAlternate(processedText, model);
-      } catch (alternateError) {
-        console.error('Alternate embeddings approach also failed:', alternateError);
+        // Use a specialized prompt for higher quality embeddings
+        const embeddingPrompt = `
+TEXT FOR EMBEDDING:
+${processedText}
+
+TASK: Generate high-quality embeddings for this medical text.
+FOCUS ON: medical terms, diagnoses, patient information, treatments, medications.
+`;
         
-        // Return random embeddings as last resort fallback
-        console.warn('Falling back to random embeddings');
-        return this.generateRandomEmbeddings(128);
+        // Try first API format (newer versions)
+        const requestData = {
+          model,
+          prompt: embeddingPrompt,
+        };
+
+        const requestUrl = `${this.baseUrl}/api/embeddings`;
+        console.log('Sending embeddings request to:', requestUrl);
+        
+        const response = await fetch(requestUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestData),
+        });
+
+        if (!response.ok) {
+          // If embedding endpoint fails, try the alternative embed endpoint that some Ollama versions use
+          console.warn('Embeddings endpoint failed, trying alternate endpoint');
+          return this.generateEmbeddingsAlternate(processedText, model);
+        }
+
+        const data = await response.json();
+        console.log('Embeddings response received, processing...');
+        
+        // Handle different response formats for embeddings
+        if (data.embedding) {
+          console.log('Embedding vector length:', data.embedding.length);
+          return data.embedding;
+        } else if (data.embeddings && Array.isArray(data.embeddings) && data.embeddings.length > 0) {
+          console.log('Embedding vector length:', data.embeddings[0].length);
+          return data.embeddings[0];
+        } else if (Array.isArray(data) && data.length > 0) {
+          console.log('Embedding vector length:', data.length);
+          return data;
+        } else {
+          console.warn('Unexpected embeddings response format:', data);
+          
+          // Fallback to simple random embeddings (only for demonstration)
+          console.warn('Falling back to random embeddings');
+          return this.generateRandomEmbeddings(128);
+        }
+      } catch (error) {
+        console.error('Ollama embeddings error:', error);
+        
+        // Try alternate endpoint on error
+        try {
+          return await this.generateEmbeddingsAlternate(processedText, model);
+        } catch (alternateError) {
+          console.error('Alternate embeddings approach also failed:', alternateError);
+          
+          // Return random embeddings as last resort fallback
+          console.warn('Falling back to random embeddings');
+          return this.generateRandomEmbeddings(128);
+        }
       }
     }
-  }
+    
+    /**
+     * Preprocess medical text for better embeddings
+     * @param {string} text - Original text
+     * @returns {string} - Processed text
+     */
+    preprocessMedicalText(text) {
+      // Limit text length
+      const maxLength = 10000;
+      let processedText = text.length > maxLength ? text.substring(0, maxLength) : text;
+      
+      // Enhance with medical context markers
+      const medicalTerms = {
+        'patient': '[PATIENT]',
+        'name:': '[PATIENT_NAME]',
+        'dob': '[DATE_OF_BIRTH]',
+        'diagnosis': '[DIAGNOSIS]',
+        'assessment': '[DIAGNOSIS]',
+        'impression': '[DIAGNOSIS]',
+        'medication': '[MEDICATION]',
+        'lab': '[LAB_RESULT]',
+        'test': '[TEST]',
+        'doctor': '[PROVIDER]',
+        'physician': '[PROVIDER]',
+        'hospital': '[LOCATION]',
+        'insurance': '[INSURANCE]',
+        'allergies': '[ALLERGIES]',
+        'history': '[HISTORY]'
+      };
+      
+      // Add medical context markers
+      Object.entries(medicalTerms).forEach(([term, marker]) => {
+        const regex = new RegExp(`\\b${term}\\b`, 'gi');
+        processedText = processedText.replace(regex, `${marker}${term}`);
+      });
+      
+      return processedText;
+    }
   
   /**
    * Alternative approach to generate embeddings
