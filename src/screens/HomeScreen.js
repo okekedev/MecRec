@@ -55,7 +55,7 @@ const HomeScreen = () => {
   return (
     <View style={styles.container}>
       <EnhancedHeader
-        title="MedRec"
+        title=""
         backgroundColor="#ffffff"
         textColor="#2c3e50"
         elevated={true}

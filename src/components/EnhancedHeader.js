@@ -1,5 +1,5 @@
 /**
- * EnhancedHeader.js - Modern clinical header component
+ * EnhancedHeader.js - Modern clinical header component with improved logo positioning
  */
 import React from 'react';
 import { 
@@ -9,19 +9,21 @@ import {
   TouchableOpacity, 
   Platform, 
   StatusBar,
-  SafeAreaView
+  SafeAreaView,
+  Image
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Colors, Typography, Spacing, BorderRadius, Shadows, ZIndex } from '../styles';
 
 const EnhancedHeader = ({
-  title = 'MedRec',
+  title = '',
   showBackButton = false,
   rightComponent = null,
   onMenuPress = null,
   backgroundColor = '#ffffff',
   textColor = '#2c3e50',
   elevated = true,
+  showLogo = true,
 }) => {
   const navigation = useNavigation();
 
@@ -60,28 +62,32 @@ const EnhancedHeader = ({
                 <View style={styles.backArrow} />
               </View>
             </TouchableOpacity>
-          ) : (
+          ) : showLogo ? (
             <TouchableOpacity
-              style={styles.iconButton}
+              style={styles.logoButton}
               onPress={handleMenuPress}
               accessibilityLabel="Menu"
               accessibilityRole="button"
             >
-              <View style={styles.logoIcon}>
-                <Text style={styles.logoText}>MR</Text>
-              </View>
+              <Image 
+                source={require('../assets/medreclogo.png')} 
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
             </TouchableOpacity>
-          )}
+          ) : null}
           
-          <Text 
-            style={[
-              styles.title, 
-              { color: textColor }
-            ]} 
-            numberOfLines={1}
-          >
-            {title}
-          </Text>
+          {title ? (
+            <Text 
+              style={[
+                styles.title, 
+                { color: textColor }
+              ]} 
+              numberOfLines={1}
+            >
+              {title}
+            </Text>
+          ) : null}
         </View>
         
         <View style={styles.rightSection}>
@@ -144,23 +150,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: Spacing.medium,
   },
+  logoButton: {
+    height: 40,
+    width: 100, // Adjusted width for logo
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    marginRight: Spacing.medium,
+  },
   title: {
     fontSize: Typography.size.large,
     fontWeight: Typography.weight.semibold,
     flex: 1,
   },
-  logoIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: Colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoText: {
-    fontSize: Typography.size.small,
-    fontWeight: Typography.weight.bold,
-    color: Colors.white,
+  logoImage: {
+    height: 90,
+    width: 90, // Adjusted width for proper aspect ratio
   },
   backIcon: {
     width: 24,

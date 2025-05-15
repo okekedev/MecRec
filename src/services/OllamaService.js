@@ -1,5 +1,5 @@
 /**
- * Enhanced OllamaService with Llama 3.2 1B optimization
+ * Enhanced OllamaService with improved JSON parsing
  */
 class OllamaService {
   static instance;
@@ -7,31 +7,42 @@ class OllamaService {
   constructor() {
     this.baseUrl = 'http://localhost:11434';
     
-    // Set Llama 3.2 1B as the primary model - 1.3GB with 128K context
+    // Specifically set Llama 3.2 1B as the primary model - 1.3GB with 128K context
     this.defaultModel = 'llama3.2:1b';
     
-    // Alternative models if the primary one isn't available
-    this.fallbackModels = ['llama3:8b', 'llama3.1:8b', 'llama3.1:1b', 'tinyllama', 'phi', 'gemma:2b'];
+    // Set explicit preference order for models
+    this.preferredModels = [
+      'llama3.2:1b',        // First choice - specific 1B model
+      'llama3.2:latest',    // Second choice - latest version
+      'llama3:8b',          // Alternative models in order of preference
+      'llama3.1:8b', 
+      'llama3.1:1b', 
+      'tinyllama', 
+      'phi', 
+      'gemma:2b'
+    ];
     
-    // Optimized extraction prompt for Llama 3.2 1B, now with patient name and DOB
+    // Optimized extraction prompt for Llama 3.2 1B with explicit JSON structure
     this.extractionPrompt = `TASK: Extract medical information from the document.
 
-OUTPUT FORMAT: JSON with these exact keys:
-- patientName
-- patientDOB
-- insurance
-- location
-- dx
-- pcp
-- dc
-- wounds
-- antibiotics
-- cardiacDrips
-- labs
-- faceToFace
-- history
-- mentalHealthState
-- additionalComments
+OUTPUT FORMAT: STRICT JSON with these exact keys:
+{
+  "patientName": "",
+  "patientDOB": "",
+  "insurance": "",
+  "location": "",
+  "dx": "",
+  "pcp": "",
+  "dc": "",
+  "wounds": "",
+  "antibiotics": "",
+  "cardiacDrips": "",
+  "labs": "",
+  "faceToFace": "",
+  "history": "",
+  "mentalHealthState": "",
+  "additionalComments": ""
+}
 
 EXTRACTION GUIDE:
 - "patientName" = patient's full name
@@ -51,12 +62,21 @@ EXTRACTION GUIDE:
 - "additionalComments" = other relevant details
 
 For missing information, use empty string "".
-Only output valid JSON with these exact fields.`;
+Only output valid JSON with these exact fields.
+DO NOT include any other text before or after the JSON.
+Make sure all JSON field values are properly escaped strings.`;
 
-    // Enhanced system prompt with medical domain knowledge, focused on patient info
+    // Enhanced system prompt with medical domain knowledge
     this.systemPrompt = `You are a medical information extraction assistant specializing in clinical documents.
 Your sole purpose is to extract structured medical information from documents.
 You understand medical terminology, abbreviations, and can recognize clinical concepts.
+
+CRITICAL RULES:
+1. Return ONLY a valid JSON object with no additional text
+2. Make sure all JSON field values are properly escaped strings
+3. Never include explanatory text, headings, or descriptions outside the JSON
+4. Always double-check that quotes and braces are balanced
+5. Do not include markdown formatting or code blocks
 
 CRITICAL FIELDS:
 - patientName: Look for full names, often near "Patient:", "Name:", or at the top of the document
@@ -72,7 +92,6 @@ Common medical abbreviations:
 - Sx = Symptoms
 - PM&R = Physical Medicine and Rehabilitation
 
-Always return a JSON object with exactly the requested field names.
 If information is not found, include the field with an empty string.
 Do not make up information that isn't present in the document.`;
 
@@ -128,6 +147,7 @@ Do not make up information that isn't present in the document.`;
    * Set the default model to use
    */
   setDefaultModel(model) {
+    // Ensure we preserve a non-empty model name
     this.defaultModel = model.trim() || 'llama3.2:1b';
     console.log('Ollama default model set to:', this.defaultModel);
   }
@@ -236,10 +256,10 @@ Do not make up information that isn't present in the document.`;
   }
 
   /**
-   * Initialize the service by finding the llama3.2:1b model or a fallback
+   * Initialize the service by finding the most appropriate model according to our preferences
    */
   async initialize() {
-    console.log('Initializing OllamaService with Llama 3.2 1B...');
+    console.log('Initializing OllamaService with model preferences...');
     try {
       // Check connection
       const isConnected = await this.testConnection();
@@ -248,49 +268,34 @@ Do not make up information that isn't present in the document.`;
         return false;
       }
       
-      // First try to check if our preferred model exists
-      try {
-        console.log(`Checking if ${this.defaultModel} exists...`);
-        const response = await fetch(`${this.baseUrl}/api/show`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ name: this.defaultModel }),
-        });
-        
-        if (response.ok) {
-          console.log(`Confirmed ${this.defaultModel} is available`);
-          return true;
-        } else {
-          console.warn(`${this.defaultModel} not found, checking alternatives...`);
-        }
-      } catch (error) {
-        console.warn(`Error checking ${this.defaultModel}:`, error);
+      // Get available models
+      const availableModels = await this.getAvailableModels();
+      console.log('Available models:', availableModels);
+      
+      if (!availableModels || availableModels.length === 0) {
+        console.warn('No models available in Ollama');
+        return false;
       }
       
-      // If preferred model not found, try to get all available models
-      const models = await this.getAvailableModels();
-      console.log('Available models:', models);
-      
-      if (models && models.length > 0) {
-        // First, check if any of our preferred models are available
-        for (const model of [this.defaultModel, ...this.fallbackModels]) {
-          if (models.includes(model)) {
-            this.defaultModel = model;
-            console.log(`Using model: ${this.defaultModel}`);
-            return true;
+      // First, try to find models in our preferred order
+      for (const preferredModel of this.preferredModels) {
+        if (availableModels.includes(preferredModel)) {
+          this.defaultModel = preferredModel;
+          console.log(`Using preferred model: ${this.defaultModel}`);
+          
+          // Log special message if we found the optimal model
+          if (preferredModel === 'llama3.2:1b') {
+            console.log('Found optimal model: Llama 3.2 1B (1.3GB, 128K context)');
           }
+          
+          return true;
         }
-        
-        // If none of the preferred models found, use the first available one
-        this.defaultModel = models[0];
-        console.log(`Using available model: ${this.defaultModel}`);
-        return true;
       }
       
-      console.error('No models available in Ollama');
-      return false;
+      // If none of our preferred models are available, use the first available model
+      console.warn(`None of the preferred models available. Using ${availableModels[0]}`);
+      this.defaultModel = availableModels[0];
+      return true;
     } catch (error) {
       console.error('Error initializing OllamaService:', error);
       return false;
@@ -454,162 +459,276 @@ Do not make up information that isn't present in the document.`;
   }
 
   /**
-   * Generate semantic embeddings for text
-   * Used for similarity comparisons and reference tracking
+   * Process a single chunk of text
    */
-  async generateEmbeddings(text, model = this.defaultModel) {
-    if (!model) {
-      model = this.defaultModel;
-    }
+  async processSingleChunk(text, schema, model) {
+    // Create the combined prompt
+    const combinedPrompt = `${this.extractionPrompt}
+
+TEXT TO EXTRACT FROM:
+${text}`;
     
-    // Limit text length for embeddings to avoid performance issues
-    const processedText = text.length > 8000 ? text.substring(0, 8000) : text;
+    // Use a lower temperature for more deterministic results
+    const extractionOptions = {
+      temperature: 0.1, // Very low temperature for consistent extraction
+    };
     
-    console.log(`Generating embeddings with model: ${model}`);
-    console.log(`Text length for embeddings: ${processedText.length} characters`);
+    // Generate completion with the combined prompt
+    const result = await this.generateCompletion(
+      combinedPrompt,
+      model,
+      this.systemPrompt,
+      extractionOptions
+    );
     
+    // Process the result to extract JSON
     try {
-      // Try first API format (newer versions)
-      const requestData = {
-        model,
-        prompt: processedText,
-      };
-
-      const requestUrl = `${this.baseUrl}/api/embeddings`;
-      console.log('Sending embeddings request to:', requestUrl);
+      // Enhanced JSON extraction with robust error handling
+      return this.extractJsonFromText(result);
+    } catch (parseError) {
+      console.error('Failed to parse extracted information:', parseError);
+      console.log('Raw output from model:', result);
       
-      const response = await fetch(requestUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData),
-      });
-
-      if (!response.ok) {
-        // If embedding endpoint fails, try the alternative embed endpoint that some Ollama versions use
-        console.warn('Embeddings endpoint failed, trying alternate endpoint');
-        return this.generateEmbeddingsAlternate(processedText, model);
-      }
-
-      const data = await response.json();
-      console.log('Embeddings response received, processing...');
-      
-      // Handle different response formats for embeddings
-      if (data.embedding) {
-        console.log('Embedding vector length:', data.embedding.length);
-        return data.embedding;
-      } else if (data.embeddings && Array.isArray(data.embeddings) && data.embeddings.length > 0) {
-        console.log('Embedding vector length:', data.embeddings[0].length);
-        return data.embeddings[0];
-      } else if (Array.isArray(data) && data.length > 0) {
-        console.log('Embedding vector length:', data.length);
-        return data;
-      } else {
-        console.warn('Unexpected embeddings response format:', data);
-        
-        // Fallback to simple random embeddings (only for demonstration)
-        console.warn('Falling back to random embeddings');
-        return this.generateRandomEmbeddings(128);
-      }
-    } catch (error) {
-      console.error('Ollama embeddings error:', error);
-      
-      // Try alternate endpoint on error
+      // Try to fix common JSON issues
       try {
-        return await this.generateEmbeddingsAlternate(processedText, model);
-      } catch (alternateError) {
-        console.error('Alternate embeddings approach also failed:', alternateError);
+        const fixedJson = this.attemptToFixJson(result);
+        console.log('Attempted to fix JSON:', fixedJson);
+        return fixedJson;
+      } catch (fixError) {
+        console.error('Failed to fix JSON:', fixError);
         
-        // Return random embeddings as last resort fallback
-        console.warn('Falling back to random embeddings');
-        return this.generateRandomEmbeddings(128);
+        // Update progress - parsing error
+        this.updateProgress(
+          'error', 
+          0.7, 
+          'Processing error',
+          `Failed to extract structured data: ${parseError.message}`
+        );
+        
+        // Return error information
+        return {
+          extractionMethod: 'failed',
+          error: 'Parsing error',
+          errorDetails: parseError.message,
+          timestamp: new Date().toISOString()
+        };
       }
     }
   }
-  
+
   /**
-   * Alternative approach to generate embeddings
-   * Some Ollama versions use a different endpoint or format
+   * Extract JSON from text with robust error handling
    */
-  async generateEmbeddingsAlternate(text, model) {
-    try {
-      // Try alternate endpoint format
-      const requestData = {
-        model,
-        prompt: text,
-        options: {
-          embedding: true,
-        }
-      };
-
-      const response = await fetch(`${this.baseUrl}/api/embed`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Alternate embeddings failed: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
+  extractJsonFromText(text) {
+    // First, try to find JSON within the text
+    const jsonRegex = /{[\s\S]*?}/;
+    const jsonMatch = text.match(jsonRegex);
+    
+    if (jsonMatch) {
+      const jsonStr = jsonMatch[0];
       
-      if (data.embedding) {
-        return data.embedding;
-      } else if (data.embeddings) {
-        return data.embeddings;
-      } else {
-        throw new Error('No embeddings found in response');
+      try {
+        const parsedResult = JSON.parse(jsonStr);
+        console.log('Successfully parsed JSON result');
+        
+        // Update progress - parsing successful
+        this.updateProgress(
+          'processing', 
+          0.75, 
+          'Information extracted',
+          'Successfully parsed structured data'
+        );
+        
+        // Validate and format the extracted fields
+        return this.validateAndFormatFields(parsedResult);
+      } catch (jsonError) {
+        console.error('Failed to parse extracted JSON:', jsonError);
+        console.log('Extracted JSON string:', jsonStr);
+        throw jsonError;
       }
-    } catch (error) {
-      console.error('Alternative embeddings approach failed:', error);
-      throw error;
     }
+    
+    // If we can't find JSON with regex, try a more aggressive approach
+    console.warn('No JSON found with regex, trying more aggressive extraction');
+    
+    // Try to find the first { and the last }
+    const firstBrace = text.indexOf('{');
+    const lastBrace = text.lastIndexOf('}');
+    
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      const jsonStr = text.substring(firstBrace, lastBrace + 1);
+      
+      try {
+        const parsedResult = JSON.parse(jsonStr);
+        console.log('Successfully parsed JSON with aggressive extraction');
+        
+        // Update progress - parsing successful with alternative method
+        this.updateProgress(
+          'processing', 
+          0.75, 
+          'Information extracted',
+          'Successfully parsed structured data (alternative method)'
+        );
+        
+        // Validate and format the extracted fields
+        return this.validateAndFormatFields(parsedResult);
+      } catch (jsonError) {
+        console.error('Failed to parse JSON with aggressive extraction:', jsonError);
+        throw jsonError;
+      }
+    }
+    
+    // If we still can't find JSON, throw an error
+    throw new Error('No JSON found in model response');
   }
 
   /**
-   * Generate random embeddings as a fallback
-   * Only used when real embeddings can't be obtained
+   * Attempt to fix common JSON issues
    */
-  generateRandomEmbeddings(dimensions = 128) {
-    console.warn(`Generating random ${dimensions}-dimensional embeddings as fallback`);
-    return Array.from({ length: dimensions }, () => (Math.random() * 2) - 1);
+  attemptToFixJson(text) {
+    console.log('Attempting to fix JSON issues...');
+    
+    // Initialize with empty fields
+    const defaultJson = {
+      patientName: '',
+      patientDOB: '',
+      insurance: '',
+      location: '',
+      dx: '',
+      pcp: '',
+      dc: '',
+      wounds: '',
+      antibiotics: '',
+      cardiacDrips: '',
+      labs: '',
+      faceToFace: '',
+      history: '',
+      mentalHealthState: '',
+      additionalComments: '',
+      extractionMethod: 'partial',
+      timestamp: new Date().toISOString()
+    };
+    
+    // Try to extract field values with simple regex
+    // This is a fallback to get at least some data
+    const fields = [
+      'patientName', 'patientDOB', 'insurance', 'location', 'dx', 'pcp', 'dc', 
+      'wounds', 'antibiotics', 'cardiacDrips', 'labs', 'faceToFace', 
+      'history', 'mentalHealthState', 'additionalComments'
+    ];
+    
+    let extractedAny = false;
+    
+    for (const field of fields) {
+      // Try to match field patterns like "field": "value" or "field":"value"
+      const regex = new RegExp(`"${field}"\\s*:\\s*"([^"]*)"`, 'i');
+      const match = text.match(regex);
+      
+      if (match && match[1]) {
+        defaultJson[field] = match[1].trim();
+        extractedAny = true;
+      }
+    }
+    
+    if (extractedAny) {
+      console.log('Extracted partial data with regex fallback');
+      this.updateProgress(
+        'processing', 
+        0.7, 
+        'Partial extraction',
+        'Extracted some information with fallback method'
+      );
+      return defaultJson;
+    } else {
+      throw new Error('Could not extract any fields with fallback method');
+    }
   }
 
   /**
-   * Calculate cosine similarity between two embedding vectors
-   * Used for finding similar sections of text
+   * Validate and format extracted fields to ensure consistency
    */
-  cosineSimilarity(vecA, vecB) {
-    if (!vecA || !vecB || vecA.length !== vecB.length) {
-      return 0;
-    }
+  validateAndFormatFields(extractedData) {
+    // Define the expected fields
+    const expectedFields = [
+      'patientName',
+      'patientDOB',
+      'insurance',
+      'location',
+      'dx',
+      'pcp',
+      'dc',
+      'wounds',
+      'antibiotics',
+      'cardiacDrips',
+      'labs',
+      'faceToFace',
+      'history',
+      'mentalHealthState',
+      'additionalComments'
+    ];
     
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
+    // Create a properly formatted output object
+    const formattedOutput = {
+      extractionMethod: 'ai',
+      extractionDate: new Date().toISOString()
+    };
     
-    for (let i = 0; i < vecA.length; i++) {
-      dotProduct += vecA[i] * vecB[i];
-      normA += vecA[i] * vecA[i];
-      normB += vecB[i] * vecB[i];
-    }
+    // Ensure all expected fields exist
+    expectedFields.forEach(field => {
+      // If the field exists in extracted data, use it, otherwise empty string
+      formattedOutput[field] = extractedData[field] || '';
+      
+      // Trim whitespace
+      if (typeof formattedOutput[field] === 'string') {
+        formattedOutput[field] = formattedOutput[field].trim();
+      }
+    });
     
-    normA = Math.sqrt(normA);
-    normB = Math.sqrt(normB);
+    // Handle possible field name variations
+    const fieldMappings = {
+      'patient_name': 'patientName',
+      'patient': 'patientName',
+      'fullName': 'patientName',
+      'name': 'patientName',
+      'date_of_birth': 'patientDOB',
+      'dateOfBirth': 'patientDOB',
+      'dob': 'patientDOB',
+      'birthdate': 'patientDOB',
+      'insurance_provider': 'insurance',
+      'insuranceProvider': 'insurance',
+      'primaryInsurance': 'insurance',
+      'diagnosis': 'dx',
+      'discharge': 'dc',
+      'provider': 'pcp',
+      'primaryCareProvider': 'pcp',
+      'woundCare': 'wounds',
+      'antibioticTherapy': 'antibiotics',
+      'cardiacMedications': 'cardiacDrips',
+      'laboratory': 'labs',
+      'labResults': 'labs',
+      'faceToFaceEncounter': 'faceToFace',
+      'medicalHistory': 'history',
+      'mentalHealth': 'mentalHealthState',
+      'additional': 'additionalComments',
+      'notes': 'additionalComments'
+    };
     
-    if (normA === 0 || normB === 0) {
-      return 0;
-    }
+    // Check for alternative field names and map them
+    Object.entries(fieldMappings).forEach(([altField, standardField]) => {
+      if (extractedData[altField] && !formattedOutput[standardField]) {
+        formattedOutput[standardField] = extractedData[altField];
+      }
+    });
     
-    return dotProduct / (normA * normB);
+    console.log('Validated fields:', Object.keys(formattedOutput).filter(k => 
+      !k.startsWith('_') && k !== 'extractionMethod' && k !== 'extractionDate'
+    ));
+    
+    return formattedOutput;
   }
 
   /**
-   * Extract structured information from text - optimized for long documents
+   * Extract structured information from text
    */
   async extractInformation(text, schema = null, model = this.defaultModel) {
     try {
@@ -623,7 +742,7 @@ Do not make up information that isn't present in the document.`;
       
       // Use a different chunking strategy for Llama 3.2 1B - 
       // it has a 128K context window, so we can potentially send more at once
-      const MAX_CHUNK_SIZE = 12000; // Characters per chunk - larger for 128K context model
+      const MAX_CHUNK_SIZE = 8000; // Characters per chunk - smaller chunk size for more reliable processing
       
       // For very long documents, process in chunks
       if (text.length > MAX_CHUNK_SIZE) {
@@ -729,116 +848,7 @@ Do not make up information that isn't present in the document.`;
     
     return chunks;
   }
-
-  /**
-   * Process a single chunk of text
-   */
-  async processSingleChunk(text, schema, model) {
-    // If no schema is provided, extract schema from the extraction prompt
-    if (!schema) {
-      schema = this.parseSchemaFromPrompt(this.extractionPrompt);
-    }
-    
-    // Create the combined prompt
-    const combinedPrompt = `${this.extractionPrompt}
-
-TEXT TO EXTRACT FROM:
-${text}`;
-    
-    // Use a lower temperature for more deterministic results
-    const extractionOptions = {
-      temperature: 0.1, // Very low temperature for consistent extraction
-    };
-    
-    // Generate completion with the combined prompt
-    const result = await this.generateCompletion(
-      combinedPrompt,
-      model,
-      this.systemPrompt,
-      extractionOptions
-    );
-    
-    // Process the result to extract JSON
-    try {
-      // Find the first { and last } in the response to extract just the JSON part
-      const jsonStart = result.indexOf('{');
-      const jsonEnd = result.lastIndexOf('}') + 1;
-      
-      if (jsonStart >= 0 && jsonEnd > jsonStart) {
-        const jsonStr = result.substring(jsonStart, jsonEnd);
-        
-        try {
-          const parsedResult = JSON.parse(jsonStr);
-          console.log('Successfully parsed JSON result');
-          
-          // Update progress - parsing successful
-          this.updateProgress(
-            'processing', 
-            0.75, 
-            'Information extracted',
-            'Successfully parsed structured data'
-          );
-          
-          // Validate and format the extracted fields
-          return this.validateAndFormatFields(parsedResult);
-        } catch (jsonError) {
-          console.error('Failed to parse extracted JSON:', jsonError);
-          
-          // Update progress - parsing failed
-          this.updateProgress(
-            'error', 
-            0.7, 
-            'Parsing error',
-            'Failed to parse AI output as JSON'
-          );
-          
-          // Return basic error object
-          return {
-            extractionMethod: 'failed',
-            error: 'JSON parsing error',
-            errorDetails: jsonError.message,
-            timestamp: new Date().toISOString()
-          };
-        }
-      }
-      
-      // Additional error handling...
-      console.error('No JSON found in result');
-      
-      // Update progress - no JSON found
-      this.updateProgress(
-        'error', 
-        0.7, 
-        'Format error',
-        'AI output did not contain valid JSON'
-      );
-      
-      return {
-        extractionMethod: 'failed',
-        error: 'No JSON found in model response',
-        timestamp: new Date().toISOString()
-      };
-    } catch (parseError) {
-      console.error('Failed to parse extracted information:', parseError);
-      
-      // Update progress - parsing error
-      this.updateProgress(
-        'error', 
-        0.7, 
-        'Processing error',
-        `Failed to extract structured data: ${parseError.message}`
-      );
-      
-      // Return error information
-      return {
-        extractionMethod: 'failed',
-        error: 'Parsing error',
-        errorDetails: parseError.message,
-        timestamp: new Date().toISOString()
-      };
-    }
-  }
-
+  
   /**
    * Merge results from multiple chunks with smarter handling of fields
    */
@@ -901,187 +911,6 @@ ${text}`;
     );
     
     return mergedResult;
-  }
-
-  /**
-   * Validate and format extracted fields to ensure consistency
-   */
-  validateAndFormatFields(extractedData) {
-    // Define the expected fields
-    const expectedFields = [
-      'patientName',
-      'patientDOB',
-      'insurance',
-      'location',
-      'dx',
-      'pcp',
-      'dc',
-      'wounds',
-      'antibiotics',
-      'cardiacDrips',
-      'labs',
-      'faceToFace',
-      'history',
-      'mentalHealthState',
-      'additionalComments'
-    ];
-    
-    // Create a properly formatted output object
-    const formattedOutput = {
-      extractionMethod: 'ai',
-      extractionDate: new Date().toISOString()
-    };
-    
-    // Ensure all expected fields exist
-    expectedFields.forEach(field => {
-      // If the field exists in extracted data, use it, otherwise empty string
-      formattedOutput[field] = extractedData[field] || '';
-      
-      // Trim whitespace
-      if (typeof formattedOutput[field] === 'string') {
-        formattedOutput[field] = formattedOutput[field].trim();
-      }
-    });
-    
-    // Handle possible field name variations
-    const fieldMappings = {
-      'patient_name': 'patientName',
-      'patient': 'patientName',
-      'fullName': 'patientName',
-      'name': 'patientName',
-      'date_of_birth': 'patientDOB',
-      'dateOfBirth': 'patientDOB',
-      'dob': 'patientDOB',
-      'birthdate': 'patientDOB',
-      'insurance_provider': 'insurance',
-      'insuranceProvider': 'insurance',
-      'primaryInsurance': 'insurance',
-      'diagnosis': 'dx',
-      'discharge': 'dc',
-      'provider': 'pcp',
-      'primaryCareProvider': 'pcp',
-      'woundCare': 'wounds',
-      'antibioticTherapy': 'antibiotics',
-      'cardiacMedications': 'cardiacDrips',
-      'laboratory': 'labs',
-      'labResults': 'labs',
-      'faceToFaceEncounter': 'faceToFace',
-      'medicalHistory': 'history',
-      'mentalHealth': 'mentalHealthState',
-      'additional': 'additionalComments',
-      'notes': 'additionalComments'
-    };
-    
-    // Check for alternative field names and map them
-    Object.entries(fieldMappings).forEach(([altField, standardField]) => {
-      if (extractedData[altField] && !formattedOutput[standardField]) {
-        formattedOutput[standardField] = extractedData[altField];
-      }
-    });
-    
-    console.log('Validated fields:', Object.keys(formattedOutput).filter(k => 
-      !k.startsWith('_') && k !== 'extractionMethod' && k !== 'extractionDate'
-    ));
-    
-    return formattedOutput;
-  }
-
-  /**
-   * Parse schema from extraction prompt
-   * This helps extract the schema from the prompt when not provided directly
-   */
-  parseSchemaFromPrompt(prompt) {
-    const schema = {};
-    
-    // Extract schema lines from the prompt (lines starting with - followed by field: description)
-    const schemaLines = prompt.match(/- ([a-zA-Z0-9_]+):\s+([^\n]+)/g);
-    
-    if (schemaLines) {
-      schemaLines.forEach(line => {
-        const match = line.match(/- ([a-zA-Z0-9_]+):\s+(.+)/);
-        if (match) {
-          const [, field, description] = match;
-          schema[field] = description;
-        }
-      });
-    }
-    
-    return schema;
-  }
-
-  /**
-   * Find the most similar text sections using embeddings
-   * Used for semantic search and reference identification
-   */
-  async findSimilarSections(query, sections, model = this.defaultModel, topK = 3) {
-    try {
-      // Generate embedding for the query
-      const queryEmbedding = await this.generateEmbeddings(query, model);
-      
-      // Calculate similarity scores for each section
-      const scoredSections = await Promise.all(sections.map(async (section) => {
-        // Generate embedding for the section if not already present
-        const sectionEmbedding = section.embedding || await this.generateEmbeddings(section.text, model);
-        
-        // Calculate similarity score
-        const score = this.cosineSimilarity(queryEmbedding, sectionEmbedding);
-        
-        return {
-          ...section,
-          embedding: sectionEmbedding,
-          score
-        };
-      }));
-      
-      // Sort sections by similarity score (highest first)
-      const sortedSections = scoredSections.sort((a, b) => b.score - a.score);
-      
-      // Return top K sections
-      return sortedSections.slice(0, topK);
-    } catch (error) {
-      console.error('Error finding similar sections:', error);
-      return sections.slice(0, topK);
-    }
-  }
-
-  /**
-   * Determine the type of a section based on its content
-   * Used for categorizing references
-   */
-  determineSectionType(text) {
-    const lowerText = text.toLowerCase();
-    
-    // Check for common section types in medical documents
-    if (lowerText.includes('patient') && (lowerText.includes('information') || lowerText.includes('details'))) {
-      return 'Patient Information';
-    }
-    
-    if (lowerText.includes('referring') && (lowerText.includes('physician') || lowerText.includes('doctor'))) {
-      return 'Referring Physician';
-    }
-    
-    if (lowerText.includes('diagnosis') || lowerText.includes('assessment') || lowerText.includes('impression')) {
-      return 'Diagnosis';
-    }
-    
-    if (lowerText.includes('history')) {
-      return 'Medical History';
-    }
-    
-    if (lowerText.includes('medication') || lowerText.includes('prescription')) {
-      return 'Medications';
-    }
-    
-    if (lowerText.includes('insurance')) {
-      return 'Insurance Information';
-    }
-    
-    if (lowerText.includes('reason') && lowerText.includes('referral')) {
-      return 'Referral Reason';
-    }
-    
-    // Default section type
-    return 'Document Section';
   }
 }
 

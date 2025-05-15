@@ -10,7 +10,8 @@ import {
   ScrollView,
   Platform,
   Animated,
-  Alert
+  Alert,
+  Image
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import EnhancedHeader from '../components/EnhancedHeader';
@@ -73,6 +74,52 @@ const PDFPreviewScreen = () => {
     generatePdfPreview();
   }, []);
   
+  // Helper function to convert logo to data URL for PDF
+  const getLogoAsDataUrl = async () => {
+    // For web, create a canvas to draw the image and get a data URL
+    return new Promise((resolve, reject) => {
+      try {
+        if (!isWeb) {
+          // For native platforms, this would be handled differently
+          resolve(null);
+          return;
+        }
+        
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          
+          // Set canvas dimensions to match the image's aspect ratio
+          const aspectRatio = img.width / img.height;
+          canvas.width = 300; // A reasonably high resolution
+          canvas.height = canvas.width / aspectRatio;
+          
+          // Draw the image on the canvas
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          
+          // Get the data URL
+          const dataUrl = canvas.toDataURL('image/png');
+          resolve(dataUrl);
+        };
+        
+        img.onerror = (e) => {
+          console.error('Error loading logo image', e);
+          // Resolve with null to trigger fallback
+          resolve(null);
+        };
+        
+        // Set the source to the logo (dynamically)
+        // We need to use a dynamic require for the Image web implementation
+        const logoModule = require('../assets/medreclogo.png');
+        img.src = logoModule.default || logoModule;
+      } catch (error) {
+        console.error('Error in getLogoAsDataUrl', error);
+        resolve(null);
+      }
+    });
+  };
+  
   // Web-specific PDF generation (enhanced version)
   const generateWebPdfPreview = async () => {
     try {
@@ -83,14 +130,21 @@ const PDFPreviewScreen = () => {
         format: 'letter'
       });
       
-      // Add organization logo (placeholder - replace with your actual logo)
-      // For demo, use a colored rectangle as logo placeholder
-      doc.setFillColor(41, 128, 185); // Professional blue
-      doc.rect(15, 10, 30, 15, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'bold');
-      doc.text('MedRec', 25, 20);
+      // Try to get the logo as data URL
+      const logoDataUrl = await getLogoAsDataUrl();
+      
+      // Add organization logo - with adjusted positioning and size for proper display
+      if (logoDataUrl) {
+        // Use the actual logo image at proper scale
+        // Positioning parameters: x, y, width, height
+        doc.addImage(logoDataUrl, 'PNG', 15, 10, 40, 15);
+      } else {
+        // SIMPLIFIED FALLBACK - just blue text, no background rectangle
+        doc.setTextColor(41, 128, 185); // Professional blue
+        doc.setFontSize(16); // Slightly larger font for better visibility
+        doc.setFont('helvetica', 'bold');
+        doc.text('MedRec', 15, 20); // Position adjusted to align with where the logo would be
+      }
       
       // Add document title with styling
       doc.setFontSize(20);
@@ -292,9 +346,11 @@ const PDFPreviewScreen = () => {
   
   return (
     <SafeAreaView style={modernStyles.container}>
+      {/* Updated to show the logo */}
       <EnhancedHeader
-        title="Clinical Report Preview"
+        title=""
         showBackButton={true}
+        showLogo={true}
       />
       
       <View style={modernStyles.content}>
@@ -334,7 +390,11 @@ const PDFPreviewScreen = () => {
                 <View style={modernStyles.previewContent}>
                   <View style={modernStyles.reportHeader}>
                     <View style={modernStyles.logoPlaceholder}>
-                      <Text style={modernStyles.logoText}>MedRec</Text>
+                      <Image 
+                        source={require('../assets/medreclogo.png')} 
+                        style={modernStyles.logoImage}
+                        resizeMode="contain"
+                      />
                     </View>
                     <View style={modernStyles.reportTitleContainer}>
                       <Text style={modernStyles.reportTitle}>Medical Document Review Report</Text>
@@ -520,18 +580,16 @@ const modernStyles = StyleSheet.create({
     marginBottom: Spacing.large,
   },
   logoPlaceholder: {
-    width: 60,
+    width: 80, // Increased width for proper display
     height: 30,
-    backgroundColor: Colors.primary,
-    borderRadius: BorderRadius.small,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: Spacing.medium,
+    overflow: 'hidden',
   },
-  logoText: {
-    color: Colors.white,
-    fontWeight: Typography.weight.bold,
-    fontSize: Typography.size.medium,
+  logoImage: {
+    width: '100%',
+    height: '100%',
   },
   reportTitleContainer: {
     flex: 1,
