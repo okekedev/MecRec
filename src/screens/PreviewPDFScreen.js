@@ -1,4 +1,4 @@
-// src/screens/PDFPreviewScreen.js (UI modernization)
+// src/screens/PDFPreviewScreen.js
 import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
@@ -24,7 +24,7 @@ import jsPDF from 'jspdf';
 const PDFPreviewScreen = () => {
   const route = useRoute();
   const navigation = useNavigation();
-  const { documentId, formData, reviewerName, reviewDate } = route.params;
+  const { documentId, formData, reviewerName, reviewerCredentials, reviewDate } = route.params;
   
   const [loading, setLoading] = useState(true);
   const [pdfUrl, setPdfUrl] = useState(null);
@@ -110,19 +110,45 @@ const PDFPreviewScreen = () => {
       doc.setLineWidth(0.5);
       doc.line(15, 55, 195, 55);
       
+      // Add patient information section when available
+      let y = 60;
+      if (formData.patientName || formData.patientDOB) {
+        doc.setFillColor(240, 240, 240); // Light gray background
+        doc.roundedRect(15, y, 180, 15, 2, 2, 'F');
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(50, 50, 50);
+        doc.text('Patient:', 20, y + 8);
+        
+        let patientInfo = '';
+        if (formData.patientName) {
+          patientInfo += formData.patientName;
+        }
+        if (formData.patientDOB) {
+          patientInfo += (patientInfo ? ' | DOB: ' : '') + formData.patientDOB;
+        }
+        
+        doc.setFont('helvetica', 'normal');
+        doc.text(patientInfo, 50, y + 8);
+        
+        y += 20; // Move down for reviewer info
+      }
+      
       // Add reviewer information in a styled box
       doc.setFillColor(240, 240, 240); // Light gray background
-      doc.roundedRect(15, 60, 180, 15, 2, 2, 'F');
+      doc.roundedRect(15, y, 180, 15, 2, 2, 'F');
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(50, 50, 50);
-      doc.text('Reviewed By:', 20, 68);
+      doc.text('Reviewed By:', 20, y + 8);
       doc.setFont('helvetica', 'normal');
-      doc.text(reviewerName, 50, 68);
+      doc.text(reviewerName, 50, y + 8);
       
       // Format and add each field
-      let y = 85;
+      y += 25;
       const addField = (label, value) => {
         if (!value || value.trim() === '') return y;
+        
+        // Skip patient info fields as they're shown at the top
+        if (label === 'Patient Name' || label === 'Date of Birth') return y;
         
         // Set field label styling
         doc.setFont('helvetica', 'bold');
@@ -150,8 +176,23 @@ const PDFPreviewScreen = () => {
         return y;
       };
       
+      // Field name to label mapping function
+      const formatLabel = (camelCase) => {
+        if (camelCase === 'patientName') return 'Patient Name';
+        if (camelCase === 'patientDOB') return 'Date of Birth';
+        if (camelCase === 'dx') return 'Diagnosis (Dx)';
+        if (camelCase === 'pcp') return 'Primary Care Provider (PCP)';
+        if (camelCase === 'dc') return 'Discharge (DC)';
+        
+        return camelCase
+          .replace(/([A-Z])/g, ' $1')
+          .replace(/^./, str => str.toUpperCase());
+      };
+      
       // Group related clinical fields
       // Primary information
+      y = addField('Patient Name', formData.patientName);
+      y = addField('Date of Birth', formData.patientDOB);
       y = addField('Insurance', formData.insurance);
       y = addField('Location', formData.location);
       y = addField('Diagnosis (Dx)', formData.dx);
@@ -208,7 +249,13 @@ const PDFPreviewScreen = () => {
         // For web, create and trigger download link
         const link = document.createElement('a');
         link.href = pdfUrl;
-        link.download = `Medical_Review_${new Date().toISOString().slice(0, 10)}.pdf`;
+        
+        // Include patient name in filename if available
+        const filename = formData.patientName ? 
+          `Medical_Review_${formData.patientName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf` : 
+          `Medical_Review_${new Date().toISOString().slice(0, 10)}.pdf`;
+          
+        link.download = filename;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -220,8 +267,14 @@ const PDFPreviewScreen = () => {
       } else {
         // For native, save to FileSystem
         // This is a placeholder - would need proper implementation
-        const fileUri = `${FileSystem.documentDirectory}Medical_Review_${new Date().toISOString().slice(0, 10)}.pdf`;
-        await FileSystem.writeAsStringAsync(fileUri, pdfUrl, { encoding: FileSystem.EncodingType.Base64 });
+        const filename = formData.patientName ? 
+          `Medical_Review_${formData.patientName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf` : 
+          `Medical_Review_${new Date().toISOString().slice(0, 10)}.pdf`;
+          
+        const fileUri = `${FileSystem.documentDirectory}${filename}`;
+        await FileSystem.writeAsStringAsync(fileUri, pdfUrl, { 
+          encoding: FileSystem.EncodingType.Base64 
+        });
         
         // Show success message
         Alert.alert('Success', `PDF saved to ${fileUri}`);
@@ -291,6 +344,21 @@ const PDFPreviewScreen = () => {
                     </View>
                   </View>
                   
+                  {/* Patient Information Section */}
+                  {(formData.patientName || formData.patientDOB) && (
+                    <View style={modernStyles.patientInfoContainer}>
+                      <Text style={modernStyles.patientLabel}>Patient:</Text>
+                      <View style={modernStyles.patientDetails}>
+                        {formData.patientName && (
+                          <Text style={modernStyles.patientName}>{formData.patientName}</Text>
+                        )}
+                        {formData.patientDOB && (
+                          <Text style={modernStyles.patientDOB}>DOB: {formData.patientDOB}</Text>
+                        )}
+                      </View>
+                    </View>
+                  )}
+                  
                   <View style={modernStyles.reviewerInfoContainer}>
                     <Text style={modernStyles.reviewerLabel}>Reviewed By:</Text>
                     <Text style={modernStyles.reviewerName}>{reviewerName}</Text>
@@ -304,10 +372,12 @@ const PDFPreviewScreen = () => {
                   {/* Preview content - enhanced version of what will be in PDF */}
                   <View style={modernStyles.fieldsContainer}>
                     {Object.entries(formData).map(([field, value]) => {
-                      // Skip metadata fields
+                      // Skip metadata fields and already shown patient info
                       if (field.startsWith('_') || 
                           field === 'extractionMethod' || 
                           field === 'extractionDate' ||
+                          field === 'patientName' ||
+                          field === 'patientDOB' ||
                           !value || 
                           value.trim() === '') {
                         return null;
@@ -475,6 +545,36 @@ const modernStyles = StyleSheet.create({
   reportDate: {
     fontSize: Typography.size.small,
     color: Colors.gray,
+  },
+  // Patient info section
+  patientInfoContainer: {
+    backgroundColor: '#f0f7fd',
+    padding: Spacing.medium,
+    borderRadius: BorderRadius.small,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.medium,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.primary,
+  },
+  patientLabel: {
+    fontSize: Typography.size.medium,
+    fontWeight: Typography.weight.bold,
+    color: Colors.black,
+    marginRight: Spacing.small,
+  },
+  patientDetails: {
+    flex: 1,
+  },
+  patientName: {
+    fontSize: Typography.size.medium,
+    fontWeight: Typography.weight.medium,
+    color: Colors.black,
+  },
+  patientDOB: {
+    fontSize: Typography.size.small,
+    color: Colors.gray,
+    marginTop: 2,
   },
   reviewerInfoContainer: {
     backgroundColor: '#f8fafc',

@@ -1,3 +1,4 @@
+// Enhanced DocumentUploader.js with Progress Integration
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -22,25 +23,21 @@ const DocumentUploader = ({
   const [loading, setLoading] = useState(false);
   const [progressVisible, setProgressVisible] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [progressStatus, setProgressStatus] = useState('Initializing...');
+  const [progressStatus, setProgressStatus] = useState('processing');
   const [currentStep, setCurrentStep] = useState('');
   const [currentStepProgress, setCurrentStepProgress] = useState(0);
+  const [progressMessage, setProgressMessage] = useState('');
   
   // Set up progress callback
   useEffect(() => {
     const pdfProcessor = PDFProcessorService.getInstance();
     
-    // Set up the text extraction service progress handler
-    const textExtractionService = pdfProcessor.textExtractionService;
-    if (textExtractionService) {
-      textExtractionService.setProgressCallback(handleProgressUpdate);
-    }
+    // Set progress callback
+    pdfProcessor.setProgressCallback(handleProgressUpdate);
     
     return () => {
       // Remove progress callback when component unmounts
-      if (textExtractionService) {
-        textExtractionService.setProgressCallback(null);
-      }
+      pdfProcessor.setProgressCallback(null);
     };
   }, []);
   
@@ -56,9 +53,28 @@ const DocumentUploader = ({
       setProgressStatus(progressInfo.status);
     }
     
-    if (progressInfo.page !== undefined && progressInfo.totalPages !== undefined) {
-      setCurrentStep(`Processing page ${progressInfo.page}`);
-      setCurrentStepProgress(progressInfo.page / progressInfo.totalPages);
+    if (progressInfo.currentStep) {
+      setCurrentStep(progressInfo.currentStep);
+    }
+    
+    if (progressInfo.message) {
+      setProgressMessage(progressInfo.message);
+    }
+    
+    // Handle completion
+    if (progressInfo.status === 'complete') {
+      // Add a small delay before hiding the progress overlay
+      setTimeout(() => {
+        setProgressVisible(false);
+      }, 1000);
+    }
+    
+    // Handle errors
+    if (progressInfo.status === 'error') {
+      setTimeout(() => {
+        setProgressVisible(false);
+        Alert.alert('Error', progressInfo.message || 'An error occurred during processing');
+      }, 2000);
     }
   };
 
@@ -85,12 +101,15 @@ const DocumentUploader = ({
       setLoading(true);
       setProgressVisible(true);
       setProgress(0);
-      setProgressStatus('Preparing document for processing...');
+      setProgressStatus('processing');
+      setCurrentStep('Starting');
+      setProgressMessage('Preparing to process document');
       
       // Save document to app storage if it's not already there
       let localPath = document.localPath;
       if (!localPath) {
-        setProgressStatus('Saving document...');
+        setCurrentStep('Saving Document');
+        setProgressMessage('Saving document to local storage');
         const savedPath = await saveDocumentToAppStorage(document.uri, document.name);
         
         if (savedPath === null) {
@@ -100,26 +119,18 @@ const DocumentUploader = ({
         localPath = savedPath;
       }
       
-      // Process the document
-      setProgressStatus('Extracting text from document...');
+      // Process the document - progress updates will be handled by callback
       const processorService = PDFProcessorService.getInstance();
       const processedDocument = await processorService.processDocument(
         localPath,
         document.name
       );
       
-      // Final steps
-      setProgressStatus('Finalizing...');
-      setProgress(1);
+      // Ensure loading state is cleaned up
+      setLoading(false);
       
-      // Short delay to show completion
-      setTimeout(() => {
-        setProgressVisible(false);
-        setLoading(false);
-        
-        // Notify parent component
-        onDocumentProcessed(processedDocument);
-      }, 800);
+      // Notify parent component
+      onDocumentProcessed(processedDocument);
       
     } catch (error) {
       console.error('Error processing document:', error);
@@ -179,14 +190,13 @@ const DocumentUploader = ({
         )}
       </Pressable>
       
-      {/* Progress Overlay */}
+      {/* Progress Overlay with enhanced AI feedback */}
       <ProgressOverlay
         visible={progressVisible}
         progress={progress}
         status={progressStatus}
-        showDetails={true}
         currentStep={currentStep}
-        currentStepProgress={currentStepProgress}
+        message={progressMessage}
       />
     </View>
   );

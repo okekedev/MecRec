@@ -1,45 +1,119 @@
 /**
- * Enhanced OllamaService with improved handling for embeddings and reference tracking
+ * Enhanced OllamaService with Llama 3.2 1B optimization
  */
 class OllamaService {
   static instance;
 
   constructor() {
-  this.baseUrl = 'http://localhost:11434';
-  this.defaultModel = 'llama3.2';
-  
-  // Store default prompts for extraction with the new fields added
-  this.extractionPrompt = `Extract the following information from the text into a JSON object:
-- patientName: Patient's full name
-- patientDOB: Patient's date of birth
-- primaryInsurance: Patient's primary insurance provider
-- secondaryInsurance: Patient's secondary insurance provider (if any)
-- location: Treatment or facility location
-- dx: Diagnosis (Dx)
-- pcp: Primary Care Provider (PCP)
-- dc: Discharge (DC) information
-- wounds: Information about wounds, wound care, or wound assessment
-- antibiotics: Antibiotic medications and treatments
-- cardiacDrips: Cardiac drips or cardiac medications
-- labs: Laboratory results and values
-- faceToFace: Face to face encounters or assessments
-- history: Patient medical history
-- mentalHealthState: Mental health status or assessments
-- additionalComments: Additional notes or comments
+    this.baseUrl = 'http://localhost:11434';
+    
+    // Set Llama 3.2 1B as the primary model - 1.3GB with 128K context
+    this.defaultModel = 'llama3.2:1b';
+    
+    // Alternative models if the primary one isn't available
+    this.fallbackModels = ['llama3:8b', 'llama3.1:8b', 'llama3.1:1b', 'tinyllama', 'phi', 'gemma:2b'];
+    
+    // Optimized extraction prompt for Llama 3.2 1B, now with patient name and DOB
+    this.extractionPrompt = `TASK: Extract medical information from the document.
 
-If a field is not found, set it to null or an empty string.
-Return ONLY a valid JSON object with the field names exactly as specified.`;
+OUTPUT FORMAT: JSON with these exact keys:
+- patientName
+- patientDOB
+- insurance
+- location
+- dx
+- pcp
+- dc
+- wounds
+- antibiotics
+- cardiacDrips
+- labs
+- faceToFace
+- history
+- mentalHealthState
+- additionalComments
 
-  this.systemPrompt = `You are an AI assistant specialized in extracting structured information from medical documents. 
-Your task is to extract specific fields of information and return them in a clean, valid JSON format.
-Return ONLY the JSON object with no additional text, ensuring it can be parsed directly with JSON.parse().`;
-}
+EXTRACTION GUIDE:
+- "patientName" = patient's full name
+- "patientDOB" = patient's date of birth
+- "insurance" = all patient insurance details
+- "location" = hospital/facility name
+- "dx" = diagnosis/medical condition
+- "pcp" = primary doctor name
+- "dc" = discharge information
+- "wounds" = wound descriptions
+- "antibiotics" = antibiotic medications
+- "cardiacDrips" = heart medications
+- "labs" = test results
+- "faceToFace" = in-person evaluations
+- "history" = patient medical history
+- "mentalHealthState" = psychological status
+- "additionalComments" = other relevant details
+
+For missing information, use empty string "".
+Only output valid JSON with these exact fields.`;
+
+    // Enhanced system prompt with medical domain knowledge, focused on patient info
+    this.systemPrompt = `You are a medical information extraction assistant specializing in clinical documents.
+Your sole purpose is to extract structured medical information from documents.
+You understand medical terminology, abbreviations, and can recognize clinical concepts.
+
+CRITICAL FIELDS:
+- patientName: Look for full names, often near "Patient:", "Name:", or at the top of the document
+- patientDOB: Look for birthdate in various formats (MM/DD/YYYY, DD-MM-YYYY, etc.), often labeled as "DOB", "Birth Date", etc.
+
+Common medical abbreviations:
+- Dx = Diagnosis
+- PCP = Primary Care Provider 
+- DC = Discharge
+- Hx = History
+- Tx = Treatment
+- Rx = Prescription
+- Sx = Symptoms
+- PM&R = Physical Medicine and Rehabilitation
+
+Always return a JSON object with exactly the requested field names.
+If information is not found, include the field with an empty string.
+Do not make up information that isn't present in the document.`;
+
+    // To track extraction progress
+    this.extractionProgress = {
+      status: 'idle',
+      progress: 0,
+      currentStep: '',
+      message: ''
+    };
+    this.progressCallback = null;
+  }
 
   static getInstance() {
     if (!OllamaService.instance) {
       OllamaService.instance = new OllamaService();
     }
     return OllamaService.instance;
+  }
+
+  /**
+   * Set the progress callback function
+   */
+  setProgressCallback(callback) {
+    this.progressCallback = callback;
+  }
+
+  /**
+   * Update extraction progress
+   */
+  updateProgress(status, progress, currentStep, message) {
+    this.extractionProgress = {
+      status,
+      progress,
+      currentStep,
+      message
+    };
+
+    if (this.progressCallback) {
+      this.progressCallback(this.extractionProgress);
+    }
   }
 
   /**
@@ -54,7 +128,7 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
    * Set the default model to use
    */
   setDefaultModel(model) {
-    this.defaultModel = model.trim() || 'llama3.2';
+    this.defaultModel = model.trim() || 'llama3.2:1b';
     console.log('Ollama default model set to:', this.defaultModel);
   }
   
@@ -96,7 +170,10 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
   async testConnection() {
     console.log('Testing connection to Ollama server:', `${this.baseUrl}/api/version`);
     try {
-      const response = await fetch(`${this.baseUrl}/api/version`);
+      const response = await fetch(`${this.baseUrl}/api/version`, {
+        // Add timeout to prevent hanging
+        signal: AbortSignal.timeout(5000) // 5 second timeout
+      });
       
       if (!response.ok) {
         console.error('Ollama connection failed:', response.status, response.statusText);
@@ -159,6 +236,68 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
   }
 
   /**
+   * Initialize the service by finding the llama3.2:1b model or a fallback
+   */
+  async initialize() {
+    console.log('Initializing OllamaService with Llama 3.2 1B...');
+    try {
+      // Check connection
+      const isConnected = await this.testConnection();
+      if (!isConnected) {
+        console.error('Ollama server not available');
+        return false;
+      }
+      
+      // First try to check if our preferred model exists
+      try {
+        console.log(`Checking if ${this.defaultModel} exists...`);
+        const response = await fetch(`${this.baseUrl}/api/show`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ name: this.defaultModel }),
+        });
+        
+        if (response.ok) {
+          console.log(`Confirmed ${this.defaultModel} is available`);
+          return true;
+        } else {
+          console.warn(`${this.defaultModel} not found, checking alternatives...`);
+        }
+      } catch (error) {
+        console.warn(`Error checking ${this.defaultModel}:`, error);
+      }
+      
+      // If preferred model not found, try to get all available models
+      const models = await this.getAvailableModels();
+      console.log('Available models:', models);
+      
+      if (models && models.length > 0) {
+        // First, check if any of our preferred models are available
+        for (const model of [this.defaultModel, ...this.fallbackModels]) {
+          if (models.includes(model)) {
+            this.defaultModel = model;
+            console.log(`Using model: ${this.defaultModel}`);
+            return true;
+          }
+        }
+        
+        // If none of the preferred models found, use the first available one
+        this.defaultModel = models[0];
+        console.log(`Using available model: ${this.defaultModel}`);
+        return true;
+      }
+      
+      console.error('No models available in Ollama');
+      return false;
+    } catch (error) {
+      console.error('Error initializing OllamaService:', error);
+      return false;
+    }
+  }
+
+  /**
    * Generate a completion using Ollama API
    */
   async generateCompletion(
@@ -171,10 +310,6 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
       model = this.defaultModel;
     }
     
-    if (!model) {
-      throw new Error('No model specified for Ollama completion');
-    }
-    
     console.log(`Generating completion with model: ${model}`);
     console.log(`Prompt length: ${prompt.length} characters`);
     
@@ -184,9 +319,9 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
         model,
         prompt,
         // In newer Ollama versions, options are at the top level
-        temperature: options.temperature || 0.7,
-        top_p: options.top_p,
-        top_k: options.top_k,
+        temperature: options.temperature || 0.1, // Lower temperature for extraction tasks
+        top_p: options.top_p || 0.9,
+        top_k: options.top_k || 40,
         stream: false,
       };
 
@@ -198,7 +333,14 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
 
       const requestUrl = `${this.baseUrl}/api/generate`;
       console.log('Sending request to:', requestUrl);
-      console.log('Request data:', JSON.stringify(requestData));
+      
+      // Update progress - starting inference
+      this.updateProgress(
+        'processing', 
+        0.4, 
+        'Analyzing document',
+        `Running AI model: ${model}`
+      );
       
       const response = await fetch(requestUrl, {
         method: 'POST',
@@ -212,6 +354,14 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
         const errorText = await response.text().catch(() => 'No error details');
         console.error('Ollama API error:', response.status, response.statusText, errorText);
         
+        // Update progress - error
+        this.updateProgress(
+          'error', 
+          0.4, 
+          'Model error',
+          `Error running model: ${errorText}`
+        );
+        
         // If the specified model doesn't exist, try a fallback model
         if (response.status === 404 && errorText.includes('model')) {
           console.log('Model not found, attempting fallback to any available model');
@@ -220,6 +370,14 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
           if (models.length > 0) {
             const fallbackModel = models[0];
             console.log(`Trying fallback model: ${fallbackModel}`);
+            
+            // Update progress - trying fallback
+            this.updateProgress(
+              'processing', 
+              0.4, 
+              'Using fallback model',
+              `Model not found, trying: ${fallbackModel}`
+            );
             
             // Update request with fallback model
             requestData.model = fallbackModel;
@@ -235,6 +393,14 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
             if (fallbackResponse.ok) {
               const fallbackData = await fallbackResponse.json();
               console.log('Fallback model succeeded');
+              
+              // Update progress - fallback succeeded
+              this.updateProgress(
+                'processing', 
+                0.6, 
+                'Analyzing complete',
+                'Fallback model analysis successful'
+              );
               
               // Handle different response formats
               if (fallbackData.response) {
@@ -253,6 +419,14 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
 
       const data = await response.json();
       
+      // Update progress - success
+      this.updateProgress(
+        'processing', 
+        0.7, 
+        'Analysis complete',
+        'Successfully extracted information'
+      );
+      
       // Handle different response formats
       if (data.response) {
         return data.response;
@@ -266,6 +440,15 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
       }
     } catch (error) {
       console.error('Ollama completion error:', error);
+      
+      // Update progress - error
+      this.updateProgress(
+        'error', 
+        0.4, 
+        'Analysis failed',
+        `Error: ${error.message}`
+      );
+      
       throw error;
     }
   }
@@ -279,14 +462,17 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
       model = this.defaultModel;
     }
     
+    // Limit text length for embeddings to avoid performance issues
+    const processedText = text.length > 8000 ? text.substring(0, 8000) : text;
+    
     console.log(`Generating embeddings with model: ${model}`);
-    console.log(`Text length: ${text.length} characters`);
+    console.log(`Text length for embeddings: ${processedText.length} characters`);
     
     try {
       // Try first API format (newer versions)
       const requestData = {
         model,
-        prompt: text,
+        prompt: processedText,
       };
 
       const requestUrl = `${this.baseUrl}/api/embeddings`;
@@ -303,7 +489,7 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
       if (!response.ok) {
         // If embedding endpoint fails, try the alternative embed endpoint that some Ollama versions use
         console.warn('Embeddings endpoint failed, trying alternate endpoint');
-        return this.generateEmbeddingsAlternate(text, model);
+        return this.generateEmbeddingsAlternate(processedText, model);
       }
 
       const data = await response.json();
@@ -331,7 +517,7 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
       
       // Try alternate endpoint on error
       try {
-        return await this.generateEmbeddingsAlternate(text, model);
+        return await this.generateEmbeddingsAlternate(processedText, model);
       } catch (alternateError) {
         console.error('Alternate embeddings approach also failed:', alternateError);
         
@@ -423,6 +609,407 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
   }
 
   /**
+   * Extract structured information from text - optimized for long documents
+   */
+  async extractInformation(text, schema = null, model = this.defaultModel) {
+    try {
+      // Update progress - starting
+      this.updateProgress(
+        'processing', 
+        0.3, 
+        'Starting AI analysis',
+        'Preparing document for AI extraction'
+      );
+      
+      // Use a different chunking strategy for Llama 3.2 1B - 
+      // it has a 128K context window, so we can potentially send more at once
+      const MAX_CHUNK_SIZE = 12000; // Characters per chunk - larger for 128K context model
+      
+      // For very long documents, process in chunks
+      if (text.length > MAX_CHUNK_SIZE) {
+        console.log(`Document is ${text.length} chars, chunking into ${MAX_CHUNK_SIZE}-char parts`);
+        
+        // Update progress - chunking
+        this.updateProgress(
+          'processing', 
+          0.32, 
+          'Document preprocessing',
+          `Dividing document into processable chunks (${Math.ceil(text.length / MAX_CHUNK_SIZE)})`
+        );
+        
+        // Break into chunks with overlap
+        const chunks = this.splitIntoChunks(text, MAX_CHUNK_SIZE, 1000);
+        console.log(`Split into ${chunks.length} chunks`);
+        
+        // Extract from each chunk separately
+        const chunkResults = [];
+        for (let i = 0; i < chunks.length; i++) {
+          console.log(`Processing chunk ${i+1}/${chunks.length} (${chunks[i].length} chars)`);
+          
+          // Update progress - processing chunk
+          this.updateProgress(
+            'processing', 
+            0.35 + (0.4 * (i / chunks.length)), 
+            `Analyzing section ${i+1}/${chunks.length}`,
+            `Processing document section ${i+1} of ${chunks.length}`
+          );
+          
+          // Process each chunk
+          const chunkResult = await this.processSingleChunk(chunks[i], schema, model);
+          chunkResults.push(chunkResult);
+          
+          // Log the extracted fields for this chunk
+          console.log(`Chunk ${i+1} extracted fields:`, 
+            Object.entries(chunkResult)
+              .filter(([key, value]) => !key.startsWith('_') && key !== 'extractionMethod' && key !== 'extractionDate')
+              .map(([key, value]) => `${key}: ${value ? 'found' : 'empty'}`)
+          );
+        }
+        
+        // Update progress - merging results
+        this.updateProgress(
+          'processing', 
+          0.8, 
+          'Finalizing results',
+          'Combining information from all document sections'
+        );
+        
+        // Merge the results
+        console.log(`Merging results from ${chunkResults.length} chunks`);
+        return this.mergeChunkResults(chunkResults);
+      } else {
+        // For shorter texts, process directly
+        return this.processSingleChunk(text, schema, model);
+      }
+    } catch (error) {
+      console.error('Information extraction error:', error);
+      
+      // Update progress - error
+      this.updateProgress(
+        'error', 
+        0.5, 
+        'Extraction failed',
+        `Error: ${error.message}`
+      );
+      
+      return {
+        extractionMethod: 'failed',
+        error: error.message,
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
+  /**
+   * Split text into overlapping chunks for processing
+   */
+  splitIntoChunks(text, chunkSize, overlap) {
+    const chunks = [];
+    let startIndex = 0;
+    
+    while (startIndex < text.length) {
+      let endIndex = Math.min(startIndex + chunkSize, text.length);
+      
+      // Try to find a good split point (end of paragraph)
+      if (endIndex < text.length) {
+        const nextParagraph = text.indexOf('\n\n', endIndex - overlap);
+        if (nextParagraph !== -1 && nextParagraph < endIndex + overlap) {
+          endIndex = nextParagraph + 2; // Include the double newline
+        }
+      }
+      
+      chunks.push(text.substring(startIndex, endIndex));
+      startIndex = endIndex - overlap;
+      
+      // Ensure we make progress
+      if (startIndex <= 0 || endIndex >= text.length) {
+        break;
+      }
+    }
+    
+    return chunks;
+  }
+
+  /**
+   * Process a single chunk of text
+   */
+  async processSingleChunk(text, schema, model) {
+    // If no schema is provided, extract schema from the extraction prompt
+    if (!schema) {
+      schema = this.parseSchemaFromPrompt(this.extractionPrompt);
+    }
+    
+    // Create the combined prompt
+    const combinedPrompt = `${this.extractionPrompt}
+
+TEXT TO EXTRACT FROM:
+${text}`;
+    
+    // Use a lower temperature for more deterministic results
+    const extractionOptions = {
+      temperature: 0.1, // Very low temperature for consistent extraction
+    };
+    
+    // Generate completion with the combined prompt
+    const result = await this.generateCompletion(
+      combinedPrompt,
+      model,
+      this.systemPrompt,
+      extractionOptions
+    );
+    
+    // Process the result to extract JSON
+    try {
+      // Find the first { and last } in the response to extract just the JSON part
+      const jsonStart = result.indexOf('{');
+      const jsonEnd = result.lastIndexOf('}') + 1;
+      
+      if (jsonStart >= 0 && jsonEnd > jsonStart) {
+        const jsonStr = result.substring(jsonStart, jsonEnd);
+        
+        try {
+          const parsedResult = JSON.parse(jsonStr);
+          console.log('Successfully parsed JSON result');
+          
+          // Update progress - parsing successful
+          this.updateProgress(
+            'processing', 
+            0.75, 
+            'Information extracted',
+            'Successfully parsed structured data'
+          );
+          
+          // Validate and format the extracted fields
+          return this.validateAndFormatFields(parsedResult);
+        } catch (jsonError) {
+          console.error('Failed to parse extracted JSON:', jsonError);
+          
+          // Update progress - parsing failed
+          this.updateProgress(
+            'error', 
+            0.7, 
+            'Parsing error',
+            'Failed to parse AI output as JSON'
+          );
+          
+          // Return basic error object
+          return {
+            extractionMethod: 'failed',
+            error: 'JSON parsing error',
+            errorDetails: jsonError.message,
+            timestamp: new Date().toISOString()
+          };
+        }
+      }
+      
+      // Additional error handling...
+      console.error('No JSON found in result');
+      
+      // Update progress - no JSON found
+      this.updateProgress(
+        'error', 
+        0.7, 
+        'Format error',
+        'AI output did not contain valid JSON'
+      );
+      
+      return {
+        extractionMethod: 'failed',
+        error: 'No JSON found in model response',
+        timestamp: new Date().toISOString()
+      };
+    } catch (parseError) {
+      console.error('Failed to parse extracted information:', parseError);
+      
+      // Update progress - parsing error
+      this.updateProgress(
+        'error', 
+        0.7, 
+        'Processing error',
+        `Failed to extract structured data: ${parseError.message}`
+      );
+      
+      // Return error information
+      return {
+        extractionMethod: 'failed',
+        error: 'Parsing error',
+        errorDetails: parseError.message,
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
+  /**
+   * Merge results from multiple chunks with smarter handling of fields
+   */
+  mergeChunkResults(results) {
+    const mergedResult = {
+      extractionMethod: 'ai',
+      extractionDate: new Date().toISOString()
+    };
+    
+    // Define the expected fields
+    const fields = [
+      'patientName', 'patientDOB', 'insurance', 'location', 'dx', 'pcp', 'dc', 'wounds', 
+      'antibiotics', 'cardiacDrips', 'labs', 'faceToFace', 
+      'history', 'mentalHealthState', 'additionalComments'
+    ];
+    
+    // For each field, combine the results from all chunks using a smart approach
+    fields.forEach(field => {
+      // Get all non-empty values for this field
+      const fieldValues = results
+        .map(result => result[field] || '')
+        .filter(value => value.trim() !== '');
+      
+      if (fieldValues.length === 0) {
+        // No values found
+        mergedResult[field] = '';
+        return;
+      }
+      
+      // For single-value fields, use the longest answer (likely most complete)
+      const singleValueFields = ['patientName', 'patientDOB', 'insurance', 'location', 'pcp', 'dc'];
+      if (singleValueFields.includes(field)) {
+        // Sort by length and take the longest (potentially most detailed) one
+        fieldValues.sort((a, b) => b.length - a.length);
+        mergedResult[field] = fieldValues[0];
+        return;
+      }
+      
+      // For possibly multi-value fields, combine all unique values
+      const uniqueValues = [...new Set(fieldValues)];
+      
+      // Check if values are redundant (one contains another)
+      const nonRedundantValues = uniqueValues.filter((value, index) => {
+        // Keep value if it's not a substring of any other value
+        return !uniqueValues.some((otherValue, otherIndex) => {
+          return index !== otherIndex && otherValue.includes(value);
+        });
+      });
+      
+      // Join with appropriate separator
+      mergedResult[field] = nonRedundantValues.join(' ');
+    });
+    
+    // Update progress - merging complete
+    this.updateProgress(
+      'processing', 
+      0.9, 
+      'Extraction complete',
+      'Successfully combined and processed all information'
+    );
+    
+    return mergedResult;
+  }
+
+  /**
+   * Validate and format extracted fields to ensure consistency
+   */
+  validateAndFormatFields(extractedData) {
+    // Define the expected fields
+    const expectedFields = [
+      'patientName',
+      'patientDOB',
+      'insurance',
+      'location',
+      'dx',
+      'pcp',
+      'dc',
+      'wounds',
+      'antibiotics',
+      'cardiacDrips',
+      'labs',
+      'faceToFace',
+      'history',
+      'mentalHealthState',
+      'additionalComments'
+    ];
+    
+    // Create a properly formatted output object
+    const formattedOutput = {
+      extractionMethod: 'ai',
+      extractionDate: new Date().toISOString()
+    };
+    
+    // Ensure all expected fields exist
+    expectedFields.forEach(field => {
+      // If the field exists in extracted data, use it, otherwise empty string
+      formattedOutput[field] = extractedData[field] || '';
+      
+      // Trim whitespace
+      if (typeof formattedOutput[field] === 'string') {
+        formattedOutput[field] = formattedOutput[field].trim();
+      }
+    });
+    
+    // Handle possible field name variations
+    const fieldMappings = {
+      'patient_name': 'patientName',
+      'patient': 'patientName',
+      'fullName': 'patientName',
+      'name': 'patientName',
+      'date_of_birth': 'patientDOB',
+      'dateOfBirth': 'patientDOB',
+      'dob': 'patientDOB',
+      'birthdate': 'patientDOB',
+      'insurance_provider': 'insurance',
+      'insuranceProvider': 'insurance',
+      'primaryInsurance': 'insurance',
+      'diagnosis': 'dx',
+      'discharge': 'dc',
+      'provider': 'pcp',
+      'primaryCareProvider': 'pcp',
+      'woundCare': 'wounds',
+      'antibioticTherapy': 'antibiotics',
+      'cardiacMedications': 'cardiacDrips',
+      'laboratory': 'labs',
+      'labResults': 'labs',
+      'faceToFaceEncounter': 'faceToFace',
+      'medicalHistory': 'history',
+      'mentalHealth': 'mentalHealthState',
+      'additional': 'additionalComments',
+      'notes': 'additionalComments'
+    };
+    
+    // Check for alternative field names and map them
+    Object.entries(fieldMappings).forEach(([altField, standardField]) => {
+      if (extractedData[altField] && !formattedOutput[standardField]) {
+        formattedOutput[standardField] = extractedData[altField];
+      }
+    });
+    
+    console.log('Validated fields:', Object.keys(formattedOutput).filter(k => 
+      !k.startsWith('_') && k !== 'extractionMethod' && k !== 'extractionDate'
+    ));
+    
+    return formattedOutput;
+  }
+
+  /**
+   * Parse schema from extraction prompt
+   * This helps extract the schema from the prompt when not provided directly
+   */
+  parseSchemaFromPrompt(prompt) {
+    const schema = {};
+    
+    // Extract schema lines from the prompt (lines starting with - followed by field: description)
+    const schemaLines = prompt.match(/- ([a-zA-Z0-9_]+):\s+([^\n]+)/g);
+    
+    if (schemaLines) {
+      schemaLines.forEach(line => {
+        const match = line.match(/- ([a-zA-Z0-9_]+):\s+(.+)/);
+        if (match) {
+          const [, field, description] = match;
+          schema[field] = description;
+        }
+      });
+    }
+    
+    return schema;
+  }
+
+  /**
    * Find the most similar text sections using embeddings
    * Used for semantic search and reference identification
    */
@@ -457,164 +1044,6 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
     }
   }
 
-  /**
-   * Extract structured information from text using Ollama LLM
-   * Used for form field extraction with reference tracking
-   */
-  async extractInformation(text, schema = null, model = this.defaultModel) {
-    try {
-      // If no schema is provided, extract schema from the extraction prompt
-      if (!schema) {
-        schema = this.parseSchemaFromPrompt(this.extractionPrompt);
-      }
-      
-      // Create a prompt that asks for structured information with explicit JSON formatting
-      const schemaDescription = Object.entries(schema)
-        .map(([key, description]) => `- ${key}: ${description}`)
-        .join('\n');
-      
-      // Use the extraction prompt from settings, but replace the schema if provided
-      let prompt = this.extractionPrompt;
-      
-      // If schema was provided, replace the schema section in the prompt
-      if (schema) {
-        // Replace the schema part of the prompt
-        prompt = prompt.replace(/Extract the following information.*?(\n\nIf a field is not found|Return ONLY)/s, 
-          `Extract the following information from the text into a JSON object:\n${schemaDescription}`);
-      }
-      
-      // Add the actual text to extract from at the end
-      prompt += `\n\nTEXT:\n${text}`;
-      
-      // Use extraction prompt to get structured data
-      const result = await this.generateCompletion(prompt, model, this.systemPrompt, {
-        temperature: 0.1, // Low temperature for more deterministic output
-      });
-
-      // Try to parse the response as JSON with robust error handling
-      try {
-        // Find the first { and last } in the response to extract just the JSON part
-        const jsonStart = result.indexOf('{');
-        const jsonEnd = result.lastIndexOf('}') + 1;
-        
-        if (jsonStart >= 0 && jsonEnd > jsonStart) {
-          const jsonStr = result.substring(jsonStart, jsonEnd);
-          
-          try {
-            const parsedResult = JSON.parse(jsonStr);
-            
-            // Add metadata about extraction
-            parsedResult.extractionMethod = 'ai';
-            parsedResult.modelUsed = model;
-            parsedResult.extractionDate = new Date().toISOString();
-            
-            // Process text to find potential paragraph boundaries for references if _references is missing
-            if (!parsedResult._references) {
-              parsedResult._references = {};
-              
-              // Split text into paragraphs for reference tracking
-              const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim().length > 0);
-              
-              // Try to create references for each field
-              for (const [field, value] of Object.entries(parsedResult)) {
-                // Skip metadata fields or empty values
-                if (field.startsWith('_') || value === null || value === undefined || value === '') {
-                  continue;
-                }
-                
-                // Find a paragraph containing this value
-                const containingParagraph = typeof value === 'string' && 
-                  paragraphs.find(p => 
-                    p.includes(value) || p.toLowerCase().includes(value.toLowerCase())
-                  );
-                
-                if (containingParagraph) {
-                  parsedResult._references[field] = {
-                    text: containingParagraph,
-                    location: this.determineSectionType(containingParagraph),
-                    value
-                  };
-                }
-              }
-            }
-            
-            return parsedResult;
-          } catch (jsonError) {
-            console.error('Failed to parse extracted JSON:', jsonError);
-            console.log('Problematic JSON string:', jsonStr);
-            
-            // Return basic error object
-            return {
-              extractionMethod: 'failed',
-              error: 'JSON parsing error',
-              errorDetails: jsonError.message,
-              timestamp: new Date().toISOString()
-            };
-          }
-        }
-        
-        // If JSON extraction failed, try to parse the entire response
-        try {
-          const parsedResult = JSON.parse(result);
-          parsedResult.extractionMethod = 'ai';
-          parsedResult.modelUsed = model;
-          return parsedResult;
-        } catch (wholeParseError) {
-          console.error('Failed to parse whole response as JSON:', wholeParseError);
-          
-          // Return a simplified error response
-          return {
-            extractionMethod: 'failed',
-            error: 'Failed to parse AI response',
-            errorType: 'parsing_error',
-            timestamp: new Date().toISOString()
-          };
-        }
-      } catch (parseError) {
-        console.error('Failed to parse extracted information:', parseError);
-        console.error('Raw response:', result);
-        
-        // Return error information
-        return {
-          extractionMethod: 'failed',
-          error: 'Parsing error',
-          errorDetails: parseError.message,
-          timestamp: new Date().toISOString()
-        };
-      }
-    } catch (error) {
-      console.error('Information extraction error:', error);
-      return {
-        extractionMethod: 'failed',
-        error: error.message,
-        timestamp: new Date().toISOString()
-      };
-    }
-  }
-  
-  /**
-   * Parse schema from extraction prompt
-   * This helps extract the schema from the prompt when not provided directly
-   */
-  parseSchemaFromPrompt(prompt) {
-    const schema = {};
-    
-    // Extract schema lines from the prompt (lines starting with - followed by field: description)
-    const schemaLines = prompt.match(/- ([a-zA-Z0-9_]+):\s+([^\n]+)/g);
-    
-    if (schemaLines) {
-      schemaLines.forEach(line => {
-        const match = line.match(/- ([a-zA-Z0-9_]+):\s+(.+)/);
-        if (match) {
-          const [, field, description] = match;
-          schema[field] = description;
-        }
-      });
-    }
-    
-    return schema;
-  }
-  
   /**
    * Determine the type of a section based on its content
    * Used for categorizing references

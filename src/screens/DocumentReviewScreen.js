@@ -33,6 +33,7 @@ const DocumentReviewScreen = () => {
   const [reviewerName, setReviewerName] = useState('');
   const [reviewerCredentials, setReviewerCredentials] = useState('');
   const [allFieldsReviewed, setAllFieldsReviewed] = useState(false);
+  const [extractionError, setExtractionError] = useState('');
   
   // Animation references
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -54,20 +55,37 @@ const DocumentReviewScreen = () => {
           throw new Error('Document not found');
         }
         
+        // Debug logging
+        console.log('Document loaded:', documentId);
+        console.log('Form data fields:', Object.keys(document.formData).filter(k => !k.startsWith('_')));
+        
+        // Check for extraction errors
+        if (document.formData.extractionMethod === 'failed' || 
+            document.formData.extractionMethod === 'error' || 
+            document.formData.extractionMethod === 'unavailable' ||
+            document.formData.error) {
+          setExtractionError(document.formData.error || 'Error during information extraction');
+        }
+        
         // Set document data
         setDocumentData(document);
         
         // Set form data
         if (document.formData) {
-          setFormData(document.formData);
+          // Filter out metadata fields for the form
+          const filteredFormData = {};
+          Object.keys(document.formData).forEach(key => {
+            if (!key.startsWith('_') && key !== 'extractionMethod' && key !== 'extractionDate' && key !== 'error') {
+              filteredFormData[key] = document.formData[key];
+            }
+          });
+          
+          setFormData(filteredFormData);
           
           // Initialize reviewed fields
           const initialReviewed = {};
-          Object.keys(document.formData).forEach(key => {
-            // Skip metadata fields
-            if (!key.startsWith('_') && key !== 'extractionMethod' && key !== 'extractionDate') {
-              initialReviewed[key] = false;
-            }
+          Object.keys(filteredFormData).forEach(key => {
+            initialReviewed[key] = false;
           });
           setReviewedFields(initialReviewed);
         }
@@ -212,6 +230,16 @@ const DocumentReviewScreen = () => {
               <Text style={modernStyles.documentDate}>
                 Processed on {new Date(documentData?.date).toLocaleDateString()}
               </Text>
+              
+              {/* Display extraction warning if there was an error */}
+              {extractionError && (
+                <View style={modernStyles.extractionErrorContainer}>
+                  <Text style={modernStyles.extractionErrorTitle}>AI Extraction Issue</Text>
+                  <Text style={modernStyles.extractionErrorText}>
+                    {extractionError}. Please review all fields carefully and update as needed.
+                  </Text>
+                </View>
+              )}
             </View>
             
             <View style={modernStyles.sectionContainer}>
@@ -225,16 +253,17 @@ const DocumentReviewScreen = () => {
               </Text>
               
               <View style={modernStyles.fieldsContainer}>
-                {Object.entries(formData).map(([fieldName, value]) => {
-                  // Skip metadata fields
-                  if (fieldName.startsWith('_') || 
-                      fieldName === 'extractionMethod' || 
-                      fieldName === 'extractionDate') {
-                    return null;
-                  }
+                {/* Ensure critical patient info is displayed first */}
+                {['patientName', 'patientDOB', 'insurance', 'location', 'dx', 'pcp', 'dc', 'wounds', 
+                  'antibiotics', 'cardiacDrips', 'labs', 'faceToFace', 'history', 'mentalHealthState', 
+                  'additionalComments'].map(fieldName => {
+                  // Skip if field doesn't exist in formData
+                  if (!(fieldName in formData)) return null;
                   
                   // Format field label from camelCase
                   const formatLabel = (camelCase) => {
+                    if (camelCase === 'patientName') return 'Patient Name';
+                    if (camelCase === 'patientDOB') return 'Date of Birth';
                     if (camelCase === 'dx') return 'Diagnosis (Dx)';
                     if (camelCase === 'pcp') return 'Primary Care Provider (PCP)';
                     if (camelCase === 'dc') return 'Discharge (DC)';
@@ -263,7 +292,7 @@ const DocumentReviewScreen = () => {
                     <ReviewField
                       key={fieldName}
                       label={formatLabel(fieldName)}
-                      value={value || ''}
+                      value={formData[fieldName] || ''}
                       onValueChange={(newValue) => handleFieldChange(fieldName, newValue)}
                       isReviewed={reviewedFields[fieldName] || false}
                       onReviewChange={(newValue) => handleReviewToggle(fieldName, newValue)}
@@ -425,6 +454,25 @@ const modernStyles = StyleSheet.create({
   documentDate: {
     fontSize: Typography.size.small,
     color: Colors.gray,
+  },
+  extractionErrorContainer: {
+    marginTop: Spacing.medium,
+    backgroundColor: Colors.accentLight,
+    borderRadius: BorderRadius.small,
+    padding: Spacing.medium,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.accent,
+  },
+  extractionErrorTitle: {
+    fontSize: Typography.size.small,
+    fontWeight: Typography.weight.semibold,
+    color: Colors.accent,
+    marginBottom: Spacing.tiny,
+  },
+  extractionErrorText: {
+    fontSize: Typography.size.small,
+    color: Colors.black,
+    lineHeight: Typography.lineHeight.normal,
   },
   sectionContainer: {
     backgroundColor: Colors.white,

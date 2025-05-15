@@ -1,5 +1,5 @@
 /**
- * Enhanced SettingsScreen with prompt customization
+ * Enhanced SettingsScreen with prompt customization and model information
  */
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -36,38 +36,19 @@ const SettingsScreen = () => {
   const [password, setPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434');
-  const [extractionPrompt, setExtractionPrompt] = useState(
-    `Extract the following information from the text into a JSON object:
-- patientName: Patient's full name
-- patientDOB: Patient's date of birth
-- primaryInsurance: Patient's primary insurance provider
-- secondaryInsurance: Patient's secondary insurance provider (if any)
-- location: Treatment or facility location
-- dx: Diagnosis (Dx)
-- pcp: Primary Care Provider (PCP)
-- dc: Discharge (DC) information
-- wounds: Information about wounds, wound care, or wound assessment
-- antibiotics: Antibiotic medications and treatments
-- cardiacDrips: Cardiac drips or cardiac medications
-- labs: Laboratory results and values
-- faceToFace: Face to face encounters or assessments
-- history: Patient medical history
-- mentalHealthState: Mental health status or assessments
-- additionalComments: Additional notes or comments
-
-If a field is not found, set it to null or an empty string.
-Return ONLY a valid JSON object with the field names exactly as specified.`
-  );
-  const [systemPrompt, setSystemPrompt] = useState(
-    `You are an AI assistant specialized in extracting structured information from medical documents. 
-Your task is to extract specific fields of information and return them in a clean, valid JSON format.
-Return ONLY the JSON object with no additional text, ensuring it can be parsed directly with JSON.parse().`
-  );
+  const [extractionPrompt, setExtractionPrompt] = useState('');
+  const [systemPrompt, setSystemPrompt] = useState('');
+  const [currentModel, setCurrentModel] = useState('');
   const [testing, setTesting] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('');
   const [showPromptHelp, setShowPromptHelp] = useState(false);
+  const [modelInfo, setModelInfo] = useState({
+    model: '',
+    status: 'checking',
+    message: 'Checking Ollama configuration...'
+  });
   
-  // Animation refs
+  // Animation references
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
   const buttonScale = useRef(new Animated.Value(1)).current;
@@ -82,18 +63,21 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
     // Load current prompts from service
     const loadSettings = async () => {
       try {
-        // In a real app, you would retrieve these from storage
-        // For now, we'll just use the defaults
+        // Get current configuration
         const currentConfig = ollamaService.getConfig();
         setOllamaUrl(currentConfig.baseUrl || 'http://localhost:11434');
+        setCurrentModel(currentConfig.defaultModel || 'llama3.2:1b');
         
-        // Also load current prompts if available
+        // Load current prompts if available
         if (currentConfig.extractionPrompt) {
           setExtractionPrompt(currentConfig.extractionPrompt);
         }
         if (currentConfig.systemPrompt) {
           setSystemPrompt(currentConfig.systemPrompt);
         }
+        
+        // Check Ollama configuration
+        await checkOllamaConfig();
       } catch (error) {
         console.error('Error loading settings:', error);
       }
@@ -101,6 +85,53 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
     
     loadSettings();
   }, []);
+  
+  // Check Ollama configuration and model status
+  const checkOllamaConfig = async () => {
+    try {
+      // Check connection
+      const isConnected = await ollamaService.testConnection();
+      if (!isConnected) {
+        setModelInfo({
+          model: '',
+          status: 'error',
+          message: 'Cannot connect to Ollama service. Please make sure it\'s running.'
+        });
+        return;
+      }
+      
+      // Initialize to find the best model
+      await ollamaService.initialize();
+      setCurrentModel(ollamaService.defaultModel);
+      
+      if (ollamaService.defaultModel === 'llama3.2:1b') {
+        setModelInfo({
+          model: 'llama3.2:1b',
+          status: 'success',
+          message: 'Using Llama 3.2 1B (1.3GB, 128K context) - Optimized model for medical document extraction'
+        });
+      } else if (ollamaService.defaultModel) {
+        setModelInfo({
+          model: ollamaService.defaultModel,
+          status: 'warning',
+          message: `Using alternative model: ${ollamaService.defaultModel}. For best results, install llama3.2:1b.`
+        });
+      } else {
+        setModelInfo({
+          model: '',
+          status: 'error',
+          message: 'No models available. Please install llama3.2:1b with: ollama pull llama3.2:1b'
+        });
+      }
+    } catch (error) {
+      console.error('Error checking Ollama configuration:', error);
+      setModelInfo({
+        model: '',
+        status: 'error',
+        message: `Error: ${error.message}`
+      });
+    }
+  };
 
   // Handle authentication
   const handleAuthenticate = () => {
@@ -126,6 +157,9 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
       
       if (result) {
         setConnectionStatus('Connected successfully to Ollama server!');
+        
+        // Try to check model
+        await checkOllamaConfig();
       } else {
         setConnectionStatus('Connection failed. Check URL and ensure Ollama is running.');
       }
@@ -145,7 +179,7 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
       
       // Update Ollama settings
       ollamaService.setBaseUrl(ollamaUrl);
-      ollamaService.setDefaultModel('llama3.2'); // Hard-coded to always use llama3.2
+      ollamaService.setDefaultModel(currentModel);
       
       // Update the prompts in the service
       ollamaService.setExtractionPrompt(extractionPrompt);
@@ -153,7 +187,7 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
       
       // Update PDF processor settings
       pdfProcessor.setUseAI(true); // Always use AI
-      pdfProcessor.configureOllama(ollamaUrl, 'llama3.2');
+      pdfProcessor.configureOllama(ollamaUrl, currentModel);
       
       Alert.alert('Success', 'Settings saved successfully');
     } catch (error) {
@@ -173,39 +207,80 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
           text: 'Reset', 
           style: 'destructive',
           onPress: () => {
+            // Default extraction prompt optimized for Llama 3.2 1B
             setExtractionPrompt(
-              `Extract the following information from the text into a JSON object:
-- patientName: Patient's full name
-- patientDOB: Patient's date of birth
-- primaryInsurance: Patient's primary insurance provider
-- secondaryInsurance: Patient's secondary insurance provider (if any)
-- location: Treatment or facility location
-- dx: Diagnosis (Dx)
-- pcp: Primary Care Provider (PCP)
-- dc: Discharge (DC) information
-- wounds: Information about wounds, wound care, or wound assessment
-- antibiotics: Antibiotic medications and treatments
-- cardiacDrips: Cardiac drips or cardiac medications
-- labs: Laboratory results and values
-- faceToFace: Face to face encounters or assessments
-- history: Patient medical history
-- mentalHealthState: Mental health status or assessments
-- additionalComments: Additional notes or comments
+`TASK: Extract medical information from the document.
 
-If a field is not found, set it to null or an empty string.
-Return ONLY a valid JSON object with the field names exactly as specified.`
+OUTPUT FORMAT: JSON with these exact keys:
+- insurance
+- location
+- dx
+- pcp
+- dc
+- wounds
+- antibiotics
+- cardiacDrips
+- labs
+- faceToFace
+- history
+- mentalHealthState
+- additionalComments
+
+EXTRACTION GUIDE:
+- "insurance" = all patient insurance details
+- "location" = hospital/facility name
+- "dx" = diagnosis/medical condition
+- "pcp" = primary doctor name
+- "dc" = discharge information
+- "wounds" = wound descriptions
+- "antibiotics" = antibiotic medications
+- "cardiacDrips" = heart medications
+- "labs" = test results
+- "faceToFace" = in-person evaluations
+- "history" = patient medical history
+- "mentalHealthState" = psychological status
+- "additionalComments" = other relevant details
+
+For missing information, use empty string "".
+Only output valid JSON with these exact fields.`
             );
             
+            // Default system prompt optimized for Llama 3.2 1B
             setSystemPrompt(
-              `You are an AI assistant specialized in extracting structured information from medical documents. 
-Your task is to extract specific fields of information and return them in a clean, valid JSON format.
-Return ONLY the JSON object with no additional text, ensuring it can be parsed directly with JSON.parse().`
+`You are a medical information extraction assistant specializing in clinical documents.
+Your sole purpose is to extract structured medical information from documents.
+You understand medical terminology, abbreviations, and can recognize clinical concepts.
+Common medical abbreviations:
+- Dx = Diagnosis
+- PCP = Primary Care Provider 
+- DC = Discharge
+- Hx = History
+- Tx = Treatment
+- Rx = Prescription
+- Sx = Symptoms
+- PM&R = Physical Medicine and Rehabilitation
+
+Always return a JSON object with exactly the requested field names.
+If information is not found, include the field with an empty string.
+Do not make up information that isn't present in the document.`
             );
             
             Animations.pulse(buttonScale).start();
           }
         }
       ]
+    );
+  };
+  
+  // Install the recommended model
+  const showInstallInstructions = () => {
+    Alert.alert(
+      "Install Llama 3.2 1B",
+      "To install the recommended model, run these commands in Terminal:\n\n" +
+      "1. ollama serve\n" +
+      "2. ollama pull llama3.2:1b\n\n" +
+      "You only need to do this once. The model is 1.3GB and supports a 128K context window.",
+      [{ text: "OK" }]
     );
   };
   
@@ -337,9 +412,38 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
             </View>
           ) : null}
           
-          <Text style={styles.modelInfo}>
-            Model: llama3.2 (Fixed)
-          </Text>
+          {/* Model info section */}
+          <View style={[
+            styles.modelInfoCard,
+            modelInfo.status === 'error' ? styles.errorModelCard : 
+            modelInfo.status === 'warning' ? styles.warningModelCard : 
+            styles.successModelCard
+          ]}>
+            <View style={styles.modelInfoHeader}>
+              <Text style={styles.modelInfoTitle}>AI Model Status</Text>
+              <View style={[
+                styles.statusIndicator,
+                modelInfo.status === 'error' ? styles.errorIndicator :
+                modelInfo.status === 'warning' ? styles.warningIndicator :
+                styles.successIndicator
+              ]} />
+            </View>
+            
+            {modelInfo.model ? (
+              <Text style={styles.modelName}>{modelInfo.model}</Text>
+            ) : null}
+            
+            <Text style={styles.modelMessage}>{modelInfo.message}</Text>
+            
+            {modelInfo.status === 'error' && (
+              <TouchableOpacity 
+                style={styles.installButton}
+                onPress={showInstallInstructions}
+              >
+                <Text style={styles.installButtonText}>Show Install Instructions</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </Animated.View>
         
         <Animated.View
@@ -389,7 +493,7 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
           {/* Add separator and more spacing before description */}
           <View style={styles.descriptionContainer}>
             <Text style={styles.settingDescription}>
-              These prompts control how the AI extracts information from medical documents.
+              These prompts control how the AI extracts information from medical documents. The extraction prompt defines what fields to extract, while the system prompt sets the overall behavior.
             </Text>
           </View>
         </Animated.View>
@@ -442,7 +546,7 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
                 The following fields are required for the application to function properly:
               </Text>
               <Text style={styles.codeBlock}>
-                patientName, patientDOB, primaryInsurance, secondaryInsurance, location, dx, pcp, dc, wounds, antibiotics, cardiacDrips, labs, faceToFace, history, mentalHealthState, additionalComments
+                insurance, location, dx, pcp, dc, wounds, antibiotics, cardiacDrips, labs, faceToFace, history, mentalHealthState, additionalComments
               </Text>
               
               <Text style={styles.modalSubtitle}>System Context</Text>
@@ -451,12 +555,18 @@ Return ONLY the JSON object with no additional text, ensuring it can be parsed d
                 It should always instruct the AI to return a valid JSON object.
               </Text>
               
+              <Text style={styles.modalSubtitle}>Model Information</Text>
+              <Text style={styles.modalText}>
+                This application is optimized to use Llama 3.2 1B (1.3GB), which provides an excellent balance of performance and efficiency for medical document extraction. This model can run on CPU and has a 128K context window allowing it to handle large documents.
+              </Text>
+              
               <Text style={styles.modalSubtitle}>Best Practices</Text>
               <Text style={styles.modalText}>
                 • Keep descriptions clear and concise
                 • Be specific about expected formats
                 • Always include instructions to return valid JSON
                 • Avoid contradictory instructions
+                • Include medical terminology in the system prompt
               </Text>
             </ScrollView>
             
@@ -662,12 +772,6 @@ const styles = StyleSheet.create({
     fontSize: Typography.size.small,
     color: Colors.black,
   },
-  modelInfo: {
-    fontSize: Typography.size.small,
-    color: Colors.gray,
-    fontStyle: 'italic',
-    marginTop: Spacing.small,
-  },
   saveButton: {
     backgroundColor: Colors.secondary,
     paddingVertical: Spacing.medium,
@@ -739,6 +843,76 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontSize: Typography.size.medium,
     fontWeight: Typography.weight.semibold,
+  },
+  // Model info card styles
+  modelInfoCard: {
+    marginTop: Spacing.medium,
+    borderRadius: BorderRadius.medium,
+    padding: Spacing.medium,
+    marginBottom: Spacing.small,
+  },
+  errorModelCard: {
+    backgroundColor: Colors.accentLight,
+    borderLeftWidth: 4,
+    borderLeftColor: Colors.accent,
+  },
+  warningModelCard: {
+    backgroundColor: '#fff8e6',
+    borderLeftWidth: 4,
+    borderLeftColor: Colors.warning,
+  },
+  successModelCard: {
+    backgroundColor: Colors.secondaryLight,
+    borderLeftWidth: 4,
+    borderLeftColor: Colors.secondary,
+  },
+  modelInfoHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.small,
+  },
+  modelInfoTitle: {
+    fontSize: Typography.size.medium,
+    fontWeight: Typography.weight.semibold,
+    color: Colors.black,
+  },
+  statusIndicator: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  errorIndicator: {
+    backgroundColor: Colors.accent,
+  },
+  warningIndicator: {
+    backgroundColor: Colors.warning,
+  },
+  successIndicator: {
+    backgroundColor: Colors.secondary,
+  },
+  modelName: {
+    fontSize: Typography.size.medium,
+    fontWeight: Typography.weight.bold,
+    color: Colors.primary,
+    marginBottom: Spacing.tiny,
+  },
+  modelMessage: {
+    fontSize: Typography.size.small,
+    color: Colors.black,
+    lineHeight: Typography.lineHeight.normal,
+  },
+  installButton: {
+    backgroundColor: Colors.primary,
+    padding: Spacing.small,
+    borderRadius: BorderRadius.small,
+    alignItems: 'center',
+    marginTop: Spacing.medium,
+  },
+  installButtonText: {
+    color: Colors.white,
+    fontSize: Typography.size.small,
+    fontWeight: Typography.weight.medium,
   },
 });
 
