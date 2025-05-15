@@ -68,13 +68,9 @@ const SettingsScreen = () => {
         setOllamaUrl(currentConfig.baseUrl || 'http://localhost:11434');
         setCurrentModel(currentConfig.defaultModel || 'llama3.2:1b');
         
-        // Load current prompts if available
-        if (currentConfig.extractionPrompt) {
-          setExtractionPrompt(currentConfig.extractionPrompt);
-        }
-        if (currentConfig.systemPrompt) {
-          setSystemPrompt(currentConfig.systemPrompt);
-        }
+        // Load current prompts directly from the service
+        setExtractionPrompt(currentConfig.extractionPrompt);
+        setSystemPrompt(currentConfig.systemPrompt);
         
         // Check Ollama configuration
         await checkOllamaConfig();
@@ -207,63 +203,12 @@ const SettingsScreen = () => {
           text: 'Reset', 
           style: 'destructive',
           onPress: () => {
-            // Default extraction prompt optimized for Llama 3.2 1B
-            setExtractionPrompt(
-`TASK: Extract medical information from the document.
-
-OUTPUT FORMAT: JSON with these exact keys:
-- insurance
-- location
-- dx
-- pcp
-- dc
-- wounds
-- antibiotics
-- cardiacDrips
-- labs
-- faceToFace
-- history
-- mentalHealthState
-- additionalComments
-
-EXTRACTION GUIDE:
-- "insurance" = all patient insurance details
-- "location" = hospital/facility name
-- "dx" = diagnosis/medical condition
-- "pcp" = primary doctor name
-- "dc" = discharge information
-- "wounds" = wound descriptions
-- "antibiotics" = antibiotic medications
-- "cardiacDrips" = heart medications
-- "labs" = test results
-- "faceToFace" = in-person evaluations
-- "history" = patient medical history
-- "mentalHealthState" = psychological status
-- "additionalComments" = other relevant details
-
-For missing information, use empty string "".
-Only output valid JSON with these exact fields.`
-            );
+            // Get the default prompts from the OllamaService
+            const defaultPrompts = OllamaService.getDefaultPrompts();
             
-            // Default system prompt optimized for Llama 3.2 1B
-            setSystemPrompt(
-`You are a medical information extraction assistant specializing in clinical documents.
-Your sole purpose is to extract structured medical information from documents.
-You understand medical terminology, abbreviations, and can recognize clinical concepts.
-Common medical abbreviations:
-- Dx = Diagnosis
-- PCP = Primary Care Provider 
-- DC = Discharge
-- Hx = History
-- Tx = Treatment
-- Rx = Prescription
-- Sx = Symptoms
-- PM&R = Physical Medicine and Rehabilitation
-
-Always return a JSON object with exactly the requested field names.
-If information is not found, include the field with an empty string.
-Do not make up information that isn't present in the document.`
-            );
+            // Update the state with the default prompts
+            setExtractionPrompt(defaultPrompts.extractionPrompt);
+            setSystemPrompt(defaultPrompts.systemPrompt);
             
             Animations.pulse(buttonScale).start();
           }
@@ -533,26 +478,44 @@ Do not make up information that isn't present in the document.`
                 Each field should be defined with a clear description.
               </Text>
               
-              <Text style={styles.modalSubtitle}>Field Format</Text>
+              <Text style={styles.modalSubtitle}>Numbered List Format</Text>
               <Text style={styles.modalText}>
-                Fields should be formatted as:
+                The current extraction approach uses a numbered list format instead of JSON for more reliable results.
+                The format looks like:
               </Text>
               <Text style={styles.codeBlock}>
-                - fieldName: Description of what to extract
+                1. Patient Name: John Doe{'\n'}
+                2. Date of Birth: 01/01/1980{'\n'}
+                3. Insurance: Blue Cross Blue Shield{'\n'}
+                ...
               </Text>
               
               <Text style={styles.modalSubtitle}>Required Fields</Text>
               <Text style={styles.modalText}>
-                The following fields are required for the application to function properly:
+                The following 15 fields are required for the application to function properly:
               </Text>
               <Text style={styles.codeBlock}>
-                insurance, location, dx, pcp, dc, wounds, antibiotics, cardiacDrips, labs, faceToFace, history, mentalHealthState, additionalComments
+                1. Patient Name{'\n'}
+                2. Date of Birth{'\n'}
+                3. Insurance{'\n'}
+                4. Location{'\n'}
+                5. Diagnosis{'\n'}
+                6. Primary Care Provider{'\n'}
+                7. Discharge Info{'\n'}
+                8. Wounds{'\n'}
+                9. Antibiotics{'\n'}
+                10. Cardiac Medications{'\n'}
+                11. Labs{'\n'}
+                12. Face to Face{'\n'}
+                13. Medical History{'\n'}
+                14. Mental Health{'\n'}
+                15. Additional Comments
               </Text>
               
               <Text style={styles.modalSubtitle}>System Context</Text>
               <Text style={styles.modalText}>
                 The system context provides general guidance to the AI about its role and how to format responses.
-                It should always instruct the AI to return a valid JSON object.
+                It should always instruct the AI to return responses in the numbered list format.
               </Text>
               
               <Text style={styles.modalSubtitle}>Model Information</Text>
@@ -562,10 +525,10 @@ Do not make up information that isn't present in the document.`
               
               <Text style={styles.modalSubtitle}>Best Practices</Text>
               <Text style={styles.modalText}>
-                • Keep descriptions clear and concise
-                • Be specific about expected formats
-                • Always include instructions to return valid JSON
-                • Avoid contradictory instructions
+                • Keep descriptions clear and concise{'\n'}
+                • Be specific about expected formats{'\n'}
+                • Always include instructions to use the numbered list format{'\n'}
+                • Avoid contradictory instructions{'\n'}
                 • Include medical terminology in the system prompt
               </Text>
             </ScrollView>

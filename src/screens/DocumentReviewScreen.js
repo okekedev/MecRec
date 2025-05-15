@@ -273,11 +273,17 @@ const DocumentReviewScreen = () => {
                       .replace(/^./, str => str.toUpperCase());
                   };
                   
-                  // Get field reference if available
+                  // Get enhanced field reference if available
                   const processorService = PDFProcessorService.getInstance();
                   const fieldReference = processorService.getFieldReference(documentId, fieldName);
-                  const sourceText = fieldReference ? fieldReference.text : '';
-                  const sourceType = fieldReference ? fieldReference.location : '';
+                  
+                  // Create a structured sourceContext object for the enhanced ReviewField
+                  const sourceContext = fieldReference ? {
+                    text: fieldReference.text || '',
+                    explanation: fieldReference.explanation || `Source found in ${fieldReference.location || 'document'}.`,
+                    confidence: fieldReference.score || 0,
+                    sectionType: fieldReference.location || 'Unknown Section'
+                  } : null;
                   
                   // Determine if field needs multiline
                   const needsMultiline = [
@@ -296,8 +302,7 @@ const DocumentReviewScreen = () => {
                       onValueChange={(newValue) => handleFieldChange(fieldName, newValue)}
                       isReviewed={reviewedFields[fieldName] || false}
                       onReviewChange={(newValue) => handleReviewToggle(fieldName, newValue)}
-                      sourceText={sourceText}
-                      sourceType={sourceType}
+                      sourceContext={sourceContext}
                       multiline={needsMultiline}
                     />
                   );

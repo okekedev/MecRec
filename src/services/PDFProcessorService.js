@@ -1,9 +1,14 @@
-// PDFProcessorService with numbered list extraction instead of JSON
+/**
+ * PDFProcessorService.js - Enhanced service for processing PDF documents
+ * Coordinates between ParallelPDFTextExtractionService, OllamaService, and EmbeddingService
+ */
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 import ParallelPDFTextExtractionService from './ParallelPDFTextExtractionService';
 import DocumentReferenceService from './DocumentReferenceService';
 import OllamaService from './OllamaService';
+import EmbeddingService from './EmbeddingService';
+import SectionType, { getRelatedSectionTypesForField } from '../constants/SectionTypes';
 
 class PDFProcessorService {
   static instance;
@@ -15,8 +20,12 @@ class PDFProcessorService {
     // Use the parallel text extraction service for improved performance
     this.textExtractionService = ParallelPDFTextExtractionService.getInstance();
     
+    // Initialize services
     this.referenceService = DocumentReferenceService.getInstance();
     this.ollamaService = OllamaService.getInstance();
+    this.embeddingService = EmbeddingService.getInstance();
+    
+    // Configuration
     this.useAI = true;
     this.isProcessing = false;
     this.progressCallback = null;
@@ -31,6 +40,7 @@ class PDFProcessorService {
   
   /**
    * Set progress callback to track processing
+   * @param {Function} callback - Progress callback function
    */
   setProgressCallback(callback) {
     this.progressCallback = callback;
@@ -42,6 +52,10 @@ class PDFProcessorService {
   
   /**
    * Update progress status
+   * @param {string} status - Progress status
+   * @param {number} progress - Progress value (0-1)
+   * @param {string} step - Current processing step
+   * @param {string} message - Progress message
    */
   updateProgress(status, progress, step, message) {
     if (this.progressCallback) {
@@ -56,17 +70,28 @@ class PDFProcessorService {
   
   /**
    * Set whether to use AI for processing
+   * @param {boolean} useAI - Whether to use AI
    */
   setUseAI(useAI) {
     this.useAI = useAI;
   }
   
   /**
-   * Configure Ollama service
+   * Configure Ollama and Embedding services
+   * @param {string} baseUrl - Base URL for Ollama API
+   * @param {string} model - Model to use for text generation
+   * @param {string} embeddingModel - Model to use for embeddings
    */
-  configureOllama(baseUrl, model) {
+  configureOllama(baseUrl, model, embeddingModel = null) {
+    // Configure Ollama service for text generation
     this.ollamaService.setBaseUrl(baseUrl);
     this.ollamaService.setDefaultModel(model);
+    
+    // Configure Embedding service with same base URL and embedding model
+    this.embeddingService.setBaseUrl(baseUrl);
+    if (embeddingModel) {
+      this.embeddingService.setEmbeddingModel(embeddingModel);
+    }
   }
   
   /**
@@ -82,8 +107,6 @@ class PDFProcessorService {
   
   /**
    * Process a PDF document and extract text and form data
-   * Updated for numbered list approach instead of JSON
-   * 
    * @param {string} uri - URI of the PDF document
    * @param {string} name - Name of the document
    * @returns {Promise<Object>} Processed document
@@ -100,6 +123,12 @@ class PDFProcessorService {
       // Update progress
       this.updateProgress('processing', 0.01, 'Starting', 'Beginning document processing');
       
+      // Initialize services - do this here to avoid unnecessary initialization
+      await Promise.all([
+        this.ollamaService.initialize(),
+        this.embeddingService.initialize()
+      ]);
+      
       // Check if Ollama is available before starting
       try {
         this.updateProgress('processing', 0.05, 'Checking AI', 'Verifying AI model availability');
@@ -109,10 +138,16 @@ class PDFProcessorService {
           this.updateProgress('warning', 0.1, 'AI Unavailable', 'Ollama server not detected - extraction may be limited');
           console.warn('Ollama server not available');
         } else {
-          // Check if model is available and initialize if needed
-          await this.ollamaService.initialize();
           console.log(`Using Ollama model: ${this.ollamaService.defaultModel}`);
           this.updateProgress('processing', 0.1, 'AI Ready', `Using model: ${this.ollamaService.defaultModel}`);
+          
+          // Check embedding model
+          const embeddingModel = this.embeddingService.embeddingModel;
+          if (embeddingModel) {
+            console.log(`Using embedding model: ${embeddingModel}`);
+            this.updateProgress('processing', 0.12, 'Embedding Model Ready', 
+              `Using ${embeddingModel} for context matching`);
+          }
         }
       } catch (ollamaError) {
         console.warn('Ollama check failed:', ollamaError);
@@ -168,14 +203,10 @@ class PDFProcessorService {
       };
       
       // Check if there's text to extract from
-      if (extractedText) {
+      if (extractedText && this.useAI) {
         try {
           console.log(`Using AI to extract information from ${extractedText.length} characters of text (${extractionResult.pages} pages)`);
           this.updateProgress('processing', 0.35, 'AI Extraction', 'Starting AI information extraction');
-          
-          // Get the model being used
-          const ollamaModel = this.ollamaService.defaultModel;
-          console.log(`Using Ollama with model: ${ollamaModel}`);
           
           // Check Ollama connection
           const testConnection = await this.ollamaService.testConnection();
@@ -222,54 +253,23 @@ class PDFProcessorService {
           formData.extractionMethod = 'error';
           formData.error = error.message;
         }
-      } else {
+      } else if (!extractedText) {
         console.error('No text was extracted from the document');
         this.updateProgress('error', 0.4, 'No Text Found', 'No readable text was extracted from the document');
         formData.extractionMethod = 'no_text';
         formData.error = 'No text was extracted from the document';
+      } else if (!this.useAI) {
+        console.log('AI extraction disabled');
+        this.updateProgress('processing', 0.4, 'AI Disabled', 'AI extraction was disabled by settings');
+        formData.extractionMethod = 'manual';
       }
       
       // Process document with granular sections
       this.updateProgress('processing', 0.9, 'Creating References', 'Processing document sections');
-      const enhancedReferences = this.processDocumentWithGranularSections(id, extractedText);
+      const enhancedReferences = await this.processDocumentWithGranularSections(id, extractedText);
       
-      // Generate embeddings for all sections at once
-      const sectionEmbeddings = [];
-      try {
-        if (this.useAI) {
-          const testConnection = await this.ollamaService.testConnection();
-          if (testConnection) {
-            this.updateProgress('processing', 0.93, 'Generating Embeddings', 'Creating semantic document index');
-            
-            // Generate embeddings for sections to prepare for field matching
-            if (enhancedReferences && enhancedReferences.sections) {
-              for (const section of enhancedReferences.sections) {
-                try {
-                  const embedding = await this.ollamaService.generateEmbeddings(section.text);
-                  sectionEmbeddings.push({
-                    section,
-                    embedding
-                  });
-                } catch (embErr) {
-                  console.warn('Error generating section embedding:', embErr);
-                }
-              }
-              console.log(`Generated embeddings for ${sectionEmbeddings.length} sections`);
-            }
-            
-            // Ensure field references exist
-            if (!formData._references) {
-              formData._references = {};
-            }
-            
-            // For each extracted field, find its source in the document
-            await this.createFieldReferencesWithGranularSections(formData, extractedText, enhancedReferences, sectionEmbeddings);
-          }
-        }
-      } catch (embeddingError) {
-        console.warn('Error generating embeddings:', embeddingError);
-        // Continue without embeddings
-      }
+      // Create field references to match extracted data to document sections
+      await this.createFieldReferencesWithGranularSections(formData, extractedText, enhancedReferences);
       
       // Create the processed document
       const processedDocument = {
@@ -283,7 +283,7 @@ class PDFProcessorService {
         pages: extractionResult.pages || 1,
         formData,
         references: enhancedReferences,
-        sectionEmbeddings: sectionEmbeddings.length // Just store the count for debugging
+        sectionEmbeddings: enhancedReferences.sections.filter(s => s.embedding).length // Just store the count for debugging
       };
       
       // Add logging to debug field structure
@@ -309,11 +309,12 @@ class PDFProcessorService {
   
   /**
    * Process document to create enhanced references with granular sections
+   * Uses EmbeddingService for vector representations of sections
    * @param {string} documentId - Unique ID of the document
    * @param {string} documentText - Full text of the document
-   * @returns {Object} Reference metadata with granular sections
+   * @returns {Promise<Object>} Reference metadata with granular sections
    */
-  processDocumentWithGranularSections(documentId, documentText) {
+  async processDocumentWithGranularSections(documentId, documentText) {
     // Skip if text is empty
     if (!documentText || documentText.trim() === '') {
       return { documentId, totalSections: 0, sections: [] };
@@ -338,6 +339,40 @@ class PDFProcessorService {
         }
       }))
     };
+    
+    // Generate embeddings for all sections
+    try {
+      // Make sure embedding service is initialized
+      await this.embeddingService.initialize();
+      
+      // Update progress
+      this.updateProgress('processing', 0.92, 'Generating Embeddings', 'Creating semantic document index');
+      
+      // Process sections in batches to avoid memory issues
+      const BATCH_SIZE = 10;
+      for (let i = 0; i < referenceData.sections.length; i += BATCH_SIZE) {
+        const batch = referenceData.sections.slice(i, i + BATCH_SIZE);
+        
+        // Process batch in parallel
+        await Promise.all(batch.map(async (section) => {
+          try {
+            section.embedding = await this.embeddingService.getEmbedding(section.text);
+          } catch (error) {
+            console.warn(`Error generating embedding for section ${section.id}:`, error);
+            // Continue without embeddings for this section
+          }
+        }));
+        
+        // Update progress
+        const progress = 0.92 + (0.08 * (Math.min(i + BATCH_SIZE, referenceData.sections.length) / referenceData.sections.length));
+        this.updateProgress('processing', progress, 'Generating Embeddings', `Processed ${Math.min(i + BATCH_SIZE, referenceData.sections.length)} of ${referenceData.sections.length} sections`);
+      }
+      
+      console.log(`Generated embeddings for ${referenceData.sections.filter(s => s.embedding).length} sections`);
+    } catch (error) {
+      console.warn('Error generating section embeddings:', error);
+      // Continue without embeddings
+    }
     
     return referenceData;
   }
@@ -372,13 +407,22 @@ class PDFProcessorService {
       'Treatment': ['treatment', 'plan', 'recommendation', 'intervention', 'therapy']
     };
     
+    // Process each paragraph
     for (const paragraph of paragraphs) {
+      // Skip empty paragraphs
+      if (!paragraph) continue;
+      
+      // Skip page markers
+      if (paragraph.startsWith('---') && paragraph.includes('Page')) {
+        continue;
+      }
+      
       // Check if this looks like a header
       const isHeader = this.isLikelyHeader(paragraph);
       
       if (isHeader) {
-        // If we had content in the current section, add it to sections
-        if (currentSection.text.length > 0) {
+        // Save previous section if there is content
+        if (currentSection.text) {
           sections.push({ ...currentSection });
         }
         
@@ -538,12 +582,12 @@ class PDFProcessorService {
   
   /**
    * Create field references with granular sections
+   * Uses EmbeddingService for more accurate matching with enhanced context
    * @param {Object} formData - Extracted form data
    * @param {string} text - Full document text
    * @param {Object} references - Document references with granular sections
-   * @param {Array} paragraphEmbeddings - Pre-generated paragraph embeddings
    */
-  async createFieldReferencesWithGranularSections(formData, text, references, paragraphEmbeddings) {
+  async createFieldReferencesWithGranularSections(formData, text, references) {
     // Skip if no references or sections
     if (!references || !references.sections || references.sections.length === 0) {
       return;
@@ -554,23 +598,7 @@ class PDFProcessorService {
       formData._references = {};
     }
     
-    console.log(`Creating field references using ${references.sections.length} granular sections`);
-    
-    // Generate embeddings for each section
-    const sectionEmbeddings = [];
-    for (const section of references.sections) {
-      try {
-        const embedding = await this.ollamaService.generateEmbeddings(section.text);
-        sectionEmbeddings.push({
-          section,
-          embedding
-        });
-      } catch (error) {
-        console.warn(`Error generating embedding for section: ${error.message}`);
-      }
-    }
-    
-    console.log(`Generated embeddings for ${sectionEmbeddings.length} sections`);
+    console.log(`Creating enhanced field references using ${references.sections.length} granular sections`);
     
     // For each field with content, find the most specific section that matches
     for (const [field, value] of Object.entries(formData)) {
@@ -585,195 +613,190 @@ class PDFProcessorService {
       }
       
       try {
-        let foundRef = false;
+        // Get relevant section type IDs for this field from SectionTypes
+        const relevantTypeIds = getRelatedSectionTypesForField(field);
         
-        // 1. First check for exact matches in specific section types
-        // Map fields to their likely section types
-        const fieldTypeMappings = {
-          'patientName': ['Patient Name', 'Patient Information', 'Demographics'],
-          'patientDOB': ['Date of Birth', 'Patient Information', 'Demographics'],
-          'insurance': ['Insurance', 'Financial', 'Coverage'],
-          'location': ['Location', 'Facility', 'Hospital'],
-          'dx': ['Diagnosis', 'Assessment', 'Impression'],
-          'pcp': ['Provider', 'Physician', 'Doctor', 'PCP'],
-          'dc': ['Discharge', 'Disposition'],
-          'wounds': ['Physical Exam', 'Assessment', 'Wounds'],
-          'antibiotics': ['Medications', 'Antibiotics', 'Treatment'],
-          'cardiacDrips': ['Medications', 'Cardiac', 'Treatment'],
-          'labs': ['Laboratory', 'Labs', 'Results'],
-          'faceToFace': ['Encounter', 'Visit', 'Face to Face'],
-          'history': ['History', 'Past Medical History', 'Medical History'],
-          'mentalHealthState': ['Mental Health', 'Psychological', 'Psychiatric'],
-          'additionalComments': ['Comments', 'Notes', 'Additional']
-        };
+        // Use enhanced context matching from EmbeddingService
+        const sections = references.sections.filter(section => 
+          section.text && section.text.length > 0 && this.isHighQualitySection(section)
+        );
         
-        // Get the relevant section types for this field
-        const relevantTypes = fieldTypeMappings[field] || [];
+        // If too few quality sections, fall back to all sections
+        const sectionsToUse = sections.length > references.sections.length * 0.4 
+                            ? sections 
+                            : references.sections.filter(s => s.text && s.text.length > 0);
         
-        // First look for exact value matches in sections of relevant types
-        const typedExactMatches = references.sections.filter(section => {
-          // Check if section type matches and contains the exact value
-          return (
-            relevantTypes.some(type => section.type.toLowerCase().includes(type.toLowerCase())) &&
-            section.text.includes(value)
-          );
-        });
+        // Use the new enhanced context finder
+        const matchResults = await this.embeddingService.findContextForField(
+          value, 
+          sectionsToUse, 
+          field, 
+          relevantTypeIds
+        );
         
-        if (typedExactMatches.length > 0) {
-          // Sort by text length (shorter is more specific)
-          typedExactMatches.sort((a, b) => a.text.length - b.text.length);
+        if (matchResults && matchResults.length > 0) {
+          // Get the best match
+          const bestMatch = matchResults[0];
           
-          // Use the most specific (shortest) match
+          // Extract enhanced context for better human readability
+          const coherentContext = this.extractCoherentContext(
+            bestMatch.section.text, 
+            value
+          );
+          
+          // Create the enhanced field reference
           formData._references[field] = {
-            text: typedExactMatches[0].text,
-            location: typedExactMatches[0].type,
-            matchType: 'exact-typed'
+            text: coherentContext,
+            location: bestMatch.section.type || SectionType.getName(bestMatch.section.typeId || 0),
+            matchType: 'enhanced-semantic',
+            score: bestMatch.score,
+            explanation: bestMatch.explanation,
+            sectionTypeId: bestMatch.section.typeId || 0
           };
-          foundRef = true;
-        }
-        
-        // 2. If no typed exact match, try exact match in any section
-        if (!foundRef) {
-          const exactMatches = references.sections.filter(section => section.text.includes(value));
           
-          if (exactMatches.length > 0) {
-            // Sort by text length (shorter is more specific)
-            exactMatches.sort((a, b) => a.text.length - b.text.length);
-            
-            // Use the most specific (shortest) match
-            formData._references[field] = {
-              text: exactMatches[0].text,
-              location: exactMatches[0].type,
-              matchType: 'exact'
-            };
-            foundRef = true;
+          // Add a human-readable explanation
+          if (!formData._references[field].explanation) {
+            formData._references[field].explanation = this.generateFieldExtractionExplanation(
+              field, value, formData._references[field]
+            );
           }
-        }
-        
-        // 3. If no exact match, try semantic search with pre-generated embeddings
-        if (!foundRef && value.length > 3 && sectionEmbeddings.length > 0) {
-          // Generate embedding for the field value
-          const fieldEmbedding = await this.ollamaService.generateEmbeddings(value);
-          
-          // Score all sections by similarity
-          const scoredSections = sectionEmbeddings.map(se => ({
-            section: se.section,
-            score: this.ollamaService.cosineSimilarity(fieldEmbedding, se.embedding)
-          }));
-          
-          // Sort by similarity score
-          scoredSections.sort((a, b) => b.score - a.score);
-          
-          // If we have relevant types, prioritize sections of those types
-          const typedScoredSections = scoredSections.filter(ss => 
-            relevantTypes.some(type => ss.section.type.toLowerCase().includes(type.toLowerCase()))
-          );
-          
-          // Use type-specific match if good score, otherwise use best overall match
-          if (typedScoredSections.length > 0 && typedScoredSections[0].score > 0.35) {
-            // Use best match of relevant type
-            formData._references[field] = {
-              text: typedScoredSections[0].section.text,
-              location: typedScoredSections[0].section.type,
-              matchType: 'semantic-typed',
-              score: typedScoredSections[0].score
-            };
-            foundRef = true;
-          } else if (scoredSections.length > 0 && scoredSections[0].score > 0.35) {
-            // Use best overall match
-            formData._references[field] = {
-              text: scoredSections[0].section.text,
-              location: scoredSections[0].section.type,
-              matchType: 'semantic',
-              score: scoredSections[0].score
-            };
-            foundRef = true;
-          }
-        }
-        
-        // 4. If still no match, try keyword matching with more advanced techniques
-        if (!foundRef) {
-          // Extract significant keywords from the field value
-          const keywords = this.extractSignificantKeywords(value);
-          
-          if (keywords.length > 0) {
-            // Score sections by keyword matches
-            const keywordMatches = [];
-            
-            for (const section of references.sections) {
-              const sectionText = section.text.toLowerCase();
-              let matchCount = 0;
-              let weightedScore = 0;
-              
-              // Calculate weighted score based on keyword importance
-              for (const keyword of keywords) {
-                if (sectionText.includes(keyword.term.toLowerCase())) {
-                  matchCount++;
-                  weightedScore += keyword.weight;
-                }
-              }
-              
-              if (matchCount > 0) {
-                keywordMatches.push({
-                  section,
-                  matchCount,
-                  weightedScore,
-                  relevantType: relevantTypes.some(type => 
-                    section.type.toLowerCase().includes(type.toLowerCase())
-                  ),
-                  score: weightedScore / keywords.reduce((sum, k) => sum + k.weight, 0)
-                });
-              }
-            }
-            
-            // First try with relevant types
-            const typedKeywordMatches = keywordMatches.filter(km => km.relevantType);
-            
-            // Sort by weighted score
-            keywordMatches.sort((a, b) => b.weightedScore - a.weightedScore);
-            typedKeywordMatches.sort((a, b) => b.weightedScore - a.weightedScore);
-            
-            // Use best match (prioritize typed matches)
-            if (typedKeywordMatches.length > 0) {
-              formData._references[field] = {
-                text: typedKeywordMatches[0].section.text,
-                location: typedKeywordMatches[0].section.type,
-                matchType: 'keyword-typed',
-                score: typedKeywordMatches[0].score
-              };
-              foundRef = true;
-            } else if (keywordMatches.length > 0) {
-              formData._references[field] = {
-                text: keywordMatches[0].section.text,
-                location: keywordMatches[0].section.type,
-                matchType: 'keyword',
-                score: keywordMatches[0].score
-              };
-              foundRef = true;
-            }
-          }
-        }
-        
-        // 5. If we found a reference with a very long text, try to extract just the relevant part
-        if (foundRef && formData._references[field] && formData._references[field].text.length > 200) {
-          const shortenedText = this.extractRelevantTextSnippet(
-            formData._references[field].text, 
+        } else {
+          // Fall back to traditional semantic search if enhanced matching fails
+          const similarSections = await this.embeddingService.findRelevantSections(
             value,
-            100 // Context size before and after the match
+            sectionsToUse,
+            3 // Find top 3 matches
           );
           
-          if (shortenedText && shortenedText.length < formData._references[field].text.length) {
-            // Update with the shorter, more focused text
-            formData._references[field].text = shortenedText;
-            formData._references[field].isSnippet = true;
+          if (similarSections.length > 0) {
+            // Use the best match from semantic search
+            const bestMatch = similarSections[0];
+            formData._references[field] = {
+              text: this.extractCoherentContext(bestMatch.item.text, value),
+              location: bestMatch.item.type || SectionType.getName(bestMatch.item.typeId || 0),
+              matchType: 'semantic',
+              score: bestMatch.score,
+              explanation: this.generateFieldExtractionExplanation(field, value, {
+                confidence: bestMatch.score,
+                sectionType: bestMatch.item.type || SectionType.getName(bestMatch.item.typeId || 0)
+              })
+            };
+          } else {
+            // Final fallback: exact text matching
+            this.findExactTextMatch(field, value, references, formData);
+            
+            // Add explanation if we found an exact match
+            if (formData._references[field]) {
+              formData._references[field].explanation = `This ${field} information was found by exact text matching.`;
+            }
           }
+        }
+        
+        // Apply OCR text cleanup to improve readability of all references
+        if (formData._references[field] && formData._references[field].text) {
+          formData._references[field].text = this.cleanupOcrText(formData._references[field].text);
         }
       } catch (error) {
-        console.warn(`Error finding granular reference for field ${field}:`, error);
+        console.warn(`Error finding enhanced context for field ${field}:`, error);
+        // Try fallback to exact match on error
+        this.findExactTextMatch(field, value, references, formData);
       }
     }
     
-    console.log(`Created granular references for ${Object.keys(formData._references).length} fields`);
+    console.log(`Created enhanced contextual references for ${Object.keys(formData._references).length} fields`);
+  }
+  
+  /**
+   * Find exact text match for a field (fallback approach)
+   * @param {string} field - Field name
+   * @param {string} value - Field value
+   * @param {Object} references - Document references
+   * @param {Object} formData - Form data to update
+   */
+  findExactTextMatch(field, value, references, formData) {
+    // First look for exact value matches in sections
+    const exactMatches = references.sections.filter(section => 
+      section.text && section.text.includes(value)
+    );
+    
+    if (exactMatches.length > 0) {
+      // Sort by text length (shorter is more specific)
+      exactMatches.sort((a, b) => a.text.length - b.text.length);
+      
+      // Use the most specific (shortest) match
+      formData._references[field] = {
+        text: exactMatches[0].text,
+        location: exactMatches[0].type,
+        matchType: 'exact',
+        score: 1.0 // Maximum score for exact matches
+      };
+    }
+  }
+  
+  /**
+   * Extract relevant text snippet around a value
+   * @param {string} fullText - Full text to extract from
+   * @param {string} value - Value to find
+   * @param {number} contextSize - Characters of context before and after
+   * @returns {string} Extracted snippet
+   */
+  extractRelevantTextSnippet(fullText, value, contextSize = 100) {
+    if (!fullText || !value) return fullText;
+    
+    // Find the position of the value in the text
+    const index = fullText.toLowerCase().indexOf(value.toLowerCase());
+    
+    if (index === -1) return fullText; // Value not found
+    
+    // Calculate start and end positions with context
+    const start = Math.max(0, index - contextSize);
+    const end = Math.min(fullText.length, index + value.length + contextSize);
+    
+    // Extract the snippet
+    let snippet = fullText.substring(start, end).trim();
+    
+    // Add ellipsis if we trimmed the text
+    if (start > 0) snippet = '...' + snippet;
+    if (end < fullText.length) snippet = snippet + '...';
+    
+    return snippet;
+  }
+  
+  /**
+   * Clean up OCR text to improve readability
+   * @param {string} text - Text to clean up
+   * @returns {string} Cleaned text
+   */
+  cleanupOcrText(text) {
+    if (!text) return '';
+    
+    let cleaned = text;
+    
+    // Replace repeated special characters
+    cleaned = cleaned.replace(/([^\w\s])\1{2,}/g, '$1');
+    
+    // Fix obvious OCR errors with spacing
+    cleaned = cleaned.replace(/([a-z])([A-Z])/g, '$1 $2');
+    
+    // Fix missing spaces after periods, commas
+    cleaned = cleaned.replace(/([.,:;])([a-zA-Z])/g, '$1 $2');
+    
+    // Remove excessive whitespace
+    cleaned = cleaned.replace(/\s{2,}/g, ' ').trim();
+    
+    // Fix common OCR errors
+    const ocrFixes = {
+      'I\\)': '1)', 'l\\)': '1)', 'O\\)': '0)',
+      'rn': 'm', 'cl': 'd', '\\|\\|': 'H',
+      'S\\)': '5)', 'Z\\)': '2)'
+    };
+    
+    for (const [error, fix] of Object.entries(ocrFixes)) {
+      const regex = new RegExp(error, 'g');
+      cleaned = cleaned.replace(regex, fix);
+    }
+    
+    return cleaned;
   }
   
   /**
@@ -828,35 +851,6 @@ class PDFProcessorService {
     
     // Return top keywords (up to 10)
     return keywords.slice(0, 10);
-  }
-  
-  /**
-   * Extract a relevant text snippet around a value
-   * @param {string} fullText - Full text to extract from
-   * @param {string} value - Value to find
-   * @param {number} contextSize - Characters of context before and after
-   * @returns {string} Extracted snippet
-   */
-  extractRelevantTextSnippet(fullText, value, contextSize = 100) {
-    if (!fullText || !value) return fullText;
-    
-    // Find the position of the value in the text
-    const index = fullText.indexOf(value);
-    
-    if (index === -1) return fullText; // Value not found
-    
-    // Calculate start and end positions with context
-    const start = Math.max(0, index - contextSize);
-    const end = Math.min(fullText.length, index + value.length + contextSize);
-    
-    // Extract the snippet
-    let snippet = fullText.substring(start, end).trim();
-    
-    // Add ellipsis if we trimmed the text
-    if (start > 0) snippet = '...' + snippet;
-    if (end < fullText.length) snippet = snippet + '...';
-    
-    return snippet;
   }
   
   /**
@@ -965,6 +959,220 @@ class PDFProcessorService {
       }
     }
     return null;
+  }
+  
+  /**
+   * Determines if a section is high quality for context
+   * Identifies jumbled OCR text and low-quality sections
+   * @param {Object} section - The section to evaluate
+   * @returns {boolean} Whether the section is high quality
+   */
+  isHighQualitySection(section) {
+    if (!section || !section.text) return false;
+    
+    const text = section.text;
+    
+    // Check for common OCR issues that indicate poor quality
+    const badQualityIndicators = [
+      // Too many non-alphanumeric characters relative to length
+      text.replace(/[a-zA-Z0-9\s]/g, '').length > text.length * 0.3,
+      
+      // Too many line breaks relative to length
+      (text.match(/\n/g) || []).length > text.length / 20,
+      
+      // Excessive punctuation
+      (text.match(/[.,;:!?]/g) || []).length > text.length / 10,
+      
+      // Repeated unusual character sequences
+      /(.)\1{5,}/.test(text),
+      
+      // Multiple non-word sequences
+      (text.match(/[^\w\s]{3,}/g) || []).length > 0,
+      
+      // Very low word-to-character ratio (may indicate garbage OCR)
+      text.split(/\s+/).length < text.length / 15,
+      
+      // Too many numeric sequences (may be scan artifacts)
+      (text.match(/\d{5,}/g) || []).length > 3
+    ];
+    
+    // Section is low quality if any indicators are true
+    return !badQualityIndicators.some(indicator => indicator === true);
+  }
+  
+  /**
+   * Extract better context for a field by finding coherent text passages
+   * @param {Object} formData - Extracted form data
+   * @param {string} fieldName - Field name to find context for
+   * @param {Array} sections - Document sections
+   * @param {Object} embeddingService - Embedding service for similarity
+   * @returns {Promise<Object>} Enhanced context with human-readable explanation
+   */
+  async extractEnhancedFieldContext(formData, fieldName, sections, embeddingService) {
+    if (!formData || !fieldName || !sections || !sections.length) {
+      return null;
+    }
+    
+    const fieldValue = formData[fieldName];
+    if (!fieldValue || typeof fieldValue !== 'string' || !fieldValue.trim()) {
+      return null;
+    }
+    
+    try {
+      // Filter to only high-quality sections
+      const qualitySections = sections.filter(this.isHighQualitySection);
+      
+      // If too few quality sections, use all sections
+      const sectionsToUse = qualitySections.length > sections.length * 0.4 ? qualitySections : sections;
+      
+      // Get embeddings for the field value
+      const fieldEmbedding = await embeddingService.getEmbedding(fieldValue);
+      
+      // Find similar sections with human reasoning
+      const similarSections = await embeddingService.findSimilarItems(
+        fieldEmbedding,
+        sectionsToUse, 
+        section => section.embedding,
+        3 // Top 3 matches
+      );
+      
+      if (!similarSections.length) {
+        return {
+          text: null,
+          explanation: `No context found for ${fieldName}.`,
+          confidence: 0
+        };
+      }
+      
+      // Get most similar section
+      const topMatch = similarSections[0];
+      
+      // Check if there's a relevant section type for this field
+      const relevantTypeIds = getRelatedSectionTypesForField(fieldName);
+      
+      // Find best match from relevant section types
+      const typedMatch = similarSections.find(({ item }) => 
+        relevantTypeIds.includes(item.typeId) && item.score > 0.4
+      );
+      
+      // Use the typed match if available and has decent score
+      const bestMatch = typedMatch || topMatch;
+      
+      // Prepare explanation based on match quality
+      let explanation;
+      
+      if (bestMatch.score > 0.8) {
+        explanation = `This information was found in the "${SectionType.getName(bestMatch.item.typeId)}" section with high confidence (${Math.round(bestMatch.score * 100)}%).`;
+      } else if (bestMatch.score > 0.6) {
+        explanation = `This information appears to come from the "${SectionType.getName(bestMatch.item.typeId)}" section with moderate confidence (${Math.round(bestMatch.score * 100)}%).`;
+      } else if (bestMatch.score > 0.4) {
+        explanation = `This information may be related to content found in the "${SectionType.getName(bestMatch.item.typeId)}" section, but with lower confidence (${Math.round(bestMatch.score * 100)}%).`;
+      } else {
+        explanation = `The source of this information is unclear. It may be inferred from multiple sections of the document.`;
+      }
+      
+      // Add direct mention if the section explicitly contains the exact field value
+      if (bestMatch.item.text.includes(fieldValue)) {
+        explanation += ` The exact value "${fieldValue}" is present in this section.`;
+      }
+      
+      // Extract coherent context (not just random OCR text)
+      const context = this.extractCoherentContext(bestMatch.item.text, fieldValue);
+      
+      return {
+        text: context,
+        explanation,
+        confidence: bestMatch.score,
+        sectionTypeId: bestMatch.item.typeId,
+        sectionType: SectionType.getName(bestMatch.item.typeId)
+      };
+    } catch (error) {
+      console.error(`Error extracting enhanced context for ${fieldName}:`, error);
+      return null;
+    }
+  }
+  
+  /**
+   * Extract a coherent context passage around a field value
+   * Instead of just grabbing surrounding text, finds coherent paragraphs
+   * @param {string} text - Full section text
+   * @param {string} value - Field value to find context for
+   * @returns {string} Coherent context
+   */
+  extractCoherentContext(text, value) {
+    if (!text || !value) return text;
+    
+    // Find position of value in text (case-insensitive)
+    const lowerText = text.toLowerCase();
+    const lowerValue = value.toLowerCase();
+    const index = lowerText.indexOf(lowerValue);
+    
+    if (index === -1) return text; // Value not found
+    
+    // Find paragraph boundaries
+    // Look for paragraph breaks before and after the match
+    let paragraphStart = text.lastIndexOf('\n\n', index);
+    if (paragraphStart === -1) paragraphStart = 0;
+    else paragraphStart += 2; // Skip the newlines
+    
+    let paragraphEnd = text.indexOf('\n\n', index + value.length);
+    if (paragraphEnd === -1) paragraphEnd = text.length;
+    
+    // Get full paragraph
+    let paragraph = text.substring(paragraphStart, paragraphEnd).trim();
+    
+    // If paragraph is too long, extract a window around the value
+    if (paragraph.length > 400) {
+      // Find a sentence boundary before the value
+      let sentenceStart = Math.max(0, index - 200);
+      const prevPeriod = text.lastIndexOf('.', index);
+      if (prevPeriod > sentenceStart) {
+        sentenceStart = prevPeriod + 1;
+      }
+      
+      // Find a sentence boundary after the value
+      let sentenceEnd = Math.min(text.length, index + value.length + 200);
+      const nextPeriod = text.indexOf('.', index + value.length);
+      if (nextPeriod !== -1 && nextPeriod < sentenceEnd) {
+        sentenceEnd = nextPeriod + 1;
+      }
+      
+      paragraph = text.substring(sentenceStart, sentenceEnd).trim();
+    }
+    
+    // Add ellipsis if we trimmed the text
+    if (paragraphStart > 0) paragraph = '...' + paragraph;
+    if (paragraphEnd < text.length) paragraph = paragraph + '...';
+    
+    // Cleanup final context
+    return this.cleanupOcrText(paragraph);
+  }
+  
+  /**
+   * Generate human-readable explanation of field extraction
+   * @param {string} fieldName - Field name 
+   * @param {string} fieldValue - Extracted value
+   * @param {Object} context - Context information
+   * @returns {string} Human readable explanation
+   */
+  generateFieldExtractionExplanation(fieldName, fieldValue, context) {
+    if (!context) {
+      return `No clear source was found for this information.`;
+    }
+    
+    const confidence = context.confidence || 0;
+    const sectionType = context.sectionType || 'unknown section';
+    
+    // Create an appropriate explanation based on confidence and context
+    if (confidence > 0.8) {
+      return `This ${fieldName} information was extracted from the ${sectionType} with high confidence. The AI found a strong match between "${fieldValue}" and text in this section.`;
+    } else if (confidence > 0.6) {
+      return `This ${fieldName} value was found in the ${sectionType} with moderate confidence. The information appears to be accurate but may benefit from verification.`;
+    } else if (confidence > 0.4) {
+      return `This ${fieldName} information may be related to content in the ${sectionType}, but with lower confidence. Please verify this information against the source document.`;
+    } else {
+      return `The source of this ${fieldName} information is unclear. It may be inferred from multiple sections or limited context. This field should be carefully verified.`;
+    }
   }
   
   /**

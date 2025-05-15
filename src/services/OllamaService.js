@@ -1,6 +1,7 @@
 /**
- * Enhanced OllamaService with Llama 3.2 1B optimization
- * Modified to use numbered list extraction instead of JSON
+ * OllamaService.js - Focused service for text generation using Ollama API
+ * This version has been refactored to remove embedding functionality,
+ * which now exists in the separate EmbeddingService.
  */
 class OllamaService {
   static instance;
@@ -66,7 +67,9 @@ Common medical abbreviations:
 - DC = Discharge
 - Hx = History
 - Tx = Treatment
-- Rx = Prescription`;// To track extraction progress
+- Rx = Prescription`;
+
+    // To track extraction progress
     this.extractionProgress = {
       status: 'idle',
       progress: 0,
@@ -74,13 +77,29 @@ Common medical abbreviations:
       message: ''
     };
     this.progressCallback = null;
+    this.initialized = false;
   }
 
+  /**
+   * Get singleton instance
+   */
   static getInstance() {
     if (!OllamaService.instance) {
       OllamaService.instance = new OllamaService();
     }
     return OllamaService.instance;
+  }
+
+  /**
+   * Get default prompts (static method)
+   * @returns {Object} Default extraction and system prompts
+   */
+  static getDefaultPrompts() {
+    const defaults = new OllamaService();
+    return {
+      extractionPrompt: defaults.extractionPrompt,
+      systemPrompt: defaults.systemPrompt
+    };
   }
 
   /**
@@ -110,16 +129,20 @@ Common medical abbreviations:
    * Set the base URL for the Ollama API
    */
   setBaseUrl(url) {
-    this.baseUrl = url.trim();
-    console.log('Ollama base URL set to:', this.baseUrl);
+    if (url && url.trim()) {
+      this.baseUrl = url.trim();
+      console.log('Ollama base URL set to:', this.baseUrl);
+    }
   }
 
   /**
    * Set the default model to use
    */
   setDefaultModel(model) {
-    this.defaultModel = model.trim() || 'llama3.2:1b';
-    console.log('Ollama default model set to:', this.defaultModel);
+    if (model && model.trim()) {
+      this.defaultModel = model.trim();
+      console.log('Ollama default model set to:', this.defaultModel);
+    }
   }
   
   /**
@@ -161,7 +184,6 @@ Common medical abbreviations:
     console.log('Testing connection to Ollama server:', `${this.baseUrl}/api/version`);
     try {
       const response = await fetch(`${this.baseUrl}/api/version`, {
-        // Add timeout to prevent hanging
         signal: AbortSignal.timeout(5000) // 5 second timeout
       });
       
@@ -226,10 +248,16 @@ Common medical abbreviations:
   }
 
   /**
-   * Initialize the service by finding the llama3.2:1b model or a fallback
+   * Initialize the service by finding the appropriate model
    */
   async initialize() {
-    console.log('Initializing OllamaService with Llama 3.2 1B...');
+    // Skip if already initialized
+    if (this.initialized) {
+      console.log('OllamaService already initialized');
+      return true;
+    }
+    
+    console.log('Initializing OllamaService...');
     try {
       // Check connection
       const isConnected = await this.testConnection();
@@ -251,6 +279,7 @@ Common medical abbreviations:
         
         if (response.ok) {
           console.log(`Confirmed ${this.defaultModel} is available`);
+          this.initialized = true;
           return true;
         } else {
           console.warn(`${this.defaultModel} not found, checking alternatives...`);
@@ -268,14 +297,16 @@ Common medical abbreviations:
         for (const model of [this.defaultModel, ...this.fallbackModels]) {
           if (models.includes(model)) {
             this.defaultModel = model;
-            console.log(`Using model: ${this.defaultModel}`);
+            console.log(`Using generation model: ${this.defaultModel}`);
+            this.initialized = true;
             return true;
           }
         }
         
         // If none of the preferred models found, use the first available one
         this.defaultModel = models[0];
-        console.log(`Using available model: ${this.defaultModel}`);
+        console.log(`Using available generation model: ${this.defaultModel}`);
+        this.initialized = true;
         return true;
       }
       
@@ -292,12 +323,22 @@ Common medical abbreviations:
    */
   async generateCompletion(
     prompt, 
-    model = this.defaultModel,
-    systemPrompt = this.systemPrompt,
+    model = null,
+    systemPrompt = null,
     options = {}
   ) {
+    // Ensure the service is initialized
+    if (!this.initialized) {
+      await this.initialize();
+    }
+    
+    // Use default values if not provided
     if (!model) {
       model = this.defaultModel;
+    }
+    
+    if (!systemPrompt) {
+      systemPrompt = this.systemPrompt;
     }
     
     console.log(`Generating completion with model: ${model}`);
@@ -309,9 +350,9 @@ Common medical abbreviations:
         model,
         prompt,
         // In newer Ollama versions, options are at the top level
-        temperature: options.temperature || 0.1, // Lower temperature for extraction tasks
-        top_p: options.top_p || 0.9,
-        top_k: options.top_k || 40,
+        temperature: options.temperature !== undefined ? options.temperature : 0.1, // Lower temperature for extraction tasks
+        top_p: options.top_p !== undefined ? options.top_p : 0.9,
+        top_k: options.top_k !== undefined ? options.top_k : 40,
         stream: false,
       };
 
@@ -443,214 +484,8 @@ Common medical abbreviations:
     }
   }
 
-    /**
-     * Generate embeddings for text
-     * This function has been tuned to work especially well with medical text snippets
-     * @param {string} text - The text to generate embeddings for
-     * @param {string} model - The model to use
-     * @returns {Promise<Array>} - Array of embedding values
-     */
-    async generateEmbeddings(text, model = this.defaultModel) {
-      if (!model) {
-        model = this.defaultModel;
-      }
-      
-      // Medical preprocessing - enhance text with medical context markers
-      const processedText = this.preprocessMedicalText(text);
-      
-      console.log(`Generating embeddings with model: ${model}`);
-      console.log(`Text length for embeddings: ${processedText.length} characters`);
-      
-      try {
-        // Use a specialized prompt for higher quality embeddings
-        const embeddingPrompt = `
-TEXT FOR EMBEDDING:
-${processedText}
-
-TASK: Generate high-quality embeddings for this medical text.
-FOCUS ON: medical terms, diagnoses, patient information, treatments, medications.
-`;
-        
-        // Try first API format (newer versions)
-        const requestData = {
-          model,
-          prompt: embeddingPrompt,
-        };
-
-        const requestUrl = `${this.baseUrl}/api/embeddings`;
-        console.log('Sending embeddings request to:', requestUrl);
-        
-        const response = await fetch(requestUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestData),
-        });
-
-        if (!response.ok) {
-          // If embedding endpoint fails, try the alternative embed endpoint that some Ollama versions use
-          console.warn('Embeddings endpoint failed, trying alternate endpoint');
-          return this.generateEmbeddingsAlternate(processedText, model);
-        }
-
-        const data = await response.json();
-        console.log('Embeddings response received, processing...');
-        
-        // Handle different response formats for embeddings
-        if (data.embedding) {
-          console.log('Embedding vector length:', data.embedding.length);
-          return data.embedding;
-        } else if (data.embeddings && Array.isArray(data.embeddings) && data.embeddings.length > 0) {
-          console.log('Embedding vector length:', data.embeddings[0].length);
-          return data.embeddings[0];
-        } else if (Array.isArray(data) && data.length > 0) {
-          console.log('Embedding vector length:', data.length);
-          return data;
-        } else {
-          console.warn('Unexpected embeddings response format:', data);
-          
-          // Fallback to simple random embeddings (only for demonstration)
-          console.warn('Falling back to random embeddings');
-          return this.generateRandomEmbeddings(128);
-        }
-      } catch (error) {
-        console.error('Ollama embeddings error:', error);
-        
-        // Try alternate endpoint on error
-        try {
-          return await this.generateEmbeddingsAlternate(processedText, model);
-        } catch (alternateError) {
-          console.error('Alternate embeddings approach also failed:', alternateError);
-          
-          // Return random embeddings as last resort fallback
-          console.warn('Falling back to random embeddings');
-          return this.generateRandomEmbeddings(128);
-        }
-      }
-    }
-    
-    /**
-     * Preprocess medical text for better embeddings
-     * @param {string} text - Original text
-     * @returns {string} - Processed text
-     */
-    preprocessMedicalText(text) {
-      // Limit text length
-      const maxLength = 10000;
-      let processedText = text.length > maxLength ? text.substring(0, maxLength) : text;
-      
-      // Enhance with medical context markers
-      const medicalTerms = {
-        'patient': '[PATIENT]',
-        'name:': '[PATIENT_NAME]',
-        'dob': '[DATE_OF_BIRTH]',
-        'diagnosis': '[DIAGNOSIS]',
-        'assessment': '[DIAGNOSIS]',
-        'impression': '[DIAGNOSIS]',
-        'medication': '[MEDICATION]',
-        'lab': '[LAB_RESULT]',
-        'test': '[TEST]',
-        'doctor': '[PROVIDER]',
-        'physician': '[PROVIDER]',
-        'hospital': '[LOCATION]',
-        'insurance': '[INSURANCE]',
-        'allergies': '[ALLERGIES]',
-        'history': '[HISTORY]'
-      };
-      
-      // Add medical context markers
-      Object.entries(medicalTerms).forEach(([term, marker]) => {
-        const regex = new RegExp(`\\b${term}\\b`, 'gi');
-        processedText = processedText.replace(regex, `${marker}${term}`);
-      });
-      
-      return processedText;
-    }
-  
-  /**
-   * Alternative approach to generate embeddings
-   * Some Ollama versions use a different endpoint or format
-   */
-  async generateEmbeddingsAlternate(text, model) {
-    try {
-      // Try alternate endpoint format
-      const requestData = {
-        model,
-        prompt: text,
-        options: {
-          embedding: true,
-        }
-      };
-
-      const response = await fetch(`${this.baseUrl}/api/embed`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Alternate embeddings failed: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      
-      if (data.embedding) {
-        return data.embedding;
-      } else if (data.embeddings) {
-        return data.embeddings;
-      } else {
-        throw new Error('No embeddings found in response');
-      }
-    } catch (error) {
-      console.error('Alternative embeddings approach failed:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Generate random embeddings as a fallback
-   * Only used when real embeddings can't be obtained
-   */
-  generateRandomEmbeddings(dimensions = 128) {
-    console.warn(`Generating random ${dimensions}-dimensional embeddings as fallback`);
-    return Array.from({ length: dimensions }, () => (Math.random() * 2) - 1);
-  }
-
-  /**
-   * Calculate cosine similarity between two embedding vectors
-   * Used for finding similar sections of text
-   */
-  cosineSimilarity(vecA, vecB) {
-    if (!vecA || !vecB || vecA.length !== vecB.length) {
-      return 0;
-    }
-    
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
-    
-    for (let i = 0; i < vecA.length; i++) {
-      dotProduct += vecA[i] * vecB[i];
-      normA += vecA[i] * vecA[i];
-      normB += vecB[i] * vecB[i];
-    }
-    
-    normA = Math.sqrt(normA);
-    normB = Math.sqrt(normB);
-    
-    if (normA === 0 || normB === 0) {
-      return 0;
-    }
-    
-    return dotProduct / (normA * normB);
-  }
-
   /**
    * Parse a numbered list response from the LLM into a structured object
-   * This replaces the JSON parsing functions with our new approach
    * @param {string} text - The LLM response with numbered list
    * @returns {Object} - Structured data object
    */
@@ -716,7 +551,14 @@ FOCUS ON: medical terms, diagnoses, patient information, treatments, medications
     return result;
   }
 
-  async extractInformation(text, schema = null, model = this.defaultModel) {
+  /**
+   * Extract information from document text
+   * @param {string} text - Document text
+   * @param {Object|null} schema - Optional schema for extraction
+   * @param {string|null} model - Optional model override
+   * @returns {Promise<Object>} - Extracted information
+   */
+  async extractInformation(text, schema = null, model = null) {
     try {
       // Update progress - starting
       this.updateProgress(
@@ -1091,82 +933,6 @@ ${text}`;
     );
     
     return mergedResult;
-  }
-
-  /**
-   * Find the most similar text sections using embeddings
-   * Used for semantic search and reference identification
-   * The embeddings still work with the numbered list approach
-   */
-  async findSimilarSections(query, sections, model = this.defaultModel, topK = 3) {
-    try {
-      // Generate embedding for the query
-      const queryEmbedding = await this.generateEmbeddings(query, model);
-      
-      // Calculate similarity scores for each section
-      const scoredSections = await Promise.all(sections.map(async (section) => {
-        // Generate embedding for the section if not already present
-        const sectionEmbedding = section.embedding || await this.generateEmbeddings(section.text, model);
-        
-        // Calculate similarity score
-        const score = this.cosineSimilarity(queryEmbedding, sectionEmbedding);
-        
-        return {
-          ...section,
-          embedding: sectionEmbedding,
-          score
-        };
-      }));
-      
-      // Sort sections by similarity score (highest first)
-      const sortedSections = scoredSections.sort((a, b) => b.score - a.score);
-      
-      // Return top K sections
-      return sortedSections.slice(0, topK);
-    } catch (error) {
-      console.error('Error finding similar sections:', error);
-      return sections.slice(0, topK);
-    }
-  }
-
-  /**
-   * Determine the type of a section based on its content
-   * Used for categorizing references
-   */
-  determineSectionType(text) {
-    const lowerText = text.toLowerCase();
-    
-    // Check for common section types in medical documents
-    if (lowerText.includes('patient') && (lowerText.includes('information') || lowerText.includes('details'))) {
-      return 'Patient Information';
-    }
-    
-    if (lowerText.includes('referring') && (lowerText.includes('physician') || lowerText.includes('doctor'))) {
-      return 'Referring Physician';
-    }
-    
-    if (lowerText.includes('diagnosis') || lowerText.includes('assessment') || lowerText.includes('impression')) {
-      return 'Diagnosis';
-    }
-    
-    if (lowerText.includes('history')) {
-      return 'Medical History';
-    }
-    
-    if (lowerText.includes('medication') || lowerText.includes('prescription')) {
-      return 'Medications';
-    }
-    
-    if (lowerText.includes('insurance')) {
-      return 'Insurance Information';
-    }
-    
-    if (lowerText.includes('reason') && lowerText.includes('referral')) {
-      return 'Referral Reason';
-    }
-    
-    // Default section type
-    return 'Document Section';
   }
 }
 
