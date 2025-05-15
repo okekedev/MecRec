@@ -1,7 +1,5 @@
-/**
- * ProgressOverlay.js - Modern animated progress indicator for document processing
- * Enhanced with AI analysis status
- */
+
+// src/components/ProgressOverlay.js (Updated for numbered list approach)
 import React, { useEffect, useRef } from 'react';
 import {
   View,
@@ -123,10 +121,22 @@ const ProgressOverlay = ({
   
   // Get the appropriate icon based on the current step
   const renderIcon = () => {
+    // Update to show different icons for numbered list extraction
     const isOCR = currentStep.toLowerCase().includes('ocr') || currentStep.toLowerCase().includes('text');
     const isAI = currentStep.toLowerCase().includes('ai') || currentStep.toLowerCase().includes('extract') || currentStep.toLowerCase().includes('analy');
+    const isNumberedList = currentStep.toLowerCase().includes('list') || currentStep.toLowerCase().includes('numbered');
     
-    if (isOCR) {
+    if (isNumberedList) {
+      return (
+        <Animated.View style={{ transform: [{ rotate: spin }] }}>
+          <MaterialCommunityIcons 
+            name="format-list-numbered" 
+            size={40} 
+            color={Colors.primary} 
+          />
+        </Animated.View>
+      );
+    } else if (isOCR) {
       return (
         <Animated.View style={{ transform: [{ rotate: spin }] }}>
           <MaterialCommunityIcons 
@@ -240,7 +250,7 @@ const ProgressOverlay = ({
           {/* Percentage text */}
           <Text style={styles.percentageText}>{Math.round(progress * 100)}%</Text>
           
-          {/* Processing stage indicator */}
+          {/* Updated processing stage indicator for numbered list approach */}
           <View style={styles.stagesContainer}>
             <View style={[
               styles.stage, 
@@ -270,7 +280,7 @@ const ProgressOverlay = ({
               currentStep.toLowerCase().includes('ai') ? styles.activeStage : null
             ]}>
               <MaterialCommunityIcons 
-                name="brain" 
+                name="format-list-numbered" 
                 size={16} 
                 color={progress >= 0.6 ? Colors.white : Colors.gray} 
               />
@@ -306,7 +316,7 @@ const ProgressOverlay = ({
               styles.stageLabel, 
               progress >= 0.6 ? styles.activeStageLabel : styles.inactiveStageLabel
             ]}>
-              AI
+              List
             </Text>
             <Text style={[
               styles.stageLabel, 

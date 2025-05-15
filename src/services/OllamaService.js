@@ -1,5 +1,6 @@
 /**
- * Enhanced OllamaService with improved JSON parsing
+ * Enhanced OllamaService with Llama 3.2 1B optimization
+ * Modified to use numbered list extraction instead of JSON
  */
 class OllamaService {
   static instance;
@@ -7,80 +8,57 @@ class OllamaService {
   constructor() {
     this.baseUrl = 'http://localhost:11434';
     
-    // Specifically set Llama 3.2 1B as the primary model - 1.3GB with 128K context
+    // Set Llama 3.2 1B as the primary model - 1.3GB with 128K context
     this.defaultModel = 'llama3.2:1b';
     
-    // Set explicit preference order for models
-    this.preferredModels = [
-      'llama3.2:1b',        // First choice - specific 1B model
-      'llama3.2:latest',    // Second choice - latest version
-      'llama3:8b',          // Alternative models in order of preference
-      'llama3.1:8b', 
-      'llama3.1:1b', 
-      'tinyllama', 
-      'phi', 
-      'gemma:2b'
-    ];
+    // Alternative models if the primary one isn't available
+    this.fallbackModels = ['llama3:8b', 'llama3.1:8b', 'llama3.1:1b', 'tinyllama', 'phi', 'gemma:2b'];
     
-    // Optimized extraction prompt for Llama 3.2 1B with explicit JSON structure
+    // Optimized extraction prompt using numbered list format instead of JSON
     this.extractionPrompt = `TASK: Extract medical information from the document.
 
-OUTPUT FORMAT: STRICT JSON with these exact keys:
-{
-  "patientName": "",
-  "patientDOB": "",
-  "insurance": "",
-  "location": "",
-  "dx": "",
-  "pcp": "",
-  "dc": "",
-  "wounds": "",
-  "antibiotics": "",
-  "cardiacDrips": "",
-  "labs": "",
-  "faceToFace": "",
-  "history": "",
-  "mentalHealthState": "",
-  "additionalComments": ""
-}
+IMPORTANT: Return ONLY a numbered list with the information below. Do not include ANY other text.
 
-EXTRACTION GUIDE:
-- "patientName" = patient's full name
-- "patientDOB" = patient's date of birth
-- "insurance" = all patient insurance details
-- "location" = hospital/facility name
-- "dx" = diagnosis/medical condition
-- "pcp" = primary doctor name
-- "dc" = discharge information
-- "wounds" = wound descriptions
-- "antibiotics" = antibiotic medications
-- "cardiacDrips" = heart medications
-- "labs" = test results
-- "faceToFace" = in-person evaluations
-- "history" = patient medical history
-- "mentalHealthState" = psychological status
-- "additionalComments" = other relevant details
+PROVIDE EXACTLY THESE 15 ITEMS IN THIS ORDER:
+1. Patient Name
+2. Date of Birth 
+3. Insurance
+4. Location
+5. Diagnosis
+6. Primary Care Provider
+7. Discharge Info
+8. Wounds
+9. Antibiotics
+10. Cardiac Medications
+11. Labs
+12. Face to Face
+13. Medical History
+14. Mental Health
+15. Additional Comments
 
-For missing information, use empty string "".
-Only output valid JSON with these exact fields.
-DO NOT include any other text before or after the JSON.
-Make sure all JSON field values are properly escaped strings.`;
+CRITICAL INSTRUCTIONS:
+- If information is found, provide it directly after the number and field name
+- If information is NOT found, simply write "Not found" for that item
+- Keep answers brief and direct
+- DO NOT add explanations or notes
+- DO NOT write the word "Not found" if you have actual information
+- For DOB, extract any date format you find (MM/DD/YYYY, DD-MM-YYYY, etc.)
+- Write EXACTLY one numbered item per line`;
 
-    // Enhanced system prompt with medical domain knowledge
+    // Enhanced system prompt for numbered list approach
     this.systemPrompt = `You are a medical information extraction assistant specializing in clinical documents.
-Your sole purpose is to extract structured medical information from documents.
-You understand medical terminology, abbreviations, and can recognize clinical concepts.
+
+You will extract information from medical documents in a SIMPLE NUMBERED LIST format.
+Do not use JSON or other complex formats.
 
 CRITICAL RULES:
-1. Return ONLY a valid JSON object with no additional text
-2. Make sure all JSON field values are properly escaped strings
-3. Never include explanatory text, headings, or descriptions outside the JSON
-4. Always double-check that quotes and braces are balanced
-5. Do not include markdown formatting or code blocks
-
-CRITICAL FIELDS:
-- patientName: Look for full names, often near "Patient:", "Name:", or at the top of the document
-- patientDOB: Look for birthdate in various formats (MM/DD/YYYY, DD-MM-YYYY, etc.), often labeled as "DOB", "Birth Date", etc.
+1. Give EXACTLY 15 numbered items in the exact order requested
+2. Format each line as: NUMBER. FIELD NAME: INFORMATION
+3. If information is not in the document, write "Not found" 
+4. Never include both "Not found" AND actual information together
+5. Be direct and brief - no explanations or notes
+6. Extract DOB regardless of format (MM/DD/YYYY, DD-MM-YYYY, etc.)
+7. Respond ONLY with the 15-item numbered list, nothing else
 
 Common medical abbreviations:
 - Dx = Diagnosis
@@ -88,14 +66,7 @@ Common medical abbreviations:
 - DC = Discharge
 - Hx = History
 - Tx = Treatment
-- Rx = Prescription
-- Sx = Symptoms
-- PM&R = Physical Medicine and Rehabilitation
-
-If information is not found, include the field with an empty string.
-Do not make up information that isn't present in the document.`;
-
-    // To track extraction progress
+- Rx = Prescription`;// To track extraction progress
     this.extractionProgress = {
       status: 'idle',
       progress: 0,
@@ -147,7 +118,6 @@ Do not make up information that isn't present in the document.`;
    * Set the default model to use
    */
   setDefaultModel(model) {
-    // Ensure we preserve a non-empty model name
     this.defaultModel = model.trim() || 'llama3.2:1b';
     console.log('Ollama default model set to:', this.defaultModel);
   }
@@ -256,10 +226,10 @@ Do not make up information that isn't present in the document.`;
   }
 
   /**
-   * Initialize the service by finding the most appropriate model according to our preferences
+   * Initialize the service by finding the llama3.2:1b model or a fallback
    */
   async initialize() {
-    console.log('Initializing OllamaService with model preferences...');
+    console.log('Initializing OllamaService with Llama 3.2 1B...');
     try {
       // Check connection
       const isConnected = await this.testConnection();
@@ -268,34 +238,49 @@ Do not make up information that isn't present in the document.`;
         return false;
       }
       
-      // Get available models
-      const availableModels = await this.getAvailableModels();
-      console.log('Available models:', availableModels);
-      
-      if (!availableModels || availableModels.length === 0) {
-        console.warn('No models available in Ollama');
-        return false;
-      }
-      
-      // First, try to find models in our preferred order
-      for (const preferredModel of this.preferredModels) {
-        if (availableModels.includes(preferredModel)) {
-          this.defaultModel = preferredModel;
-          console.log(`Using preferred model: ${this.defaultModel}`);
-          
-          // Log special message if we found the optimal model
-          if (preferredModel === 'llama3.2:1b') {
-            console.log('Found optimal model: Llama 3.2 1B (1.3GB, 128K context)');
-          }
-          
+      // First try to check if our preferred model exists
+      try {
+        console.log(`Checking if ${this.defaultModel} exists...`);
+        const response = await fetch(`${this.baseUrl}/api/show`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ name: this.defaultModel }),
+        });
+        
+        if (response.ok) {
+          console.log(`Confirmed ${this.defaultModel} is available`);
           return true;
+        } else {
+          console.warn(`${this.defaultModel} not found, checking alternatives...`);
         }
+      } catch (error) {
+        console.warn(`Error checking ${this.defaultModel}:`, error);
       }
       
-      // If none of our preferred models are available, use the first available model
-      console.warn(`None of the preferred models available. Using ${availableModels[0]}`);
-      this.defaultModel = availableModels[0];
-      return true;
+      // If preferred model not found, try to get all available models
+      const models = await this.getAvailableModels();
+      console.log('Available models:', models);
+      
+      if (models && models.length > 0) {
+        // First, check if any of our preferred models are available
+        for (const model of [this.defaultModel, ...this.fallbackModels]) {
+          if (models.includes(model)) {
+            this.defaultModel = model;
+            console.log(`Using model: ${this.defaultModel}`);
+            return true;
+          }
+        }
+        
+        // If none of the preferred models found, use the first available one
+        this.defaultModel = models[0];
+        console.log(`Using available model: ${this.defaultModel}`);
+        return true;
+      }
+      
+      console.error('No models available in Ollama');
+      return false;
     } catch (error) {
       console.error('Error initializing OllamaService:', error);
       return false;
@@ -459,137 +444,171 @@ Do not make up information that isn't present in the document.`;
   }
 
   /**
-   * Process a single chunk of text
+   * Generate semantic embeddings for text
+   * Used for similarity comparisons and reference tracking
+   * IMPORTANT: This function is still needed for embeddings even with the numbered list approach
    */
-  async processSingleChunk(text, schema, model) {
-    // Create the combined prompt
-    const combinedPrompt = `${this.extractionPrompt}
-
-TEXT TO EXTRACT FROM:
-${text}`;
+  async generateEmbeddings(text, model = this.defaultModel) {
+    if (!model) {
+      model = this.defaultModel;
+    }
     
-    // Use a lower temperature for more deterministic results
-    const extractionOptions = {
-      temperature: 0.1, // Very low temperature for consistent extraction
-    };
+    // Limit text length for embeddings to avoid performance issues
+    const processedText = text.length > 8000 ? text.substring(0, 8000) : text;
     
-    // Generate completion with the combined prompt
-    const result = await this.generateCompletion(
-      combinedPrompt,
-      model,
-      this.systemPrompt,
-      extractionOptions
-    );
+    console.log(`Generating embeddings with model: ${model}`);
+    console.log(`Text length for embeddings: ${processedText.length} characters`);
     
-    // Process the result to extract JSON
     try {
-      // Enhanced JSON extraction with robust error handling
-      return this.extractJsonFromText(result);
-    } catch (parseError) {
-      console.error('Failed to parse extracted information:', parseError);
-      console.log('Raw output from model:', result);
+      // Try first API format (newer versions)
+      const requestData = {
+        model,
+        prompt: processedText,
+      };
+
+      const requestUrl = `${this.baseUrl}/api/embeddings`;
+      console.log('Sending embeddings request to:', requestUrl);
       
-      // Try to fix common JSON issues
-      try {
-        const fixedJson = this.attemptToFixJson(result);
-        console.log('Attempted to fix JSON:', fixedJson);
-        return fixedJson;
-      } catch (fixError) {
-        console.error('Failed to fix JSON:', fixError);
-        
-        // Update progress - parsing error
-        this.updateProgress(
-          'error', 
-          0.7, 
-          'Processing error',
-          `Failed to extract structured data: ${parseError.message}`
-        );
-        
-        // Return error information
-        return {
-          extractionMethod: 'failed',
-          error: 'Parsing error',
-          errorDetails: parseError.message,
-          timestamp: new Date().toISOString()
-        };
+      const response = await fetch(requestUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData),
+      });
+
+      if (!response.ok) {
+        // If embedding endpoint fails, try the alternative embed endpoint that some Ollama versions use
+        console.warn('Embeddings endpoint failed, trying alternate endpoint');
+        return this.generateEmbeddingsAlternate(processedText, model);
       }
+
+      const data = await response.json();
+      console.log('Embeddings response received, processing...');
+      
+      // Handle different response formats for embeddings
+      if (data.embedding) {
+        console.log('Embedding vector length:', data.embedding.length);
+        return data.embedding;
+      } else if (data.embeddings && Array.isArray(data.embeddings) && data.embeddings.length > 0) {
+        console.log('Embedding vector length:', data.embeddings[0].length);
+        return data.embeddings[0];
+      } else if (Array.isArray(data) && data.length > 0) {
+        console.log('Embedding vector length:', data.length);
+        return data;
+      } else {
+        console.warn('Unexpected embeddings response format:', data);
+        
+        // Fallback to simple random embeddings (only for demonstration)
+        console.warn('Falling back to random embeddings');
+        return this.generateRandomEmbeddings(128);
+      }
+    } catch (error) {
+      console.error('Ollama embeddings error:', error);
+      
+      // Try alternate endpoint on error
+      try {
+        return await this.generateEmbeddingsAlternate(processedText, model);
+      } catch (alternateError) {
+        console.error('Alternate embeddings approach also failed:', alternateError);
+        
+        // Return random embeddings as last resort fallback
+        console.warn('Falling back to random embeddings');
+        return this.generateRandomEmbeddings(128);
+      }
+    }
+  }
+  
+  /**
+   * Alternative approach to generate embeddings
+   * Some Ollama versions use a different endpoint or format
+   */
+  async generateEmbeddingsAlternate(text, model) {
+    try {
+      // Try alternate endpoint format
+      const requestData = {
+        model,
+        prompt: text,
+        options: {
+          embedding: true,
+        }
+      };
+
+      const response = await fetch(`${this.baseUrl}/api/embed`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Alternate embeddings failed: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.embedding) {
+        return data.embedding;
+      } else if (data.embeddings) {
+        return data.embeddings;
+      } else {
+        throw new Error('No embeddings found in response');
+      }
+    } catch (error) {
+      console.error('Alternative embeddings approach failed:', error);
+      throw error;
     }
   }
 
   /**
-   * Extract JSON from text with robust error handling
+   * Generate random embeddings as a fallback
+   * Only used when real embeddings can't be obtained
    */
-  extractJsonFromText(text) {
-    // First, try to find JSON within the text
-    const jsonRegex = /{[\s\S]*?}/;
-    const jsonMatch = text.match(jsonRegex);
-    
-    if (jsonMatch) {
-      const jsonStr = jsonMatch[0];
-      
-      try {
-        const parsedResult = JSON.parse(jsonStr);
-        console.log('Successfully parsed JSON result');
-        
-        // Update progress - parsing successful
-        this.updateProgress(
-          'processing', 
-          0.75, 
-          'Information extracted',
-          'Successfully parsed structured data'
-        );
-        
-        // Validate and format the extracted fields
-        return this.validateAndFormatFields(parsedResult);
-      } catch (jsonError) {
-        console.error('Failed to parse extracted JSON:', jsonError);
-        console.log('Extracted JSON string:', jsonStr);
-        throw jsonError;
-      }
-    }
-    
-    // If we can't find JSON with regex, try a more aggressive approach
-    console.warn('No JSON found with regex, trying more aggressive extraction');
-    
-    // Try to find the first { and the last }
-    const firstBrace = text.indexOf('{');
-    const lastBrace = text.lastIndexOf('}');
-    
-    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-      const jsonStr = text.substring(firstBrace, lastBrace + 1);
-      
-      try {
-        const parsedResult = JSON.parse(jsonStr);
-        console.log('Successfully parsed JSON with aggressive extraction');
-        
-        // Update progress - parsing successful with alternative method
-        this.updateProgress(
-          'processing', 
-          0.75, 
-          'Information extracted',
-          'Successfully parsed structured data (alternative method)'
-        );
-        
-        // Validate and format the extracted fields
-        return this.validateAndFormatFields(parsedResult);
-      } catch (jsonError) {
-        console.error('Failed to parse JSON with aggressive extraction:', jsonError);
-        throw jsonError;
-      }
-    }
-    
-    // If we still can't find JSON, throw an error
-    throw new Error('No JSON found in model response');
+  generateRandomEmbeddings(dimensions = 128) {
+    console.warn(`Generating random ${dimensions}-dimensional embeddings as fallback`);
+    return Array.from({ length: dimensions }, () => (Math.random() * 2) - 1);
   }
 
   /**
-   * Attempt to fix common JSON issues
+   * Calculate cosine similarity between two embedding vectors
+   * Used for finding similar sections of text
    */
-  attemptToFixJson(text) {
-    console.log('Attempting to fix JSON issues...');
+  cosineSimilarity(vecA, vecB) {
+    if (!vecA || !vecB || vecA.length !== vecB.length) {
+      return 0;
+    }
     
-    // Initialize with empty fields
-    const defaultJson = {
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+    
+    for (let i = 0; i < vecA.length; i++) {
+      dotProduct += vecA[i] * vecB[i];
+      normA += vecA[i] * vecA[i];
+      normB += vecB[i] * vecB[i];
+    }
+    
+    normA = Math.sqrt(normA);
+    normB = Math.sqrt(normB);
+    
+    if (normA === 0 || normB === 0) {
+      return 0;
+    }
+    
+    return dotProduct / (normA * normB);
+  }
+
+  /**
+   * Parse a numbered list response from the LLM into a structured object
+   * This replaces the JSON parsing functions with our new approach
+   * @param {string} text - The LLM response with numbered list
+   * @returns {Object} - Structured data object
+   */
+  parseNumberedListFromLLM(text) {
+    const result = {
+      extractionMethod: 'numbered-list',
+      extractionDate: new Date().toISOString(),
       patientName: '',
       patientDOB: '',
       insurance: '',
@@ -604,132 +623,50 @@ ${text}`;
       faceToFace: '',
       history: '',
       mentalHealthState: '',
-      additionalComments: '',
-      extractionMethod: 'partial',
-      timestamp: new Date().toISOString()
+      additionalComments: ''
     };
     
-    // Try to extract field values with simple regex
-    // This is a fallback to get at least some data
-    const fields = [
-      'patientName', 'patientDOB', 'insurance', 'location', 'dx', 'pcp', 'dc', 
-      'wounds', 'antibiotics', 'cardiacDrips', 'labs', 'faceToFace', 
-      'history', 'mentalHealthState', 'additionalComments'
-    ];
+    // Create a mapping from list numbers to field names
+    const fieldMapping = {
+      1: 'patientName',
+      2: 'patientDOB',
+      3: 'insurance',
+      4: 'location',
+      5: 'dx',           // Diagnosis
+      6: 'pcp',          // Primary Care Provider
+      7: 'dc',           // Discharge Info
+      8: 'wounds',
+      9: 'antibiotics',
+      10: 'cardiacDrips', // Cardiac Medications
+      11: 'labs',         // Lab results
+      12: 'faceToFace',   // Face to Face evaluation
+      13: 'history',      // Medical History
+      14: 'mentalHealthState', // Mental Health
+      15: 'additionalComments'
+    };
     
-    let extractedAny = false;
+    // Split by new lines
+    const lines = text.split('\n');
     
-    for (const field of fields) {
-      // Try to match field patterns like "field": "value" or "field":"value"
-      const regex = new RegExp(`"${field}"\\s*:\\s*"([^"]*)"`, 'i');
-      const match = text.match(regex);
-      
-      if (match && match[1]) {
-        defaultJson[field] = match[1].trim();
-        extractedAny = true;
+    // Process each line
+    for (const line of lines) {
+      // Look for patterns like "1. Patient Name: John Doe"
+      const match = line.match(/^\s*(\d+)\s*\.?\s*.*?:\s*(.*?)\s*$/);
+      if (match) {
+        const [, numberStr, value] = match;
+        const number = parseInt(numberStr, 10);
+        
+        // Map to the correct field name
+        const fieldName = fieldMapping[number];
+        if (fieldName && value && value.toLowerCase() !== 'not found') {
+          result[fieldName] = value.trim();
+        }
       }
     }
     
-    if (extractedAny) {
-      console.log('Extracted partial data with regex fallback');
-      this.updateProgress(
-        'processing', 
-        0.7, 
-        'Partial extraction',
-        'Extracted some information with fallback method'
-      );
-      return defaultJson;
-    } else {
-      throw new Error('Could not extract any fields with fallback method');
-    }
+    return result;
   }
 
-  /**
-   * Validate and format extracted fields to ensure consistency
-   */
-  validateAndFormatFields(extractedData) {
-    // Define the expected fields
-    const expectedFields = [
-      'patientName',
-      'patientDOB',
-      'insurance',
-      'location',
-      'dx',
-      'pcp',
-      'dc',
-      'wounds',
-      'antibiotics',
-      'cardiacDrips',
-      'labs',
-      'faceToFace',
-      'history',
-      'mentalHealthState',
-      'additionalComments'
-    ];
-    
-    // Create a properly formatted output object
-    const formattedOutput = {
-      extractionMethod: 'ai',
-      extractionDate: new Date().toISOString()
-    };
-    
-    // Ensure all expected fields exist
-    expectedFields.forEach(field => {
-      // If the field exists in extracted data, use it, otherwise empty string
-      formattedOutput[field] = extractedData[field] || '';
-      
-      // Trim whitespace
-      if (typeof formattedOutput[field] === 'string') {
-        formattedOutput[field] = formattedOutput[field].trim();
-      }
-    });
-    
-    // Handle possible field name variations
-    const fieldMappings = {
-      'patient_name': 'patientName',
-      'patient': 'patientName',
-      'fullName': 'patientName',
-      'name': 'patientName',
-      'date_of_birth': 'patientDOB',
-      'dateOfBirth': 'patientDOB',
-      'dob': 'patientDOB',
-      'birthdate': 'patientDOB',
-      'insurance_provider': 'insurance',
-      'insuranceProvider': 'insurance',
-      'primaryInsurance': 'insurance',
-      'diagnosis': 'dx',
-      'discharge': 'dc',
-      'provider': 'pcp',
-      'primaryCareProvider': 'pcp',
-      'woundCare': 'wounds',
-      'antibioticTherapy': 'antibiotics',
-      'cardiacMedications': 'cardiacDrips',
-      'laboratory': 'labs',
-      'labResults': 'labs',
-      'faceToFaceEncounter': 'faceToFace',
-      'medicalHistory': 'history',
-      'mentalHealth': 'mentalHealthState',
-      'additional': 'additionalComments',
-      'notes': 'additionalComments'
-    };
-    
-    // Check for alternative field names and map them
-    Object.entries(fieldMappings).forEach(([altField, standardField]) => {
-      if (extractedData[altField] && !formattedOutput[standardField]) {
-        formattedOutput[standardField] = extractedData[altField];
-      }
-    });
-    
-    console.log('Validated fields:', Object.keys(formattedOutput).filter(k => 
-      !k.startsWith('_') && k !== 'extractionMethod' && k !== 'extractionDate'
-    ));
-    
-    return formattedOutput;
-  }
-
-  /**
-   * Extract structured information from text
-   */
   async extractInformation(text, schema = null, model = this.defaultModel) {
     try {
       // Update progress - starting
@@ -742,7 +679,7 @@ ${text}`;
       
       // Use a different chunking strategy for Llama 3.2 1B - 
       // it has a 128K context window, so we can potentially send more at once
-      const MAX_CHUNK_SIZE = 8000; // Characters per chunk - smaller chunk size for more reliable processing
+      const MAX_CHUNK_SIZE = 12000; // Characters per chunk - larger for 128K context model
       
       // For very long documents, process in chunks
       if (text.length > MAX_CHUNK_SIZE) {
@@ -773,7 +710,7 @@ ${text}`;
             `Processing document section ${i+1} of ${chunks.length}`
           );
           
-          // Process each chunk
+          // Process each chunk using the numbered list approach
           const chunkResult = await this.processSingleChunk(chunks[i], schema, model);
           chunkResults.push(chunkResult);
           
@@ -814,7 +751,9 @@ ${text}`;
       return {
         extractionMethod: 'failed',
         error: error.message,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        // Include raw output if available
+        rawOutput: error.rawOutput || '',
       };
     }
   }
@@ -848,13 +787,205 @@ ${text}`;
     
     return chunks;
   }
+
+  /**
+   * Process a single chunk of text using the numbered list approach
+   */
+  async processSingleChunk(text, schema, model) {
+    // Create the combined prompt
+    const combinedPrompt = `${this.extractionPrompt}
+
+TEXT TO EXTRACT FROM:
+${text}`;
+    
+    // Use a lower temperature for more deterministic results
+    const extractionOptions = {
+      temperature: 0.1, // Very low temperature for consistent extraction
+    };
+    
+    // Generate completion with the combined prompt
+    const result = await this.generateCompletion(
+      combinedPrompt,
+      model,
+      this.systemPrompt,
+      extractionOptions
+    );
+    
+    // Process the numbered list response
+    try {
+      // Try to parse the numbered list format
+      const extractedData = this.parseNumberedListFromLLM(result);
+      
+      console.log('Successfully extracted data from numbered list');
+      
+      // Update progress - successful extraction
+      this.updateProgress(
+        'processing', 
+        0.75, 
+        'Information extracted',
+        'Successfully extracted structured data'
+      );
+      
+      return extractedData;
+    } catch (error) {
+      console.error('Failed to parse numbered list response:', error);
+      console.log('Raw LLM output:', result);
+      
+      // Update progress - parsing error
+      this.updateProgress(
+        'error', 
+        0.7, 
+        'Parsing error',
+        `Failed to extract information: ${error.message}`
+      );
+      
+      // Try a more aggressive fallback approach to salvage any data
+      try {
+        // Look for any numbered entries in the text
+        const fallbackData = this.extractWithFallbackParser(result);
+        
+        if (Object.keys(fallbackData).filter(k => k !== 'extractionMethod' && k !== 'extractionDate').length > 0) {
+          console.log('Successfully extracted some data with fallback parser');
+          return {
+            ...fallbackData,
+            extractionMethod: 'fallback-numbered-list',
+            extractionDate: new Date().toISOString(),
+            _originalOutput: result // Store the original for debugging
+          };
+        }
+      } catch (fallbackError) {
+        console.error('Fallback parsing also failed:', fallbackError);
+      }
+      
+      // Return error information with raw output for debugging
+      const errorObj = {
+        extractionMethod: 'failed',
+        error: 'Parsing error',
+        errorDetails: error.message,
+        rawOutput: result, // Include full raw output for debugging
+        timestamp: new Date().toISOString()
+      };
+      
+      // Add the error object to the throw so it gets properly passed up
+      error.rawOutput = result;
+      throw error;
+    }
+  }
   
   /**
-   * Merge results from multiple chunks with smarter handling of fields
+   * Fallback parser that tries to extract any numbered list items
+   * @param {string} text - Raw LLM output
+   * @returns {Object} - Extracted data object
+   */
+  extractWithFallbackParser(text) {
+    const result = {
+      extractionMethod: 'fallback-numbered-list',
+      extractionDate: new Date().toISOString(),
+      patientName: '',
+      patientDOB: '',
+      insurance: '',
+      location: '',
+      dx: '',
+      pcp: '',
+      dc: '',
+      wounds: '',
+      antibiotics: '',
+      cardiacDrips: '',
+      labs: '',
+      faceToFace: '',
+      history: '',
+      mentalHealthState: '',
+      additionalComments: ''
+    };
+    
+    // Look for any lines with numbers followed by text
+    const lines = text.split('\n');
+    
+    // Field name hints to help with fuzzy matching
+    const fieldHints = {
+      patientName: ['patient', 'name', 'person'],
+      patientDOB: ['dob', 'birth', 'date of birth', 'born'],
+      insurance: ['insurance', 'coverage', 'provider'],
+      location: ['location', 'facility', 'hospital', 'place'],
+      dx: ['dx', 'diagnosis', 'condition', 'ailment'],
+      pcp: ['pcp', 'doctor', 'physician', 'provider'],
+      dc: ['dc', 'discharge', 'released'],
+      wounds: ['wounds', 'injury', 'laceration', 'cut'],
+      antibiotics: ['antibiotics', 'antibiotic', 'medication'],
+      cardiacDrips: ['cardiac', 'heart', 'drip', 'medication'],
+      labs: ['labs', 'laboratory', 'test', 'result'],
+      faceToFace: ['face', 'meeting', 'encounter', 'visit'],
+      history: ['history', 'past', 'previous', 'background'],
+      mentalHealthState: ['mental', 'psych', 'cognitive', 'emotional'],
+      additionalComments: ['additional', 'comment', 'note', 'other']
+    };
+    
+    for (const line of lines) {
+      // Try to extract any content that looks like a field
+      const match = line.match(/(\d+)\.?\s*(.+?):\s*(.+)/);
+      if (match) {
+        const [, numberStr, label, value] = match;
+        
+        if (!value || value.toLowerCase() === 'not found' || value.trim() === '') {
+          continue;
+        }
+        
+        // Try to map to a field name based on the label and hints
+        const labelLower = label.toLowerCase();
+        let matchedField = null;
+        
+        // Check for direct matches with field name hints
+        for (const [field, hints] of Object.entries(fieldHints)) {
+          for (const hint of hints) {
+            if (labelLower.includes(hint)) {
+              matchedField = field;
+              break;
+            }
+          }
+          if (matchedField) break;
+        }
+        
+        // If a field was matched, save the value
+        if (matchedField) {
+          result[matchedField] = value.trim();
+        } else {
+          // Try mapping by number if no field matched
+          const number = parseInt(numberStr, 10);
+          const fieldMapping = {
+            1: 'patientName',
+            2: 'patientDOB',
+            3: 'insurance',
+            4: 'location',
+            5: 'dx',
+            6: 'pcp',
+            7: 'dc',
+            8: 'wounds',
+            9: 'antibiotics',
+            10: 'cardiacDrips',
+            11: 'labs',
+            12: 'faceToFace',
+            13: 'history',
+            14: 'mentalHealthState',
+            15: 'additionalComments'
+          };
+          
+          const fieldName = fieldMapping[number];
+          if (fieldName) {
+            result[fieldName] = value.trim();
+          }
+        }
+      }
+    }
+    
+    return result;
+  }
+
+  /**
+   * Merge results from multiple chunks with the numbered list approach
    */
   mergeChunkResults(results) {
     const mergedResult = {
-      extractionMethod: 'ai',
+      extractionMethod: 'numbered-list',
       extractionDate: new Date().toISOString()
     };
     
@@ -911,6 +1042,82 @@ ${text}`;
     );
     
     return mergedResult;
+  }
+
+  /**
+   * Find the most similar text sections using embeddings
+   * Used for semantic search and reference identification
+   * The embeddings still work with the numbered list approach
+   */
+  async findSimilarSections(query, sections, model = this.defaultModel, topK = 3) {
+    try {
+      // Generate embedding for the query
+      const queryEmbedding = await this.generateEmbeddings(query, model);
+      
+      // Calculate similarity scores for each section
+      const scoredSections = await Promise.all(sections.map(async (section) => {
+        // Generate embedding for the section if not already present
+        const sectionEmbedding = section.embedding || await this.generateEmbeddings(section.text, model);
+        
+        // Calculate similarity score
+        const score = this.cosineSimilarity(queryEmbedding, sectionEmbedding);
+        
+        return {
+          ...section,
+          embedding: sectionEmbedding,
+          score
+        };
+      }));
+      
+      // Sort sections by similarity score (highest first)
+      const sortedSections = scoredSections.sort((a, b) => b.score - a.score);
+      
+      // Return top K sections
+      return sortedSections.slice(0, topK);
+    } catch (error) {
+      console.error('Error finding similar sections:', error);
+      return sections.slice(0, topK);
+    }
+  }
+
+  /**
+   * Determine the type of a section based on its content
+   * Used for categorizing references
+   */
+  determineSectionType(text) {
+    const lowerText = text.toLowerCase();
+    
+    // Check for common section types in medical documents
+    if (lowerText.includes('patient') && (lowerText.includes('information') || lowerText.includes('details'))) {
+      return 'Patient Information';
+    }
+    
+    if (lowerText.includes('referring') && (lowerText.includes('physician') || lowerText.includes('doctor'))) {
+      return 'Referring Physician';
+    }
+    
+    if (lowerText.includes('diagnosis') || lowerText.includes('assessment') || lowerText.includes('impression')) {
+      return 'Diagnosis';
+    }
+    
+    if (lowerText.includes('history')) {
+      return 'Medical History';
+    }
+    
+    if (lowerText.includes('medication') || lowerText.includes('prescription')) {
+      return 'Medications';
+    }
+    
+    if (lowerText.includes('insurance')) {
+      return 'Insurance Information';
+    }
+    
+    if (lowerText.includes('reason') && lowerText.includes('referral')) {
+      return 'Referral Reason';
+    }
+    
+    // Default section type
+    return 'Document Section';
   }
 }
 

@@ -1,4 +1,4 @@
-// PDFProcessorService with optimized text extraction for Llama 3.2 1B
+// PDFProcessorService with numbered list extraction instead of JSON
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 import ParallelPDFTextExtractionService from './ParallelPDFTextExtractionService';
@@ -82,7 +82,7 @@ class PDFProcessorService {
   
   /**
    * Process a PDF document and extract text and form data
-   * Optimized for Llama 3.2 1B with 128K context window
+   * Updated for numbered list approach instead of JSON
    * 
    * @param {string} uri - URI of the PDF document
    * @param {string} name - Name of the document
@@ -148,7 +148,7 @@ class PDFProcessorService {
       
       // Initialize default formData structure
       let formData = {
-        extractionMethod: 'ai',
+        extractionMethod: 'numbered-list',
         extractionDate: new Date().toISOString(),
         patientName: '',
         patientDOB: '',
@@ -181,8 +181,7 @@ class PDFProcessorService {
           const testConnection = await this.ollamaService.testConnection();
           
           if (testConnection) {
-            // Extract information using Ollama with chunking if needed
-            // Llama 3.2 1B has a 128K context window, so we can process more text at once
+            // Extract information using Ollama with the numbered list approach
             const extractedInfo = await this.ollamaService.extractInformation(extractedText);
             
             this.updateProgress('processing', 0.8, 'AI Complete', 'AI extraction completed successfully');
@@ -205,6 +204,11 @@ class PDFProcessorService {
               this.updateProgress('warning', 0.8, 'Extraction Issues', 'AI had trouble identifying some information');
               formData.extractionMethod = 'failed';
               formData.error = extractedInfo?.error || 'Unknown error';
+              
+              // Include raw output for debugging if available
+              if (extractedInfo?.rawOutput) {
+                formData.rawOutput = extractedInfo.rawOutput;
+              }
             }
           } else {
             console.error('Ollama service not available');
@@ -229,18 +233,37 @@ class PDFProcessorService {
       this.updateProgress('processing', 0.9, 'Creating References', 'Processing document sections');
       const references = this.referenceService.processDocument(id, extractedText);
       
-      // Generate embeddings if possible
-      let embeddings = [];
+      // Generate embeddings for all paragraphs at once to improve field reference matching
+      const paragraphEmbeddings = [];
       try {
         if (this.useAI) {
           const testConnection = await this.ollamaService.testConnection();
           if (testConnection) {
             this.updateProgress('processing', 0.93, 'Generating Embeddings', 'Creating semantic document index');
-            // Use a smaller chunk of text for embeddings to save resources
-            const embeddingText = extractedText.length > 10000 ? 
-              extractedText.substring(0, 10000) : extractedText;
             
-            embeddings = await this.ollamaService.generateEmbeddings(embeddingText);
+            // Generate embeddings for each paragraph to prepare for field matching
+            if (references && references.paragraphs) {
+              for (const paragraph of references.paragraphs) {
+                try {
+                  const embedding = await this.ollamaService.generateEmbeddings(paragraph.text);
+                  paragraphEmbeddings.push({
+                    paragraph,
+                    embedding
+                  });
+                } catch (embErr) {
+                  console.warn('Error generating paragraph embedding:', embErr);
+                }
+              }
+              console.log(`Generated embeddings for ${paragraphEmbeddings.length} paragraphs`);
+            }
+            
+            // Ensure field references exist
+            if (!formData._references) {
+              formData._references = {};
+            }
+            
+            // For each extracted field, find its source in the document
+            await this.createFieldReferencesWithEmbeddings(formData, extractedText, references, paragraphEmbeddings);
           }
         }
       } catch (embeddingError) {
@@ -260,7 +283,7 @@ class PDFProcessorService {
         pages: extractionResult.pages || 1,
         formData,
         references: references,
-        embeddings,
+        paragraphEmbeddings,
       };
       
       // Add logging to debug field structure
@@ -282,6 +305,138 @@ class PDFProcessorService {
       // Clean up resources
       this.isProcessing = false;
     }
+  }
+  
+  /**
+   * Create field references using pre-generated paragraph embeddings
+   * This is a more efficient approach that works with the numbered list format
+   * @param {Object} formData - Extracted form data
+   * @param {string} text - Full document text
+   * @param {Object} references - Document references
+   * @param {Array} paragraphEmbeddings - Pre-generated paragraph embeddings
+   */
+  async createFieldReferencesWithEmbeddings(formData, text, references, paragraphEmbeddings) {
+    // Skip if no references or paragraph embeddings
+    if (!references || !references.paragraphs || !paragraphEmbeddings || paragraphEmbeddings.length === 0) {
+      return;
+    }
+    
+    // Ensure _references exists
+    if (!formData._references) {
+      formData._references = {};
+    }
+    
+    console.log("Creating field references for all fields using pre-generated embeddings");
+    
+    // For each field with content, try to find its source
+    for (const [field, value] of Object.entries(formData)) {
+      // Skip metadata fields or empty values
+      if (field.startsWith('_') || 
+          field === 'extractionMethod' || 
+          field === 'extractionDate' || 
+          field === 'error' ||
+          !value || 
+          value.trim() === '') {
+        continue;
+      }
+      
+      try {
+        // First try exact text matching (fastest)
+        let foundRef = false;
+        
+        // For each paragraph, check if it contains the exact field value
+        for (const paragraphEmb of paragraphEmbeddings) {
+          const paragraph = paragraphEmb.paragraph;
+          if (paragraph.text.includes(value)) {
+            formData._references[field] = {
+              text: paragraph.text,
+              location: paragraph.type,
+              matchType: 'exact'
+            };
+            foundRef = true;
+            break;
+          }
+        }
+        
+        // If no exact match, try semantic search using paragraph embeddings
+        if (!foundRef && value.length > 3) {
+          // Generate embedding for the field value
+          const fieldEmbedding = await this.ollamaService.generateEmbeddings(value);
+          
+          // Calculate similarity with each paragraph embedding
+          const scoredParagraphs = paragraphEmbeddings.map(pe => ({
+            paragraph: pe.paragraph,
+            score: this.ollamaService.cosineSimilarity(fieldEmbedding, pe.embedding)
+          }));
+          
+          // Sort by similarity score
+          scoredParagraphs.sort((a, b) => b.score - a.score);
+          
+          // Use top result if score is good enough
+          if (scoredParagraphs.length > 0 && scoredParagraphs[0].score > 0.4) {
+            const topMatch = scoredParagraphs[0];
+            formData._references[field] = {
+              text: topMatch.paragraph.text,
+              location: topMatch.paragraph.type,
+              matchType: 'semantic',
+              score: topMatch.score
+            };
+            foundRef = true;
+          }
+        }
+        
+        // If still no match, try keyword matching
+        if (!foundRef) {
+          // Extract keywords from the field value
+          const keywords = value.toLowerCase()
+            .split(/\s+/)
+            .filter(word => word.length > 3 && !['with', 'this', 'that', 'from', 'have', 'were', 'because', 'about'].includes(word));
+          
+          // Score paragraphs by keyword matches
+          const keywordMatches = [];
+          
+          for (const paragraphEmb of paragraphEmbeddings) {
+            const paragraph = paragraphEmb.paragraph;
+            const paragraphText = paragraph.text.toLowerCase();
+            let matchCount = 0;
+            
+            // Count matching keywords
+            for (const keyword of keywords) {
+              if (paragraphText.includes(keyword)) {
+                matchCount++;
+              }
+            }
+            
+            if (matchCount > 0) {
+              keywordMatches.push({
+                paragraph,
+                matchCount,
+                score: matchCount / keywords.length
+              });
+            }
+          }
+          
+          // Sort by match count
+          keywordMatches.sort((a, b) => b.matchCount - a.matchCount);
+          
+          // Use top result if any matches found
+          if (keywordMatches.length > 0) {
+            const topKeywordMatch = keywordMatches[0];
+            formData._references[field] = {
+              text: topKeywordMatch.paragraph.text,
+              location: topKeywordMatch.paragraph.type,
+              matchType: 'keyword',
+              matchCount: topKeywordMatch.matchCount,
+              score: topKeywordMatch.score
+            };
+          }
+        }
+      } catch (error) {
+        console.warn(`Error finding reference for field ${field}:`, error);
+      }
+    }
+    
+    console.log(`Created references for ${Object.keys(formData._references).length} fields using embeddings`);
   }
   
   /**

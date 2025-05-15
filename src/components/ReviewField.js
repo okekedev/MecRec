@@ -1,4 +1,4 @@
-// src/components/ReviewField.js (UI modernization)
+// src/components/ReviewField.js (Updated for numbered list approach)
 import React, { useState } from 'react';
 import {
   View,
@@ -43,6 +43,32 @@ const ReviewField = ({
     outputRange: [0, 200]
   });
   
+  // Map field label to a numbered list format label for consistent reference
+  const getNumberedListLabel = () => {
+    // Create a mapping from field names to their position in the numbered list
+    const fieldMapping = {
+      'Patient Name': 1,
+      'Date of Birth': 2,
+      'Insurance': 3,
+      'Location': 4,
+      'Diagnosis (Dx)': 5,
+      'Primary Care Provider (PCP)': 6,
+      'Discharge (DC)': 7,
+      'Wounds': 8,
+      'Antibiotics': 9,
+      'Cardiac Medications': 10,
+      'Labs': 11,
+      'Face to Face': 12,
+      'Medical History': 13,
+      'Mental Health State': 14,
+      'Additional Comments': 15
+    };
+    
+    // Return the numbered label if found, otherwise use the original label
+    const number = fieldMapping[label];
+    return number ? `${number}. ${label}` : label;
+  };
+  
   return (
     <View style={modernStyles.container}>
       <View style={modernStyles.fieldCard}>
@@ -52,7 +78,7 @@ const ReviewField = ({
               modernStyles.statusIndicator,
               isReviewed ? modernStyles.reviewedIndicator : modernStyles.pendingIndicator
             ]} />
-            <Text style={modernStyles.label}>{label}</Text>
+            <Text style={modernStyles.label}>{getNumberedListLabel()}</Text>
           </View>
           <View style={modernStyles.reviewToggle}>
             <Text style={[
