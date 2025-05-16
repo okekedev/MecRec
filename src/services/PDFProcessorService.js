@@ -25,6 +25,12 @@ class PDFProcessorService {
     this.ollamaService = OllamaService.getInstance();
     this.embeddingService = EmbeddingService.getInstance();
     
+    // NEW: Add tracking for important document sections
+    this.importantSections = new Map(); // documentId -> Map of fieldName -> sections
+    
+    // NEW: Add shared context flag
+    this.enableSharedContext = true; // Toggle for the new functionality
+    
     // Configuration
     this.useAI = true;
     this.isProcessing = false;
@@ -77,6 +83,187 @@ class PDFProcessorService {
   }
   
   /**
+   * NEW: Enable or disable shared context between services
+   * @param {boolean} enable - Whether to enable shared context
+   */
+  setSharedContext(enable) {
+    this.enableSharedContext = enable;
+    console.log(`Shared context ${enable ? 'enabled' : 'disabled'}`);
+  }
+  
+  /**
+   * NEW: Get shared context status
+   * @returns {boolean} Whether shared context is enabled
+   */
+  isSharedContextEnabled() {
+    return this.enableSharedContext;
+  }
+  
+  /**
+   * NEW: Clear shared context for a specific document
+   * @param {string} documentId - Document ID
+   */
+  clearSharedContext(documentId) {
+    if (this.importantSections.has(documentId)) {
+      this.importantSections.delete(documentId);
+      console.log(`Cleared shared context for document ${documentId}`);
+    }
+    
+    // Also clear tracked sections in OllamaService
+    if (this.ollamaService.contextTrackingEnabled) {
+      this.ollamaService.clearTrackedSections(documentId);
+    }
+    
+    // Clear bidirectional context
+    if (this.sharedContextMap && this.sharedContextMap.has(documentId)) {
+      this.sharedContextMap.delete(documentId);
+      console.log(`Cleared bidirectional context for document ${documentId}`);
+    }
+  }
+  
+  /**
+   * NEW: Get shared context information for a document
+   * @param {string} documentId - Document ID
+   * @returns {Object} Shared context info
+   */
+  getSharedContextInfo(documentId) {
+    if (!this.importantSections.has(documentId)) {
+      return {
+        hasContext: false,
+        sectionsCount: 0,
+        enabled: this.enableSharedContext
+      };
+    }
+    
+    const sections = this.importantSections.get(documentId);
+    return {
+      hasContext: true,
+      sectionsCount: sections.length,
+      sectionTypes: [...new Set(sections.map(s => s.type))],
+      enabled: this.enableSharedContext
+    };
+  }
+  
+  /**
+   * NEW: Synchronize model settings between services
+   * @returns {boolean} Success status
+   */
+  syncServiceConfigurations() {
+    // Get current configurations
+    const ollamaConfig = this.ollamaService.getConfig();
+    const embeddingConfig = this.embeddingService.getConfig();
+    
+    // Share the base URL to ensure both services connect to same Ollama instance
+    if (ollamaConfig.baseUrl !== embeddingConfig.baseUrl) {
+      console.log(`Syncing service endpoints: Ollama ${ollamaConfig.baseUrl} -> Embedding Service`);
+      this.embeddingService.setBaseUrl(ollamaConfig.baseUrl);
+    }
+    
+    // Log current model configurations
+    console.log(`Current model configuration - Text: ${ollamaConfig.defaultModel}, Embeddings: ${embeddingConfig.embeddingModel}`);
+    
+    return true;
+  }
+  
+  /**
+   * NEW: Establish shared context between text generation and embedding services
+   * @param {string} documentId - Document ID
+   * @param {string} text - Document text
+   * @returns {Promise<boolean>} Success status
+   */
+  async establishSharedContext(documentId, text) {
+    if (!this.enableSharedContext || !documentId || !text) return false;
+    
+    try {
+      // 1. Initialize both services in parallel
+      const [ollamaInitialized, embeddingInitialized] = await Promise.all([
+        this.ollamaService.initialize(),
+        this.embeddingService.initialize()
+      ]);
+      
+      if (!ollamaInitialized || !embeddingInitialized) {
+        console.warn('Failed to initialize AI services for shared context');
+        return false;
+      }
+      
+      // 2. Sync configurations
+      this.syncServiceConfigurations();
+      
+      // 3. Tell Ollama service we'll be tracking important sections
+      if (typeof this.ollamaService.enableContextTracking === 'function') {
+        this.ollamaService.enableContextTracking(true);
+      }
+      
+      // 4. Pre-analyze text for key medical document sections
+      const keyMedicalSections = this.preAnalyzeForKeyMedicalSections(text);
+      if (keyMedicalSections.length > 0) {
+        console.log(`Pre-identified ${keyMedicalSections.length} key medical sections`);
+        
+        // Store these as initial important sections
+        this.importantSections.set(documentId, keyMedicalSections);
+      }
+      
+      // 5. Set up bidirectional context sharing
+      this.setupBidirectionalContext(documentId);
+      
+      console.log(`Established shared context for document ${documentId}`);
+      return true;
+    } catch (error) {
+      console.error('Failed to establish shared context:', error);
+      return false;
+    }
+  }
+  
+  /**
+   * NEW: Share tracked context from OllamaService with EmbeddingService
+   * @param {string} documentId - Document ID
+   */
+  shareTrackedContext(documentId) {
+    if (!this.enableSharedContext || !documentId) return;
+    
+    try {
+      // Get tracked sections from OllamaService
+      const trackedSections = this.ollamaService.getTrackedSections(documentId);
+      
+      if (trackedSections.length > 0) {
+        console.log(`Sharing ${trackedSections.length} tracked sections with EmbeddingService`);
+        
+        // Transform tracked sections into format compatible with important sections
+        const sharedSections = trackedSections.map((section, index) => {
+          const sharedSection = {
+            id: `tracked-${index}`,
+            text: section.context,
+            type: section.type,
+            field: section.field,
+            value: section.value,
+            timestamp: section.timestamp
+          };
+          
+          // Update bidirectional context
+          this.updateSharedContext(documentId, 'ollama', {
+            ...sharedSection,
+            source: 'tracked'
+          });
+          
+          return sharedSection;
+        });
+        
+        // Add to existing important sections
+        if (this.importantSections.has(documentId)) {
+          const existingSections = this.importantSections.get(documentId);
+          this.importantSections.set(documentId, [...existingSections, ...sharedSections]);
+        } else {
+          this.importantSections.set(documentId, sharedSections);
+        }
+        
+        console.log(`Tracked context shared successfully for document ${documentId}`);
+      }
+    } catch (error) {
+      console.error('Error sharing tracked context:', error);
+    }
+  }
+  
+  /**
    * Configure Ollama and Embedding services
    * @param {string} baseUrl - Base URL for Ollama API
    * @param {string} model - Model to use for text generation
@@ -122,6 +309,12 @@ class PDFProcessorService {
       
       // Update progress
       this.updateProgress('processing', 0.01, 'Starting', 'Beginning document processing');
+      
+      // Generate a unique ID early for context
+      const id = Date.now().toString();
+      
+      // Initialize services with shared context
+      await this.establishSharedContext(id, uri);
       
       // Initialize services - do this here to avoid unnecessary initialization
       await Promise.all([
@@ -172,14 +365,16 @@ class PDFProcessorService {
         }
       }
       
-      // Generate a unique ID and current date
-      const id = Date.now().toString();
+      // Current date
       const date = new Date().toISOString().split('T')[0];
       
       // Extract the text from the extraction result
       const extractedText = extractionResult.text || '';
       
       this.updateProgress('processing', 0.3, 'Text Extracted', `Successfully processed ${extractionResult.pages} pages`);
+      
+      // Process document sections early for shared context
+      const references = await this.processDocumentWithGranularSections(id, extractedText);
       
       // Initialize default formData structure
       let formData = {
@@ -213,7 +408,13 @@ class PDFProcessorService {
           
           if (testConnection) {
             // Extract information using Ollama with the numbered list approach
-            const extractedInfo = await this.ollamaService.extractInformation(extractedText);
+            // Pass references for shared context
+            const extractedInfo = await this.ollamaService.extractInformation(
+              extractedText, 
+              null, 
+              null, 
+              { documentId: id, references }
+            );
             
             this.updateProgress('processing', 0.8, 'AI Complete', 'AI extraction completed successfully');
             
@@ -225,6 +426,9 @@ class PDFProcessorService {
               
               // Merge the AI-extracted information with our default formData
               formData = { ...formData, ...extractedInfo };
+              
+              // Get important sections from extraction process
+              await this.retrieveImportantSectionsFromExtractionProcess(id, formData, references);
               
               // Show important patient info in progress
               if (formData.patientName) {
@@ -264,12 +468,22 @@ class PDFProcessorService {
         formData.extractionMethod = 'manual';
       }
       
-      // Process document with granular sections
-      this.updateProgress('processing', 0.9, 'Creating References', 'Processing document sections');
-      const enhancedReferences = await this.processDocumentWithGranularSections(id, extractedText);
+      // Index sections by field values first
+      if (formData && formData.extractionMethod !== 'failed') {
+        console.log('Building field-section index for extracted values');
+        const indexedFields = await this.indexSectionsByFieldValues(formData, references);
+        console.log(`Indexed ${indexedFields} field values to sections`);
+      }
       
-      // Create field references to match extracted data to document sections
-      await this.createFieldReferencesWithGranularSections(formData, extractedText, enhancedReferences);
+      // Create field references with enhanced context sharing
+      this.updateProgress('processing', 0.9, 'Creating References', 'Creating field references with shared context');
+      await this.createFieldReferencesWithSharedContext(id, formData, extractedText, references);
+      
+      // Ensure embeddings exist for extracted fields
+      if (formData && formData.extractionMethod !== 'failed') {
+        console.log('Extracted information successfully, ensuring embeddings for extracted fields');
+        await this.ensureEmbeddingsForExtractedFields(formData, references);
+      }
       
       // Create the processed document
       const processedDocument = {
@@ -282,8 +496,8 @@ class PDFProcessorService {
         ocrConfidence: extractionResult.confidence,
         pages: extractionResult.pages || 1,
         formData,
-        references: enhancedReferences,
-        sectionEmbeddings: enhancedReferences.sections.filter(s => s.embedding).length // Just store the count for debugging
+        references,
+        sectionEmbeddings: references.sections.filter(s => s.embedding).length // Just store the count for debugging
       };
       
       // Add logging to debug field structure
@@ -340,7 +554,7 @@ class PDFProcessorService {
       }))
     };
     
-    // Generate embeddings for all sections
+    // Generate embeddings for a subset of sections initially
     try {
       // Make sure embedding service is initialized
       await this.embeddingService.initialize();
@@ -348,10 +562,45 @@ class PDFProcessorService {
       // Update progress
       this.updateProgress('processing', 0.92, 'Generating Embeddings', 'Creating semantic document index');
       
-      // Process sections in batches to avoid memory issues
+      // First, identify high-quality sections that are most likely to contain important info
+      const highQualitySections = referenceData.sections.filter(s => 
+        s.text && s.text.length > 0 && this.isHighQualitySection(s)
+      );
+      
+      // Calculate how many sections to embed initially (at least 50% of high quality, up to 100)
+      const initialSectionCount = Math.min(
+        Math.max(20, Math.ceil(highQualitySections.length * 0.5)),
+        100
+      );
+      
+      console.log(`Will generate embeddings for ${initialSectionCount} of ${highQualitySections.length} high-quality sections`);
+      
+      // Sort sections by potential importance
+      const prioritizedSections = [...highQualitySections].sort((a, b) => {
+        // Prioritize sections with potential field values
+        const aContainsPatient = /patient|name|dob|birth/i.test(a.text) ? 3 : 1;
+        const bContainsPatient = /patient|name|dob|birth/i.test(b.text) ? 3 : 1;
+        
+        const aDiagnosis = /diagnosis|assessment|dx|condition/i.test(a.text) ? 3 : 1;
+        const bDiagnosis = /diagnosis|assessment|dx|condition/i.test(b.text) ? 3 : 1;
+        
+        const aMeds = /medication|prescription|antibiotic|cardiac/i.test(a.text) ? 2 : 1;
+        const bMeds = /medication|prescription|antibiotic|cardiac/i.test(b.text) ? 2 : 1;
+        
+        // Combined score
+        const aScore = aContainsPatient * aDiagnosis * aMeds;
+        const bScore = bContainsPatient * bDiagnosis * bMeds;
+        
+        return bScore - aScore;
+      });
+      
+      // Select initial sections to embed
+      const initialSections = prioritizedSections.slice(0, initialSectionCount);
+      
+      // Process initial sections with higher batch size
       const BATCH_SIZE = 10;
-      for (let i = 0; i < referenceData.sections.length; i += BATCH_SIZE) {
-        const batch = referenceData.sections.slice(i, i + BATCH_SIZE);
+      for (let i = 0; i < initialSections.length; i += BATCH_SIZE) {
+        const batch = initialSections.slice(i, i + BATCH_SIZE);
         
         // Process batch in parallel
         await Promise.all(batch.map(async (section) => {
@@ -359,16 +608,25 @@ class PDFProcessorService {
             section.embedding = await this.embeddingService.getEmbedding(section.text);
           } catch (error) {
             console.warn(`Error generating embedding for section ${section.id}:`, error);
-            // Continue without embeddings for this section
+            // Continue without embedding for this section
           }
         }));
         
         // Update progress
-        const progress = 0.92 + (0.08 * (Math.min(i + BATCH_SIZE, referenceData.sections.length) / referenceData.sections.length));
-        this.updateProgress('processing', progress, 'Generating Embeddings', `Processed ${Math.min(i + BATCH_SIZE, referenceData.sections.length)} of ${referenceData.sections.length} sections`);
+        const progress = 0.92 + (0.08 * (Math.min(i + BATCH_SIZE, initialSections.length) / initialSections.length));
+        this.updateProgress('processing', progress, 'Generating Embeddings', `Processed ${Math.min(i + BATCH_SIZE, initialSections.length)} of ${initialSections.length} sections`);
       }
       
-      console.log(`Generated embeddings for ${referenceData.sections.filter(s => s.embedding).length} sections`);
+      // Count successful embeddings
+      const successfulEmbeddings = referenceData.sections.filter(s => s.embedding).length;
+      console.log(`Generated embeddings for ${successfulEmbeddings}/${initialSections.length} initial sections`);
+      
+      // Starting a background process to generate embeddings for remaining important sections
+      const remainingSections = highQualitySections.filter(s => !s.embedding);
+      if (remainingSections.length > 0) {
+        console.log(`Queuing ${remainingSections.length} remaining high-quality sections for background embedding`);
+        this.backgroundEmbeddingGeneration(remainingSections);
+      }
     } catch (error) {
       console.warn('Error generating section embeddings:', error);
       // Continue without embeddings
@@ -377,6 +635,117 @@ class PDFProcessorService {
     return referenceData;
   }
   
+  /**
+   * New method for background embedding generation
+   */
+  backgroundEmbeddingGeneration(sections) {
+    if (!sections || sections.length === 0) return;
+    
+    // Start a background process
+    setTimeout(async () => {
+      try {
+        console.log(`Starting background embedding generation for ${sections.length} sections`);
+        
+        // Ensure embedding service is initialized
+        await this.embeddingService.initialize();
+        
+        // Process in larger batches for background work
+        const BATCH_SIZE = 10;
+        let processedCount = 0;
+        
+        for (let i = 0; i < sections.length; i += BATCH_SIZE) {
+          const batch = sections.slice(i, i + BATCH_SIZE);
+          
+          // Process this batch
+          const batchResults = await Promise.allSettled(batch.map(async (section) => {
+            try {
+              section.embedding = await this.embeddingService.getEmbedding(section.text);
+              return true;
+            } catch (error) {
+              console.warn(`Background embedding generation failed for section:`, error);
+              return false;
+            }
+          }));
+          
+          // Count successful generations
+          const batchSuccesses = batchResults.filter(r => r.status === 'fulfilled' && r.value === true).length;
+          processedCount += batchSuccesses;
+          
+          console.log(`Background generated ${batchSuccesses}/${batch.length} embeddings (total: ${processedCount}/${sections.length})`);
+          
+          // Add a small delay to avoid overloading
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
+        console.log(`Background embedding generation complete: ${processedCount}/${sections.length} successful`);
+      } catch (error) {
+        console.error('Background embedding generation error:', error);
+      }
+    }, 0);
+  }
+
+  /**
+   * Check if a section is high quality for initial embedding priority
+   * @param {Object} section - Section to evaluate
+   * @returns {boolean} Whether the section is high quality
+   */
+  isHighQualitySection(section) {
+    if (!section || !section.text) return false;
+    
+    const text = section.text;
+    const length = text.length;
+    
+    // Check if section is too short or too long
+    if (length < 30 || length > 5000) return false; // Relaxed from 50-2000
+    
+    // Check for common OCR issues that indicate poor quality
+    const badQualityIndicators = [
+      // Too many non-alphanumeric characters relative to length
+      text.replace(/[a-zA-Z0-9\s]/g, '').length > text.length * 0.4, // Increased from 0.3
+      
+      // Too many line breaks relative to length
+      (text.match(/\n/g) || []).length > text.length / 15, // Relaxed from 20
+      
+      // Excessive punctuation
+      (text.match(/[.,;:!?]/g) || []).length > text.length / 8, // Relaxed from 10
+      
+      // Repeated unusual character sequences - only consider longer repetitions
+      /(.)\1{7,}/.test(text), // Increased from 5
+      
+      // Multiple non-word sequences - only look for longer ones
+      (text.match(/[^\w\s]{5,}/g) || []).length > 0, // Increased from 3
+      
+      // Very low word-to-character ratio - relaxed
+      text.split(/\s+/).length < text.length / 20, // Relaxed from 15
+      
+      // Too many numeric sequences - look for very long ones only
+      (text.match(/\d{7,}/g) || []).length > 3 // Increased from 5
+    ];
+    
+    // Section is low quality if any indicators are true
+    const isLowQuality = badQualityIndicators.some(indicator => indicator === true);
+    
+    // Special override for sections likely containing field values
+    if (isLowQuality) {
+      // Check if it contains important medical terms that indicate values
+      const importantTerms = [
+        'patient:', 'name:', 'dob:', 'diagnosis:', 'insurance:', 
+        'location:', 'medication:', 'treatment:', 'doctor:', 'discharge:',
+        'lab:', 'wound:', 'cardiac:', 'history:', 'mental:'
+      ];
+      
+      for (const term of importantTerms) {
+        if (section.text.toLowerCase().includes(term)) {
+          // Override the quality check for sections with field labels
+          console.log(`Overriding quality check for section with important term: ${term}`);
+          return true;
+        }
+      }
+    }
+    
+    return !isLowQuality;
+  }
+
   /**
    * Split document text into meaningful sections with type detection
    * @param {string} text - Document text
@@ -600,6 +969,9 @@ class PDFProcessorService {
     
     console.log(`Creating enhanced field references using ${references.sections.length} granular sections`);
     
+    // Check if we have a field-section index
+    const hasFieldIndex = references.fieldSectionIndex && references.fieldSectionIndex.size > 0;
+    
     // For each field with content, find the most specific section that matches
     for (const [field, value] of Object.entries(formData)) {
       // Skip metadata fields or empty values
@@ -613,6 +985,73 @@ class PDFProcessorService {
       }
       
       try {
+        console.log(`Finding context for field ${field}`);
+        
+        // NEW: First check if we have direct indexed sections for this field
+        if (hasFieldIndex && references.fieldSectionIndex.has(field)) {
+          const indexedSections = references.fieldSectionIndex.get(field);
+          console.log(`Using ${indexedSections.length} indexed sections for ${field}`);
+          
+          // Ensure at least the first section has an embedding
+          if (indexedSections.length > 0 && !indexedSections[0].embedding) {
+            try {
+              indexedSections[0].embedding = await this.embeddingService.getEmbeddingOnDemand(indexedSections[0].text, true);
+            } catch (error) {
+              console.warn(`Failed to generate embedding for indexed section:`, error);
+            }
+          }
+          
+          // If we have any sections with embeddings, use those for matching
+          const sectionsWithEmbeddings = indexedSections.filter(s => s.embedding);
+          
+          if (sectionsWithEmbeddings.length > 0) {
+            // Use semantic matching with indexed sections
+            const relevantTypeIds = getRelatedSectionTypesForField(field);
+            const matchResults = await this.embeddingService.findContextForField(
+              value, 
+              sectionsWithEmbeddings, 
+              field, 
+              relevantTypeIds
+            );
+            
+            if (matchResults && matchResults.length > 0) {
+              // Process results as usual
+              const bestMatch = matchResults[0];
+              
+              formData._references[field] = {
+                text: this.extractCoherentContext(bestMatch.section.text, value),
+                location: bestMatch.section.type || bestMatch.section.type,
+                matchType: 'indexed-semantic',
+                score: bestMatch.score,
+                explanation: bestMatch.explanation || `This ${field} information was found in an indexed section with ${Math.round(bestMatch.score * 100)}% confidence.`
+              };
+              
+              console.log(`Found indexed semantic match for ${field} with score ${bestMatch.score}`);
+              
+              // Skip to next field since we found a match
+              continue;
+            }
+          }
+          
+          // If semantic matching failed, use the first indexed section directly
+          if (indexedSections.length > 0) {
+            const bestSection = indexedSections[0];
+            
+            formData._references[field] = {
+              text: this.extractCoherentContext(bestSection.text, value),
+              location: bestSection.type || 'Indexed Section',
+              matchType: 'indexed-direct',
+              score: 0.7, // Good confidence score for direct index match
+              explanation: `This ${field} was found directly in the document. The exact value "${value}" appears in this section.`
+            };
+            
+            console.log(`Using direct indexed section for ${field}`);
+            
+            // Skip to next field
+            continue;
+          }
+        }
+        
         // Get relevant section type IDs for this field from SectionTypes
         const relevantTypeIds = getRelatedSectionTypesForField(field);
         
@@ -626,7 +1065,49 @@ class PDFProcessorService {
                             ? sections 
                             : references.sections.filter(s => s.text && s.text.length > 0);
         
-        // Use the new enhanced context finder
+        // Check if ANY sections have embeddings
+        const sectionsWithEmbeddings = sectionsToUse.filter(s => s.embedding);
+        
+        if (sectionsWithEmbeddings.length === 0) {
+          console.log(`No sections have embeddings for field ${field}, generating on-demand`);
+          
+          // Try to generate embeddings for sections containing this value first
+          const sectionsWithValue = sectionsToUse.filter(s => 
+            s.text.toLowerCase().includes(value.toLowerCase())
+          );
+          
+          if (sectionsWithValue.length > 0) {
+            console.log(`Found ${sectionsWithValue.length} sections containing "${value.substring(0, 20)}..."`);
+            
+            // Generate embeddings for these critical sections
+            for (const section of sectionsWithValue.slice(0, 5)) { // Limit to 5
+              try {
+                section.embedding = await this.embeddingService.getEmbeddingOnDemand(section.text, true);
+                console.log(`Generated on-demand embedding for section containing field value`);
+              } catch (error) {
+                console.warn(`Failed to generate on-demand embedding:`, error);
+              }
+            }
+          }
+          
+          // Also generate embedding for other important sections
+          if (relevantTypeIds && relevantTypeIds.length > 0) {
+            const relevantSections = sectionsToUse.filter(s => 
+              !s.embedding && relevantTypeIds.includes(s.typeId)
+            ).slice(0, 5); // Limit to 5
+            
+            for (const section of relevantSections) {
+              try {
+                section.embedding = await this.embeddingService.getEmbeddingOnDemand(section.text);
+                console.log(`Generated on-demand embedding for relevant section type`);
+              } catch (error) {
+                console.warn(`Failed to generate embedding for relevant section:`, error);
+              }
+            }
+          }
+        }
+        
+        // Use the regular context finder with updated sections 
         const matchResults = await this.embeddingService.findContextForField(
           value, 
           sectionsToUse, 
@@ -635,18 +1116,11 @@ class PDFProcessorService {
         );
         
         if (matchResults && matchResults.length > 0) {
-          // Get the best match
+          // Process matches...
           const bestMatch = matchResults[0];
           
-          // Extract enhanced context for better human readability
-          const coherentContext = this.extractCoherentContext(
-            bestMatch.section.text, 
-            value
-          );
-          
-          // Create the enhanced field reference
           formData._references[field] = {
-            text: coherentContext,
+            text: this.extractCoherentContext(bestMatch.section.text, value),
             location: bestMatch.section.type || SectionType.getName(bestMatch.section.typeId || 0),
             matchType: 'enhanced-semantic',
             score: bestMatch.score,
@@ -661,33 +1135,70 @@ class PDFProcessorService {
             );
           }
         } else {
-          // Fall back to traditional semantic search if enhanced matching fails
-          const similarSections = await this.embeddingService.findRelevantSections(
-            value,
-            sectionsToUse,
-            3 // Find top 3 matches
+          // Stronger fallback: Check if we have a field reference after all matching attempts
+          console.log(`No context found for ${field}, using aggressive string matching fallback`);
+          
+          // Look for exact text match first
+          let matchingSections = references.sections.filter(section => 
+            section.text && section.text.includes(value)
           );
           
-          if (similarSections.length > 0) {
-            // Use the best match from semantic search
-            const bestMatch = similarSections[0];
-            formData._references[field] = {
-              text: this.extractCoherentContext(bestMatch.item.text, value),
-              location: bestMatch.item.type || SectionType.getName(bestMatch.item.typeId || 0),
-              matchType: 'semantic',
-              score: bestMatch.score,
-              explanation: this.generateFieldExtractionExplanation(field, value, {
-                confidence: bestMatch.score,
-                sectionType: bestMatch.item.type || SectionType.getName(bestMatch.item.typeId || 0)
-              })
-            };
-          } else {
-            // Final fallback: exact text matching
-            this.findExactTextMatch(field, value, references, formData);
+          // If that fails, try case-insensitive matching
+          if (matchingSections.length === 0) {
+            matchingSections = references.sections.filter(section => 
+              section.text && section.text.toLowerCase().includes(value.toLowerCase())
+            );
+          }
+          
+          // If we found any matches, use the shortest one (most specific)
+          if (matchingSections.length > 0) {
+            // Sort by length (shorter first for more focused context)
+            matchingSections.sort((a, b) => a.text.length - b.text.length);
             
-            // Add explanation if we found an exact match
-            if (formData._references[field]) {
-              formData._references[field].explanation = `This ${field} information was found by exact text matching.`;
+            const bestMatch = matchingSections[0];
+            
+            // Create reference with direct text match
+            formData._references[field] = {
+              text: this.extractCoherentContext(bestMatch.text, value),
+              location: bestMatch.type || 'Document Section',
+              matchType: 'direct-text-match',
+              score: 0.5, // Medium confidence score
+              explanation: `This ${field} information was found through direct text matching because embeddings were not available.`
+            };
+            
+            console.log(`Created direct text match reference for ${field}`);
+          } else {
+            // Last resort: Extract surrounding context from full document text
+            console.log(`No section contains ${field} value, searching full document`);
+            const valueIndex = text.indexOf(value);
+            
+            if (valueIndex >= 0) {
+              // Extract some context around the value
+              const contextStart = Math.max(0, valueIndex - 150);
+              const contextEnd = Math.min(text.length, valueIndex + value.length + 150);
+              const contextText = text.substring(contextStart, contextEnd);
+              
+              // Create reference from full text
+              formData._references[field] = {
+                text: contextText,
+                location: 'Full Document Context',
+                matchType: 'document-text-match',
+                score: 0.3, // Lower confidence score
+                explanation: `The source for this ${field} was found in the document but couldn't be traced to a specific section.`
+              };
+              
+              console.log(`Created document-level text match reference for ${field}`);
+            } else {
+              // Create an empty reference so the UI knows we tried
+              formData._references[field] = {
+                text: 'No source context available for this field.',
+                location: 'Unknown',
+                matchType: 'no-match',
+                score: 0,
+                explanation: `This information could not be traced to a specific location in the document.`
+              };
+              
+              console.log(`No match found for ${field} anywhere in document`);
             }
           }
         }
@@ -891,6 +1402,9 @@ class PDFProcessorService {
       // Remove from cache
       this.documentsCache.delete(id);
       
+      // Clear shared context for this document
+      this.clearSharedContext(id);
+      
       // Try to delete file if it's in the app's directory and we're not on web
       if (Platform.OS !== 'web' && uri && uri.startsWith(FileSystem.documentDirectory)) {
         try {
@@ -959,6 +1473,139 @@ class PDFProcessorService {
       }
     }
     return null;
+  }
+
+  /**
+   * Ensure embeddings exist for sections containing extracted field values
+   * @param {Object} formData - Extracted form data
+   * @param {Object} references - Document references with sections
+   */
+  async ensureEmbeddingsForExtractedFields(formData, references) {
+    // Skip if no references or extracted data
+    if (!references || !references.sections || !formData) {
+      return;
+    }
+    
+    console.log('Ensuring embeddings exist for sections containing extracted fields');
+    
+    // Collect all field values
+    const fieldValues = [];
+    for (const [field, value] of Object.entries(formData)) {
+      // Skip metadata fields or empty values
+      if (field.startsWith('_') || 
+          field === 'extractionMethod' || 
+          field === 'extractionDate' || 
+          field === 'error' ||
+          !value || 
+          typeof value !== 'string' || 
+          value.trim() === '') {
+        continue;
+      }
+      
+      fieldValues.push({field, value});
+    }
+    
+    // Find sections containing these values
+    const sectionsWithValues = new Map(); // Map section ID to field/value pairs
+    
+    for (const {field, value} of fieldValues) {
+      // Find sections containing this value
+      const matchingSections = references.sections.filter(section => 
+        section.text && section.text.includes(value)
+      );
+      
+      for (const section of matchingSections) {
+        if (!sectionsWithValues.has(section.id)) {
+          sectionsWithValues.set(section.id, []);
+        }
+        sectionsWithValues.get(section.id).push({field, value});
+      }
+    }
+    
+    console.log(`Found ${sectionsWithValues.size} sections containing extracted field values`);
+    
+    // Generate embeddings for these sections if they don't already have them
+    const sectionsNeedingEmbeddings = references.sections.filter(section => 
+      !section.embedding && sectionsWithValues.has(section.id)
+    );
+    
+    console.log(`Generating embeddings for ${sectionsNeedingEmbeddings.length} sections with extracted values`);
+    
+    // Generate embeddings in smaller batches to ensure completion
+    const BATCH_SIZE = 5;
+    for (let i = 0; i < sectionsNeedingEmbeddings.length; i += BATCH_SIZE) {
+      const batch = sectionsNeedingEmbeddings.slice(i, i + BATCH_SIZE);
+      
+      await Promise.all(batch.map(async (section) => {
+        try {
+          section.embedding = await this.embeddingService.getEmbedding(section.text);
+          console.log(`Generated embedding for section with fields: ${sectionsWithValues.get(section.id).map(f => f.field).join(', ')}`);
+        } catch (error) {
+          console.warn(`Error generating embedding for section with extracted values:`, error);
+          // Try with a smaller text sample if the full section fails
+          try {
+            const shortenedText = section.text.substring(0, 2000);
+            section.embedding = await this.embeddingService.getEmbedding(shortenedText);
+            console.log(`Generated embedding using shortened text for section with fields: ${sectionsWithValues.get(section.id).map(f => f.field).join(', ')}`);
+          } catch (innerError) {
+            console.error(`Failed to generate embedding even with shortened text:`, innerError);
+          }
+        }
+      }));
+    }
+    
+    // Count how many sections now have embeddings
+    const sectionsWithEmbeddings = sectionsNeedingEmbeddings.filter(s => s.embedding).length;
+    console.log(`Successfully generated embeddings for ${sectionsWithEmbeddings}/${sectionsNeedingEmbeddings.length} sections with extracted values`);
+  }
+
+  /**
+   * Index sections by field values to ensure direct mapping
+   * @param {Object} formData - Extracted form data  
+   * @param {Object} references - Document references with sections
+   * @returns {number} Number of indexed fields
+   */
+  async indexSectionsByFieldValues(formData, references) {
+    // Skip if no data
+    if (!formData || !references || !references.sections) {
+      return 0;
+    }
+    
+    console.log('Building field-section index for direct context mapping');
+    
+    // Create index map from fields to sections
+    const fieldToSections = new Map();
+    
+    // For each field with a value
+    for (const [field, value] of Object.entries(formData)) {
+      // Skip metadata fields or empty values
+      if (field.startsWith('_') || 
+          field === 'extractionMethod' || 
+          field === 'extractionDate' || 
+          field === 'error' ||
+          !value || 
+          typeof value !== 'string' || 
+          value.trim() === '') {
+        continue;
+      }
+      
+      // Find sections containing this value (case-insensitive)
+      const matchingSections = references.sections.filter(section => 
+        section.text && section.text.toLowerCase().includes(value.toLowerCase())
+      );
+      
+      if (matchingSections.length > 0) {
+        fieldToSections.set(field, matchingSections);
+        console.log(`Indexed ${matchingSections.length} sections for ${field}`);
+      } else {
+        console.log(`No sections contain the value for ${field}`);
+      }
+    }
+    
+    // Store field-section mappings in references for later use
+    references.fieldSectionIndex = fieldToSections;
+    
+    return fieldToSections.size; // Number of indexed fields
   }
   
   /**
@@ -1190,6 +1837,505 @@ class PDFProcessorService {
       );
     }
     return null;
+  }
+  
+  /**
+   * NEW: Retrieve important sections from extraction process
+   * @param {string} documentId - Document ID
+   * @param {Object} formData - Extracted form data
+   * @param {Object} references - Document references
+   */
+  async retrieveImportantSectionsFromExtractionProcess(documentId, formData, references) {
+    // Skip if shared context is disabled
+    if (!this.enableSharedContext) return;
+    
+    try {
+      // Try to get important context from Ollama service
+      if (typeof this.ollamaService.getImportantContext === 'function') {
+        const importantContext = await this.ollamaService.getImportantContext(documentId);
+        
+        if (importantContext && importantContext.fieldContexts) {
+          // Store in our tracking map
+          this.importantSections.set(documentId, importantContext.fieldContexts);
+          
+          console.log(`Retrieved ${Object.keys(importantContext.fieldContexts).length} important field contexts from extraction process`);
+          
+          // Queue important sections for immediate embedding
+          await this.prioritizeEmbeddingsForImportantSections(documentId, references);
+        }
+      } else {
+        // Fallback: identify important sections based on extracted values
+        this.identifyImportantSectionsFromExtractedValues(documentId, formData, references);
+      }
+    } catch (error) {
+      console.warn('Error retrieving important sections from extraction process:', error);
+      // Fallback to identifying sections from values
+      this.identifyImportantSectionsFromExtractedValues(documentId, formData, references);
+    }
+  }
+  
+  /**
+   * Fallback method to identify important sections based on extracted values
+   * @param {string} documentId - Document ID
+   * @param {Object} formData - Extracted form data
+   * @param {Object} references - Document references
+   */
+  identifyImportantSectionsFromExtractedValues(documentId, formData, references) {
+    if (!formData || !references || !references.sections) return;
+    
+    const fieldContexts = new Map();
+    
+    // For each extracted field with a value
+    Object.entries(formData).forEach(([field, value]) => {
+      // Skip metadata fields or empty values
+      if (field.startsWith('_') || 
+          field === 'extractionMethod' || 
+          field === 'extractionDate' || 
+          !value || 
+          typeof value !== 'string' || 
+          value.trim() === '') {
+        return;
+      }
+      
+      // Find sections containing this value
+      const matchingSections = references.sections.filter(section => 
+        section.text && section.text.toLowerCase().includes(value.toLowerCase())
+      );
+      
+      if (matchingSections.length > 0) {
+        fieldContexts.set(field, matchingSections.map(s => s.id));
+        console.log(`Found ${matchingSections.length} sections containing value for ${field}`);
+      }
+    });
+    
+    // Store the identified contexts
+    this.importantSections.set(documentId, fieldContexts);
+    
+    console.log(`Identified ${fieldContexts.size} important field contexts by value matching`);
+  }
+  
+  /**
+   * Method to prioritize embeddings for important sections
+   * @param {string} documentId - Document ID
+   * @param {Object} references - Document references
+   */
+  async prioritizeEmbeddingsForImportantSections(documentId, references) {
+    const fieldContexts = this.importantSections.get(documentId);
+    if (!fieldContexts || !references || !references.sections) return;
+    
+    const importantSectionIds = new Set();
+    
+    // Collect all important section IDs
+    fieldContexts.forEach((sectionIds) => {
+      sectionIds.forEach(id => importantSectionIds.add(id));
+    });
+    
+    console.log(`Prioritizing embeddings for ${importantSectionIds.size} important sections`);
+    
+    // Get the sections by ID
+    const importantSections = references.sections.filter(section => 
+      importantSectionIds.has(section.id)
+    );
+    
+    // Generate embeddings for important sections first
+    let successCount = 0;
+    await Promise.all(importantSections.map(async (section) => {
+      if (!section.embedding) {
+        try {
+          section.embedding = await this.embeddingService.getEmbedding(section.text);
+          successCount++;
+        } catch (error) {
+          console.warn(`Failed to generate embedding for important section ${section.id}:`, error);
+        }
+      }
+    }));
+    
+    console.log(`Generated embeddings for ${successCount}/${importantSections.length} important sections`);
+  }
+  
+  /**
+   * NEW: Create field references with shared context
+   * @param {string} documentId - Document ID
+   * @param {Object} formData - Extracted form data
+   * @param {string} text - Document text
+   * @param {Object} references - Document references
+   */
+  async createFieldReferencesWithSharedContext(documentId, formData, text, references) {
+    // First, use the important sections if available
+    const fieldContexts = this.importantSections.get(documentId);
+    
+    if (fieldContexts && fieldContexts instanceof Map) {
+      // Create references using important sections
+      if (!formData._references) {
+        formData._references = {};
+      }
+      
+      for (const [field, sectionIds] of fieldContexts.entries()) {
+        if (formData[field] && !formData._references[field]) {
+          // Find the best section for this field
+          const bestSection = this.findBestSectionForField(field, sectionIds, references);
+          
+          if (bestSection) {
+            formData._references[field] = {
+              text: bestSection.text,
+              location: bestSection.type,
+              matchType: 'important-section',
+              confidence: 0.9, // High confidence from extraction tracking
+              sectionId: bestSection.id
+            };
+          }
+        }
+      }
+    }
+    
+    // Then use the standard method to fill in any gaps
+    await this.createFieldReferencesWithGranularSections(formData, text, references);
+    
+    // Add shared context findings to references
+    if (this.enableSharedContext && this.sharedContextMap && this.sharedContextMap.has(documentId)) {
+      const sharedContext = this.sharedContextMap.get(documentId);
+      const summary = this.getSharedContextSummary(documentId);
+      
+      if (summary && summary.crossReferencesCount > 0) {
+        console.log(`Adding ${summary.crossReferencesCount} cross-references to field references`);
+        
+        // Add cross-reference information to formData references
+        if (!formData._sharedContext) {
+          formData._sharedContext = summary;
+        }
+        
+        // Enhance references with cross-reference data
+        this.enhanceReferencesWithCrossReferences(formData, sharedContext);
+      }
+    }
+  }
+  
+  /**
+   * Find the best section for a field from a list of section IDs
+   * @param {string} field - Field name
+   * @param {Array} sectionIds - Array of section IDs
+   * @param {Object} references - Document references
+   * @returns {Object|null} Best section
+   */
+  findBestSectionForField(field, sectionIds, references) {
+    if (!sectionIds || !references || !references.sections) return null;
+    
+    const sections = references.sections.filter(s => sectionIds.includes(s.id));
+    if (sections.length === 0) return null;
+    
+    // Sort sections by quality and relevance
+    sections.sort((a, b) => {
+      // Prefer sections with embeddings
+      if (a.embedding && !b.embedding) return -1;
+      if (!a.embedding && b.embedding) return 1;
+      
+      // Prefer sections with matching types
+      const relevantTypes = getRelatedSectionTypesForField(field);
+      const aRelevant = relevantTypes.includes(a.typeId);
+      const bRelevant = relevantTypes.includes(b.typeId);
+      
+      if (aRelevant && !bRelevant) return -1;
+      if (!aRelevant && bRelevant) return 1;
+      
+      // Prefer shorter sections (more specific)
+      return a.text.length - b.text.length;
+    });
+    
+    return sections[0];
+  }
+  
+  /**
+   * Enhance references with cross-reference data
+   * @param {Object} formData - Form data with references
+   * @param {Object} sharedContext - Shared context object
+   */
+  enhanceReferencesWithCrossReferences(formData, sharedContext) {
+    if (!formData._references || !sharedContext.crossReferences) return;
+    
+    sharedContext.crossReferences.forEach((crossRef, key) => {
+      const field = crossRef.finding1.field || crossRef.finding2.field;
+      
+      if (field && formData._references[field]) {
+        // Add cross-reference confidence boost
+        const currentConfidence = formData._references[field].confidence || 0.5;
+        formData._references[field].confidence = Math.min(
+          currentConfidence + (crossRef.confidence * 0.1), 
+          1.0
+        );
+        
+        // Add cross-reference metadata
+        if (!formData._references[field].crossReferences) {
+          formData._references[field].crossReferences = [];
+        }
+        
+        formData._references[field].crossReferences.push({
+          key,
+          confidence: crossRef.confidence,
+          sources: [crossRef.finding1.source, crossRef.finding2.source]
+        });
+      }
+    });
+  }
+  
+  /**
+   * NEW: Pre-analyze text for key medical sections
+   * @param {string} text - Document text
+   * @returns {Array} Array of key medical sections
+   */
+  preAnalyzeForKeyMedicalSections(text) {
+    if (!text) return [];
+    
+    const sections = [];
+    const medicalPatterns = {
+      patientInfo: /(?:patient\s+name|name\s*:|\bDOB\b|date\s+of\s+birth|MRN).*$/gmi,
+      diagnosis: /(?:diagnosis|assessment|impression|dx\s*:).*$/gmi,
+      medications: /(?:medications?|prescription|drugs?|rx\s*:).*$/gmi,
+      provider: /(?:physician|doctor|provider|attending|pcp).*$/gmi,
+      labs: /(?:laboratory|lab\s+results?|test\s+results?).*$/gmi,
+      discharge: /(?:discharge|disposition|follow.?up).*$/gmi
+    };
+    
+    Object.entries(medicalPatterns).forEach(([type, pattern]) => {
+      const matches = text.match(pattern);
+      if (matches) {
+        matches.forEach((match, index) => {
+          // Extract a bit more context around the match
+          const startIndex = Math.max(0, text.indexOf(match) - 50);
+          const endIndex = Math.min(text.length, text.indexOf(match) + match.length + 100);
+          const contextText = text.substring(startIndex, endIndex);
+          
+          sections.push({
+            id: `pre-${type}-${index}`,
+            text: contextText,
+            type: this.getMedicalSectionType(type),
+            confidence: 0.8 // Pre-analysis confidence
+          });
+        });
+      }
+    });
+    
+    return sections;
+  }
+  
+  /**
+   * NEW: Get medical section type from pattern name
+   * @param {string} patternName - Pattern name
+   * @returns {string} Section type
+   */
+  getMedicalSectionType(patternName) {
+    const typeMap = {
+      patientInfo: 'Patient Information',
+      diagnosis: 'Diagnosis',
+      medications: 'Medications',
+      provider: 'Provider',
+      labs: 'Labs',
+      discharge: 'Discharge'
+    };
+    
+    return typeMap[patternName] || 'General';
+  }
+  
+  /**
+   * NEW: Set up bidirectional context sharing
+   * @param {string} documentId - Document ID
+   */
+  setupBidirectionalContext(documentId) {
+    if (!documentId) return;
+    
+    // Create a shared context object that both services can access
+    const sharedContext = {
+      documentId,
+      timestamp: new Date().toISOString(),
+      ollamaTracked: [],
+      embeddingMatched: [],
+      crossReferences: new Map()
+    };
+    
+    // Store shared context
+    if (!this.sharedContextMap) {
+      this.sharedContextMap = new Map();
+    }
+    this.sharedContextMap.set(documentId, sharedContext);
+    
+    console.log(`Bidirectional context sharing established for document ${documentId}`);
+  }
+  
+  /**
+   * NEW: Update shared context with findings from either service
+   * @param {string} documentId - Document ID
+   * @param {string} source - Source service ('ollama' or 'embedding')
+   * @param {Object} finding - Finding to add
+   */
+  updateSharedContext(documentId, source, finding) {
+    if (!this.sharedContextMap || !this.sharedContextMap.has(documentId)) {
+      return;
+    }
+    
+    const sharedContext = this.sharedContextMap.get(documentId);
+    
+    if (source === 'ollama') {
+      sharedContext.ollamaTracked.push(finding);
+    } else if (source === 'embedding') {
+      sharedContext.embeddingMatched.push(finding);
+    }
+    
+    // Check for cross-references between services
+    this.checkCrossReferences(sharedContext, finding, source);
+  }
+  
+  /**
+   * NEW: Check for cross-references between service findings
+   * @param {Object} sharedContext - Shared context object
+   * @param {Object} newFinding - New finding to check
+   * @param {string} source - Source of the finding
+   */
+  checkCrossReferences(sharedContext, newFinding, source) {
+    const otherSource = source === 'ollama' ? 'embeddingMatched' : 'ollamaTracked';
+    const otherFindings = sharedContext[otherSource];
+    
+    otherFindings.forEach(otherFinding => {
+      // Check if findings refer to the same field or information
+      if (this.findingsRelated(newFinding, otherFinding)) {
+        const crossRefKey = `${newFinding.field || newFinding.type}_${Date.now()}`;
+        sharedContext.crossReferences.set(crossRefKey, {
+          finding1: { source, ...newFinding },
+          finding2: { source: otherSource === 'ollamaTracked' ? 'ollama' : 'embedding', ...otherFinding },
+          confidence: this.calculateCrossReferenceConfidence(newFinding, otherFinding)
+        });
+        
+        console.log(`Cross-reference found: ${crossRefKey}`);
+      }
+    });
+  }
+  
+  /**
+   * NEW: Check if two findings are related
+   * @param {Object} finding1 - First finding
+   * @param {Object} finding2 - Second finding
+   * @returns {boolean} Whether findings are related
+   */
+  findingsRelated(finding1, finding2) {
+    // Check if they refer to the same field
+    if (finding1.field && finding2.field && finding1.field === finding2.field) {
+      return true;
+    }
+    
+    // Check if they have the same type
+    if (finding1.type && finding2.type && finding1.type === finding2.type) {
+      return true;
+    }
+    
+    // Check if values are similar
+    if (finding1.value && finding2.value) {
+      const value1 = finding1.value.toLowerCase();
+      const value2 = finding2.value.toLowerCase();
+      
+      // Exact match or one contains the other
+      if (value1 === value2 || value1.includes(value2) || value2.includes(value1)) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+  
+  /**
+   * NEW: Calculate confidence for cross-references
+   * @param {Object} finding1 - First finding
+   * @param {Object} finding2 - Second finding
+   * @returns {number} Confidence score
+   */
+  calculateCrossReferenceConfidence(finding1, finding2) {
+    let confidence = 0.5; // Base confidence
+    
+    // Boost confidence for exact field matches
+    if (finding1.field && finding2.field && finding1.field === finding2.field) {
+      confidence += 0.2;
+    }
+    
+    // Boost confidence for exact value matches
+    if (finding1.value && finding2.value && finding1.value === finding2.value) {
+      confidence += 0.2;
+    }
+    
+    // Boost confidence for similar confidence scores
+    if (finding1.confidence && finding2.confidence) {
+      const confDiff = Math.abs(finding1.confidence - finding2.confidence);
+      if (confDiff < 0.1) {
+        confidence += 0.1;
+      }
+    }
+    
+    return Math.min(confidence, 1.0);
+  }
+  
+  /**
+   * NEW: Get shared context summary
+   * @param {string} documentId - Document ID
+   * @returns {Object} Shared context summary
+   */
+  getSharedContextSummary(documentId) {
+    if (!this.sharedContextMap || !this.sharedContextMap.has(documentId)) {
+      return null;
+    }
+    
+    const sharedContext = this.sharedContextMap.get(documentId);
+    
+    return {
+      documentId,
+      ollamaTrackedCount: sharedContext.ollamaTracked.length,
+      embeddingMatchedCount: sharedContext.embeddingMatched.length,
+      crossReferencesCount: sharedContext.crossReferences.size,
+      timestamp: sharedContext.timestamp,
+      crossReferences: Array.from(sharedContext.crossReferences.entries()).map(([key, value]) => ({
+        key,
+        ...value
+      }))
+    };
+  }
+  
+  /**
+   * NEW: Determine if a section is important for context sharing
+   * @param {Object} section - Section to evaluate
+   * @returns {boolean} Whether the section is important
+   */
+  isImportantSection(section) {
+    if (!section || !section.text || !section.type) return false;
+    
+    // Section types that are typically important for medical records
+    const importantTypes = [
+      'Patient Information',
+      'Diagnosis', 
+      'Provider',
+      'Medications',
+      'Treatment',
+      'Discharge',
+      'Labs',
+      'History',
+      'Physical Exam',
+      'Mental Status'
+    ];
+    
+    // Check if section type is important
+    if (importantTypes.includes(section.type)) {
+      return true;
+    }
+    
+    // Check for key medical terms that indicate importance
+    const keyTerms = [
+      'diagnosis', 'patient', 'medication', 'treatment', 'discharge',
+      'prescription', 'findings', 'results', 'recommendation', 'assessment',
+      'plan', 'condition', 'history', 'exam', 'therapy'
+    ];
+    
+    const lowerText = section.text.toLowerCase();
+    const containsKeyTerms = keyTerms.some(term => lowerText.includes(term));
+    
+    // Also check section quality and length
+    const isGoodQuality = this.isHighQualitySection(section);
+    const hasSubstantialContent = section.text.length > 100;
+    
+    return containsKeyTerms && isGoodQuality && hasSubstantialContent;
   }
 }
 

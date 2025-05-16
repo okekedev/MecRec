@@ -81,6 +81,67 @@ class EmbeddingService {
   }
 
   /**
+   * Generate embeddings on-demand with priority handling
+   * @param {string} text - Text to generate embeddings for
+   * @param {boolean} priority - Whether this is a high-priority request
+   * @returns {Promise<Array>} Embedding vector
+   */
+  async getEmbeddingOnDemand(text, priority = false) {
+    if (!text || typeof text !== 'string' || text.trim() === '') {
+      console.warn('Empty text provided for on-demand embedding');
+      return this.generateRandomEmbeddings();
+    }
+    
+    // First check cache
+    const cacheKey = `${this.embeddingModel}:${text.substring(0, 100)}:${text.length}`;
+    
+    // Check if we have this embedding in cache
+    if (this.embeddingCache.has(cacheKey)) {
+      return this.embeddingCache.get(cacheKey);
+    }
+    
+    console.log(`Generating on-demand embedding for text (${text.length} chars, priority: ${priority})`);
+    
+    // Use timeout to prioritize important requests
+    const timeoutMs = priority ? 10000 : 5000;
+    
+    try {
+      // Add a timeout to avoid hanging
+      const embedding = await Promise.race([
+        this.generateEmbeddings(text, this.embeddingModel),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Embedding generation timed out')), timeoutMs)
+        )
+      ]);
+      
+      // Store in cache
+      this.embeddingCache.set(cacheKey, embedding);
+      
+      return embedding;
+    } catch (error) {
+      console.error('Error generating on-demand embedding:', error);
+      
+      // Try with shortened text for complex sections
+      if (text.length > 3000) {
+        try {
+          console.log('Retrying with shortened text');
+          const shortenedText = text.substring(0, 3000);
+          const embedding = await this.generateEmbeddings(shortenedText, this.embeddingModel);
+          
+          // Store in cache
+          this.embeddingCache.set(cacheKey, embedding);
+          
+          return embedding;
+        } catch (secondError) {
+          console.error('Error generating embedding with shortened text:', secondError);
+        }
+      }
+      
+      return this.generateRandomEmbeddings();
+    }
+  }
+
+  /**
    * Initialize the service by checking for available embedding models
    */
   async initialize() {
@@ -698,69 +759,279 @@ class EmbeddingService {
   }
 
   /**
+   * Process embeddings for sections with priority handling
+   * @param {Array} sections - Array of sections to process
+   * @param {boolean} priority - Whether to prioritize these embeddings
+   * @returns {Promise<number>} Number of successful embeddings
+   */
+  async processSectionEmbeddings(sections, priority = false) {
+    if (!sections || !Array.isArray(sections) || sections.length === 0) {
+      return 0;
+    }
+    
+    // Filter to sections without embeddings
+    const sectionsToProcess = sections.filter(s => 
+      s.text && s.text.length > 0 && !s.embedding
+    );
+    
+    if (sectionsToProcess.length === 0) {
+      return 0;
+    }
+    
+    console.log(`Processing embeddings for ${sectionsToProcess.length} sections (priority: ${priority})`);
+    
+    // Make sure service is initialized
+    await this.initialize();
+    
+    // Process sections in appropriately sized batches
+    const BATCH_SIZE = priority ? 5 : 10;
+    let successCount = 0;
+    
+    for (let i = 0; i < sectionsToProcess.length; i += BATCH_SIZE) {
+      const batch = sectionsToProcess.slice(i, i + BATCH_SIZE);
+      
+      // Process batch (in parallel if priority, or sequentially if not)
+      if (priority) {
+        // Parallel processing for priority sections
+        const results = await Promise.allSettled(batch.map(async (section) => {
+          try {
+            section.embedding = await this.getEmbedding(
+              this.enhancedMedicalPreprocessing(section.text)
+            );
+            return true;
+          } catch (error) {
+            console.warn(`Failed to generate embedding for section ${section.id}:`, error);
+            return false;
+          }
+        }));
+        
+        // Count successful embeddings
+        successCount += results.filter(r => r.status === 'fulfilled' && r.value === true).length;
+      } else {
+        // Sequential processing for non-priority sections
+        for (const section of batch) {
+          try {
+            section.embedding = await this.getEmbedding(
+              this.enhancedMedicalPreprocessing(section.text)
+            );
+            successCount++;
+            
+            // Add small delay between requests to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 50));
+          } catch (error) {
+            console.warn(`Failed to generate embedding for section:`, error);
+          }
+        }
+      }
+    }
+    
+    console.log(`Successfully processed embeddings for ${successCount}/${sectionsToProcess.length} sections`);
+    return successCount;
+  }
+  
+  /**
    * Smart context matching extension for EmbeddingService
    * @param {string} query - The field value to match
    * @param {Array} sections - Document sections to search
    * @param {string} fieldName - Field name for context
    * @param {Array} relevantTypeIds - Relevant section type IDs
-   * @returns {Promise<Array>} Matched sections with scores and explanations
+   * @returns {Promise<string>} Combined context text from relevant matches
    */
   async findContextForField(query, sections, fieldName, relevantTypeIds) {
-    if (!query || !sections || !sections.length) {
-      return [];
+    if (!sections || sections.length === 0) return '';
+    
+    // Check if we have any sections missing embeddings
+    const sectionsWithoutEmbeddings = sections.filter(s => !s.embedding);
+    
+    // If we have sections without embeddings, try to generate them
+    if (sectionsWithoutEmbeddings.length > 0) {
+      console.log(`Found ${sectionsWithoutEmbeddings.length} sections without embeddings for field ${fieldName}`);
+      
+      // Filter to only relevant sections if type IDs are provided
+      const relevantSections = relevantTypeIds && relevantTypeIds.length > 0
+        ? sectionsWithoutEmbeddings.filter(s => relevantTypeIds.includes(s.type))
+        : sectionsWithoutEmbeddings;
+      
+      // Process these sections with priority
+      await this.processSectionEmbeddings(relevantSections, true);
     }
     
-    try {
-      // Get embedding for the query with special processing for the field type
-      const queryEmbedding = await this.getEmbeddingForField(query, fieldName);
-      
-      // Score all sections
-      const scoredSections = await Promise.all(sections.map(async (section) => {
-        // Get embedding for section if not already present
-        const sectionEmbedding = section.embedding || 
-                                await this.getEmbedding(this.enhancedMedicalPreprocessing(section.text));
-        
-        // Calculate similarity with the enhanced method
-        const score = this.enhancedCosineSimilarity(
-          queryEmbedding, 
-          sectionEmbedding,
-          query,
-          section.text
-        );
-        
-        // Boost score for sections of relevant types
-        let boostedScore = score;
-        
-        if (relevantTypeIds && relevantTypeIds.includes(section.typeId)) {
-          // Boost by 20% for relevant section types, capped at 1.0
-          boostedScore = Math.min(score * 1.2, 1.0);
-        }
-        
-        // Generate explanation for this match
-        const explanation = this.generateMatchExplanation(
-          fieldName, 
-          query, 
-          section, 
-          boostedScore,
-          score !== boostedScore
-        );
-        
-        return {
-          section,
-          score: boostedScore,
-          originalScore: score,
-          explanation
-        };
-      }));
-      
-      // Sort by score (highest first)
-      scoredSections.sort((a, b) => b.score - a.score);
-      
-      return scoredSections;
-    } catch (error) {
-      console.error('Error in smart context matching:', error);
-      return [];
+    // Filter sections by relevant types if provided
+    const candidateSections = relevantTypeIds && relevantTypeIds.length > 0
+      ? sections.filter(s => relevantTypeIds.includes(s.type))
+      : sections;
+    
+    // Further filter to sections that have embeddings
+    const sectionsWithEmbeddings = candidateSections.filter(s => s.embedding);
+    
+    if (sectionsWithEmbeddings.length === 0) {
+      console.warn(`No sections with embeddings available for field ${fieldName}, falling back to keyword search`);
+      return this.findContextWithKeywordFallback(query, candidateSections, fieldName, relevantTypeIds);
     }
+    
+    // Generate embedding for the query
+    let queryEmbedding;
+    try {
+      queryEmbedding = await this.getEmbedding(query);
+    } catch (error) {
+      console.warn(`Failed to generate query embedding for field ${fieldName}, using keyword fallback:`, error);
+      return this.findContextWithKeywordFallback(query, candidateSections, fieldName, relevantTypeIds);
+    }
+    
+    // Calculate similarities
+    const similarities = sectionsWithEmbeddings.map(section => ({
+      section,
+      similarity: this.cosineSimilarity(queryEmbedding, section.embedding)
+    }));
+    
+    // Sort by similarity and get top matches
+    similarities.sort((a, b) => b.similarity - a.similarity);
+    const topMatches = similarities.slice(0, 5);
+    
+    // Apply additional filtering based on minimum similarity threshold
+    const minimumThreshold = 0.4;
+    const relevantMatches = topMatches.filter(m => m.similarity >= minimumThreshold);
+    
+    if (relevantMatches.length === 0) {
+      console.warn(`No sections exceeded similarity threshold for field ${fieldName}, using keyword fallback`);
+      return this.findContextWithKeywordFallback(query, candidateSections, fieldName, relevantTypeIds);
+    }
+    
+    // Combine the text from relevant matches
+    const contextText = relevantMatches
+      .map(m => m.section.text)
+      .join(' ... ');
+    
+    return contextText;
+  }
+
+  /**
+   * Implement a keyword-based fallback for when embeddings are not available
+   * @param {string} query - The query/field value to search for
+   * @param {Array} sections - Document sections to search
+   * @param {string} fieldName - Field name for context
+   * @param {Array} relevantTypeIds - Relevant section type IDs
+   * @returns {string} Combined context text from keyword matches
+   */
+  findContextWithKeywordFallback(query, sections, fieldName, relevantTypeIds) {
+    if (!query || !sections || sections.length === 0) {
+      return '';
+    }
+    
+    console.log(`Using keyword fallback for field ${fieldName} with query: ${query}`);
+    
+    // Filter sections by relevant types if provided
+    const candidateSections = relevantTypeIds && relevantTypeIds.length > 0
+      ? sections.filter(s => relevantTypeIds.includes(s.type))
+      : sections;
+    
+    // Create search keywords from the query
+    const keywords = query.toLowerCase().split(/[\s,\.\-_\/]+/).filter(k => k.length > 2);
+    
+    // Add field-specific keywords to enhance matching
+    const fieldKeywords = {
+      patientName: ['patient', 'name', 'pt'],
+      patientDOB: ['dob', 'birth', 'date', 'born'],
+      insurance: ['insurance', 'ins', 'coverage', 'policy'],
+      dx: ['diagnosis', 'dx', 'impression', 'assessment'],
+      pcp: ['provider', 'physician', 'doctor', 'pcp', 'dr'],
+      dc: ['discharge', 'dc', 'date', 'day'],
+      labs: ['lab', 'result', 'test', 'value'],
+      mentalHealthState: ['mental', 'status', 'behavioral', 'psych']
+    };
+    
+    // Add field-specific keywords if available
+    if (fieldKeywords[fieldName]) {
+      keywords.push(...fieldKeywords[fieldName]);
+    }
+    
+    // Score sections based on keyword matches
+    const scoredSections = candidateSections.map(section => {
+      if (!section.text) {
+        return { section, score: 0, matches: [] };
+      }
+      
+      const sectionTextLower = section.text.toLowerCase();
+      const matches = [];
+      let score = 0;
+      
+      // Check for exact query match (highest score)
+      if (sectionTextLower.includes(query.toLowerCase())) {
+        score += 5;
+        matches.push(`exact match: '${query}'`);
+      }
+      
+      // Check for individual keyword matches
+      keywords.forEach(keyword => {
+        if (sectionTextLower.includes(keyword)) {
+          score += 1;
+          matches.push(keyword);
+        }
+      });
+      
+      // Bonus for sections that contain multiple keywords close together
+      const wordsAround = 50; // Look for keywords within 50 words of each other
+      for (let i = 0; i < keywords.length - 1; i++) {
+        for (let j = i + 1; j < keywords.length; j++) {
+          const idx1 = sectionTextLower.indexOf(keywords[i]);
+          const idx2 = sectionTextLower.indexOf(keywords[j]);
+          
+          if (idx1 !== -1 && idx2 !== -1) {
+            const distance = Math.abs(idx2 - idx1);
+            if (distance < wordsAround * 5) { // Assume average word length of 5
+              score += 2;
+              matches.push(`proximity: '${keywords[i]}' near '${keywords[j]}'`);
+            }
+          }
+        }
+      }
+      
+      // Additional bonus for relevant section types
+      if (relevantTypeIds && relevantTypeIds.includes(section.type)) {
+        score += 2;
+        matches.push('relevant section type');
+      }
+      
+      // Special boost for field-specific patterns
+      const fieldPatterns = {
+        patientDOB: /\b\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}\b/,
+        insurance: /\b[A-Z]{2,}[-\s]?\d{2,}/,
+        dx: /\b[A-Z]\d{2,3}\.\d{1,3}\b/  // ICD code pattern
+      };
+      
+      if (fieldPatterns[fieldName] && fieldPatterns[fieldName].test(section.text)) {
+        score += 3;
+        matches.push('field-specific pattern match');
+      }
+      
+      return { section, score, matches };
+    });
+    
+    // Sort by score and filter out zero-score sections
+    const matchingSections = scoredSections
+      .filter(s => s.score > 0)
+      .sort((a, b) => b.score - a.score);
+    
+    if (matchingSections.length === 0) {
+      console.warn(`No keyword matches found for field ${fieldName}`);
+      return '';
+    }
+    
+    // Log the matches for debugging
+    console.log(`Found ${matchingSections.length} keyword matches for field ${fieldName}:`);
+    matchingSections.slice(0, 3).forEach((match, idx) => {
+      console.log(`  ${idx + 1}. Score: ${match.score}, Matches: ${match.matches.join(', ')}`);
+    });
+    
+    // Take top matches (up to 5)
+    const topMatches = matchingSections.slice(0, 5);
+    
+    // Combine the text from top matches
+    const contextText = topMatches
+      .map(m => m.section.text)
+      .join(' ... ');
+    
+    return contextText;
   }
 
   /**
@@ -817,13 +1088,13 @@ class EmbeddingService {
    * @param {boolean} boosted - Whether score was boosted
    * @returns {string} Human-readable explanation
    */
-  generateMatchExplanation(fieldName, query, section, score, boosted) {
-    const sectionType = SectionType.getName(section.typeId);
+  generateMatchExplanation(fieldName, query, section, score, boosted, usingSharedContext = false) {
+    const sectionType = section.type || SectionType.getName(section.typeId);
     const confidenceLevel = score > 0.8 ? 'high' : score > 0.6 ? 'good' : score > 0.4 ? 'moderate' : 'low';
     
     let explanation = `This ${fieldName} information `;
     
-    if (section.text.includes(query)) {
+    if (section.text && section.text.includes(query)) {
       explanation += `appears directly in the ${sectionType} section with ${confidenceLevel} confidence (${Math.round(score * 100)}%).`;
     } else {
       explanation += `appears to be related to content in the ${sectionType} section with ${confidenceLevel} confidence (${Math.round(score * 100)}%).`;
@@ -831,6 +1102,10 @@ class EmbeddingService {
     
     if (boosted) {
       explanation += ` This section is a relevant location for ${fieldName} information.`;
+    }
+    
+    if (usingSharedContext) {
+      explanation += ` Enhanced by cross-referencing with important document sections.`;
     }
     
     return explanation;

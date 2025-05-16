@@ -15,6 +15,16 @@ class OllamaService {
     // Alternative models if the primary one isn't available
     this.fallbackModels = ['llama3:8b', 'llama3.1:8b', 'llama3.1:1b', 'tinyllama', 'phi', 'gemma:2b'];
     
+    // Context tracking for shared context with EmbeddingService
+    this.contextTrackingEnabled = false;
+    this.trackedSections = new Map();
+    
+    // NEW: Add comprehensive context tracking
+    this.contextTracking = {
+      enabled: false,
+      documents: new Map() // documentId -> important context information
+    };
+    
     // Optimized extraction prompt using numbered list format instead of JSON
     this.extractionPrompt = `TASK: Extract medical information from the document.
 
@@ -176,7 +186,464 @@ Common medical abbreviations:
       systemPrompt: this.systemPrompt
     };
   }
+  
+  /**
+   * Enable or disable context tracking for shared context with EmbeddingService
+   * @param {boolean} enable - Whether to enable context tracking
+   */
+  enableContextTracking(enable = true) {
+    this.contextTrackingEnabled = !!enable;
+    this.contextTracking.enabled = !!enable;
+    console.log(`Context tracking ${enable ? 'enabled' : 'disabled'}`);
+    
+    // Clear tracked sections when disabling
+    if (!enable) {
+      this.trackedSections.clear();
+      this.contextTracking.documents.clear();
+    }
+    
+    return enable;
+  }
+  
+  /**
+   * Add a section to tracked context for current document
+   * @param {string} documentId - Document ID
+   * @param {Object} section - Section to track
+   */
+  trackSection(documentId, section) {
+    if (!this.contextTrackingEnabled) return;
+    
+    if (!this.trackedSections.has(documentId)) {
+      this.trackedSections.set(documentId, []);
+    }
+    
+    this.trackedSections.get(documentId).push(section);
+    console.log(`Tracked section for document ${documentId}: ${section.type}`);
+  }
+  
+  /**
+   * Get tracked sections for a document
+   * @param {string} documentId - Document ID
+   * @returns {Array} Tracked sections
+   */
+  getTrackedSections(documentId) {
+    return this.trackedSections.get(documentId) || [];
+  }
+  
+  /**
+   * Clear tracked sections for a document
+   * @param {string} documentId - Document ID
+   */
+  clearTrackedSections(documentId) {
+    if (this.trackedSections.has(documentId)) {
+      this.trackedSections.delete(documentId);
+      console.log(`Cleared tracked sections for document ${documentId}`);
+    }
+    
+    // Also clear from new context tracking
+    if (this.contextTracking.documents.has(documentId)) {
+      this.contextTracking.documents.delete(documentId);
+      console.log(`Cleared context tracking for document ${documentId}`);
+    }
+  }
+  
+  /**
+   * Get important context identified during extraction
+   * @param {string} documentId - Document ID
+   * @returns {Object} Important context information
+   */
+  getImportantContext(documentId) {
+    if (!this.contextTracking.enabled || !documentId) {
+      return null;
+    }
+    
+    // Check the new context tracking structure first
+    const contextInfo = this.contextTracking.documents.get(documentId);
+    if (contextInfo) {
+      return contextInfo;
+    }
+    
+    // Fallback to old tracking if available
+    if (this.trackedSections.has(documentId)) {
+      const trackedSections = this.trackedSections.get(documentId);
+      const fieldContexts = new Map();
+      const textSamples = new Map();
+      
+      // Group tracked sections by field
+      trackedSections.forEach((section) => {
+        if (section.field) {
+          if (!fieldContexts.has(section.field)) {
+            fieldContexts.set(section.field, []);
+          }
+          
+          fieldContexts.get(section.field).push(section.id || `tracked-${section.field}-${Date.now()}`);
+          
+          if (section.value) {
+            textSamples.set(section.field, section.value);
+          }
+        }
+      });
+      
+      return {
+        documentId,
+        timestamp: new Date().toISOString(),
+        fieldContexts,
+        textSamples
+      };
+    }
+    
+    return null;
+  }
+  
+  /**
+   * Track important fields found in extraction results
+   * @param {string} documentId - Document ID
+   * @param {Object} result - Extraction result
+   * @param {string} chunkText - Source text chunk
+   */
+  trackImportantFieldsFromResult(documentId, result, chunkText) {
+    if (!this.contextTrackingEnabled || !documentId || !result) return;
+    
+    // Important fields to track - expanded list
+    const importantFields = [
+      'patientName', 'patientDOB', 'dx', 'pcp', 
+      'medications', 'labs', 'discharge', 'insurance',
+      'antibiotics', 'cardiacDrips', 'wounds', 'history',
+      'mentalHealthState', 'location', 'faceToFace'
+    ];
+    
+    for (const field of importantFields) {
+      if (result[field] && result[field].trim() && result[field] !== 'Not found') {
+        // Find the context around this value in the chunk
+        const value = result[field];
+        const position = chunkText.toLowerCase().indexOf(value.toLowerCase());
+        
+        if (position !== -1) {
+          // Extract expanded context around the value
+          const contextStart = Math.max(0, position - 200); // More context
+          const contextEnd = Math.min(chunkText.length, position + value.length + 200);
+          const context = chunkText.substring(contextStart, contextEnd);
+          
+          // Calculate confidence based on how clearly the value appears
+          const confidence = this.calculateFieldConfidence(field, value, context);
+          
+          this.trackSection(documentId, {
+            field,
+            value,
+            context,
+            type: this.getFieldType(field),
+            timestamp: new Date().toISOString(),
+            confidence,
+            id: `${field}-${Date.now()}`, // Add unique ID
+            chunkIndex: this.currentChunkIndex || 0 // Track which chunk this came from
+          });
+        } else {
+          // If exact match not found, try to find partial matches
+          const partialContext = this.findPartialMatchContext(value, chunkText);
+          if (partialContext) {
+            this.trackSection(documentId, {
+              field,
+              value,
+              context: partialContext.context,
+              type: this.getFieldType(field),
+              timestamp: new Date().toISOString(),
+              confidence: partialContext.confidence,
+              id: `${field}-${Date.now()}`,
+              matchType: 'partial'
+            });
+          }
+        }
+      }
+    }
+  }
+  
+  /**
+   * Calculate confidence score for a field extraction
+   * @param {string} field - Field name
+   * @param {string} value - Extracted value
+   * @param {string} context - Context text
+   * @returns {number} Confidence score
+   */
+  calculateFieldConfidence(field, value, context) {
+    let confidence = 0.5; // Base confidence
+    
+    // Exact match in context increases confidence
+    if (context.includes(value)) {
+      confidence += 0.2;
+    }
+    
+    // Field-specific patterns increase confidence
+    const fieldPatterns = {
+      patientName: /(?:patient|name|mr\.|mrs\.|ms\.)/i,
+      patientDOB: /(?:dob|date.*birth|born)/i,
+      dx: /(?:diagnosis|dx|assessment|impression)/i,
+      pcp: /(?:physician|doctor|pcp|provider)/i,
+      medications: /(?:medication|drug|prescription|rx)/i
+    };
+    
+    if (fieldPatterns[field] && fieldPatterns[field].test(context)) {
+      confidence += 0.2;
+    }
+    
+    // Clear structure (colon, equals) increases confidence
+    if (context.includes(':') || context.includes('=')) {
+      confidence += 0.1;
+    }
+    
+    return Math.min(confidence, 1.0);
+  }
+  
+  /**
+   * Find partial match context for a value
+   * @param {string} value - Value to find
+   * @param {string} text - Text to search in
+   * @returns {Object|null} Context and confidence
+   */
+  findPartialMatchContext(value, text) {
+    const valueParts = value.split(/\s+/);
+    let bestMatch = null;
+    let bestConfidence = 0;
+    
+    // Try to find parts of the value
+    for (const part of valueParts) {
+      if (part.length < 3) continue; // Skip very short parts
+      
+      const position = text.toLowerCase().indexOf(part.toLowerCase());
+      if (position !== -1) {
+        const contextStart = Math.max(0, position - 150);
+        const contextEnd = Math.min(text.length, position + part.length + 150);
+        const context = text.substring(contextStart, contextEnd);
+        
+        // Calculate confidence based on how much of the value was found
+        const confidence = (part.length / value.length) * 0.7; // Max 0.7 for partial matches
+        
+        if (confidence > bestConfidence) {
+          bestMatch = { context, confidence };
+          bestConfidence = confidence;
+        }
+      }
+    }
+    
+    return bestMatch;
+  }
+  
+  /**
+   * Get section type for a field
+   * @param {string} field - Field name
+   * @returns {string} Section type
+   */
+  getFieldType(field) {
+    const fieldTypeMap = {
+      patientName: 'Patient Information',
+      patientDOB: 'Patient Information',
+      insurance: 'Insurance',
+      dx: 'Diagnosis',
+      pcp: 'Provider',
+      dc: 'Discharge',
+      labs: 'Labs',
+      medications: 'Medications',
+      history: 'History',
+      mentalHealthState: 'Mental Status'
+    };
+    
+    return fieldTypeMap[field] || 'General';
+  }
+  
+  /**
+   * Find relevant reference sections for a text chunk
+   * @param {string} chunkText - Text chunk to find references for
+   * @param {Array} referenceSections - Available reference sections
+   * @returns {Array} Relevant sections
+   */
+  findRelevantReferenceSections(chunkText, referenceSections) {
+    if (!chunkText || !referenceSections || referenceSections.length === 0) {
+      return [];
+    }
+    
+    const relevantSections = [];
+    const chunkLower = chunkText.toLowerCase();
+    
+    // Medical keywords to look for
+    const medicalKeywords = {
+      'Patient Information': ['patient', 'name', 'dob', 'birth', 'demographics'],
+      'Diagnosis': ['diagnosis', 'dx', 'assessment', 'impression'],
+      'Medications': ['medication', 'drug', 'prescription', 'rx'],
+      'Provider': ['physician', 'doctor', 'provider', 'pcp'],
+      'Labs': ['lab', 'test', 'result', 'blood'],
+      'Discharge': ['discharge', 'disposition', 'follow'],
+      'History': ['history', 'past', 'medical'],
+      'Mental Status': ['mental', 'psychiatric', 'psychological']
+    };
+    
+    // Check each reference section for relevance
+    for (const section of referenceSections) {
+      let isRelevant = false;
+      
+      // Check if section text appears in chunk
+      if (section.text && chunkLower.includes(section.text.toLowerCase().substring(0, 50))) {
+        isRelevant = true;
+      }
+      
+      // Check for keyword matches
+      if (!isRelevant && section.type) {
+        const keywords = medicalKeywords[section.type];
+        if (keywords) {
+          for (const keyword of keywords) {
+            if (chunkLower.includes(keyword)) {
+              isRelevant = true;
+              break;
+            }
+          }
+        }
+      }
+      
+      if (isRelevant) {
+        relevantSections.push(section);
+      }
+    }
+    
+    // Limit to top 5 most relevant sections
+    return relevantSections.slice(0, 5);
+  }
 
+  /**
+   * Get comprehensive context information for a document
+   * @param {string} documentId - Document ID
+   * @returns {Object} Comprehensive context info
+   */
+  getComprehensiveContext(documentId) {
+    const result = {
+      documentId,
+      hasLegacyTracking: this.trackedSections.has(documentId),
+      hasNewTracking: this.contextTracking.documents.has(documentId),
+      legacySections: this.trackedSections.get(documentId) || [],
+      newContext: this.contextTracking.documents.get(documentId) || null,
+      timestamp: new Date().toISOString()
+    };
+    
+    // Combine tracking info if both exist
+    if (result.hasLegacyTracking && result.hasNewTracking) {
+      result.combinedFieldContexts = new Map();
+      
+      // Add new tracking field contexts
+      if (result.newContext && result.newContext.fieldContexts) {
+        result.newContext.fieldContexts.forEach((sectionIds, field) => {
+          result.combinedFieldContexts.set(field, sectionIds);
+        });
+      }
+      
+      // Add legacy tracking sections
+      result.legacySections.forEach(section => {
+        if (section.field && section.id) {
+          if (!result.combinedFieldContexts.has(section.field)) {
+            result.combinedFieldContexts.set(section.field, []);
+          }
+          result.combinedFieldContexts.get(section.field).push(section.id);
+        }
+      });
+    }
+    
+    return result;
+  }
+  
+  /**
+   * Track which sections were used in a chunk
+   * @param {string} documentId - Document ID
+   * @param {string} chunkText - Text of the current chunk
+   * @param {Object} references - Document references
+   * @param {Object} extractedResult - Extraction results from this chunk
+   */
+  trackChunkSections(documentId, chunkText, references, extractedResult) {
+    try {
+      const contextInfo = this.contextTracking.documents.get(documentId);
+      if (!contextInfo) return;
+      
+      const { fieldContexts, textSamples } = contextInfo;
+      
+      // For each extracted field
+      Object.entries(extractedResult).forEach(([field, value]) => {
+        // Skip metadata fields or empty values
+        if (field.startsWith('_') || 
+            field === 'extractionMethod' || 
+            field === 'extractionDate' || 
+            !value || 
+            typeof value !== 'string' || 
+            value.trim() === '') {
+          return;
+        }
+        
+        // Store text sample used to extract this field
+        textSamples.set(field, value);
+        
+        // Find sections containing this value or text around it
+        const matchingSections = this.findSectionsForValue(chunkText, value, references);
+        
+        if (matchingSections.length > 0) {
+          // Store section IDs
+          const sectionIds = matchingSections.map(s => s.id);
+          fieldContexts.set(field, sectionIds);
+          
+          console.log(`Tracked ${matchingSections.length} sections for field "${field}"`);
+        }
+      });
+    } catch (error) {
+      console.warn('Error tracking chunk sections:', error);
+      // Continue without tracking
+    }
+  }
+  
+  /**
+   * Helper to find sections that likely contain a value
+   * @param {string} chunkText - Text chunk
+   * @param {string} value - Value to find
+   * @param {Object} references - Document references
+   * @returns {Array} Matching sections
+   */
+  findSectionsForValue(chunkText, value, references) {
+    if (!value || !chunkText || !references || !references.sections) {
+      return [];
+    }
+    
+    // Find position of value in chunk
+    let valueIndex = chunkText.indexOf(value);
+    
+    if (valueIndex === -1) {
+      // Try case-insensitive search
+      const lowerChunk = chunkText.toLowerCase();
+      const lowerValue = value.toLowerCase();
+      valueIndex = lowerChunk.indexOf(lowerValue);
+      
+      if (valueIndex === -1) {
+        return [];
+      }
+    }
+    
+    // Extract context around the value (300 chars before and after)
+    const contextStart = Math.max(0, valueIndex - 300);
+    const contextEnd = Math.min(chunkText.length, valueIndex + value.length + 300);
+    const valueContext = chunkText.substring(contextStart, contextEnd);
+    
+    // Find sections that contain this context
+    return references.sections.filter(section => {
+      if (!section.text) return false;
+      
+      // Check if section contains the value
+      if (section.text.includes(value)) {
+        return true;
+      }
+      
+      // Check if section contains significant parts of the context
+      const contextParts = valueContext.split(/[.!?]\s+/);
+      for (const part of contextParts) {
+        if (part.length > 20 && section.text.includes(part)) {
+          return true;
+        }
+      }
+      
+      return false;
+    });
+  }
+  
   /**
    * Test the connection to the Ollama server
    */
@@ -556,9 +1023,10 @@ Common medical abbreviations:
    * @param {string} text - Document text
    * @param {Object|null} schema - Optional schema for extraction
    * @param {string|null} model - Optional model override
+   * @param {Object|null} context - Optional context object with documentId and references
    * @returns {Promise<Object>} - Extracted information
    */
-  async extractInformation(text, schema = null, model = null) {
+  async extractInformation(text, schema = null, model = null, context = null) {
     try {
       // Update progress - starting
       this.updateProgress(
@@ -567,6 +1035,40 @@ Common medical abbreviations:
         'Starting AI analysis',
         'Preparing document for AI extraction'
       );
+      
+      // Extract documentId and references from context if provided
+      let documentId = null;
+      let references = null;
+      
+      if (context && typeof context === 'object') {
+        documentId = context.documentId;
+        references = context.references;
+      } else if (typeof context === 'string') {
+        // Backward compatibility - context as documentId string
+        documentId = context;
+      }
+      
+      // Initialize context tracking for this document if enabled
+      if (this.contextTracking.enabled && documentId && references) {
+        this.contextTracking.documents.set(documentId, {
+          documentId,
+          timestamp: new Date().toISOString(),
+          fieldContexts: new Map(), // fieldName -> array of section IDs
+          textSamples: new Map()    // fieldName -> sample text used to extract
+        });
+        
+        console.log(`Initialized context tracking for document ${documentId}`);
+      }
+      
+      // Legacy tracking
+      if (this.contextTrackingEnabled && documentId) {
+        console.log(`Using context tracking for document ${documentId}`);
+        
+        // Use references for enhanced extraction if available
+        if (references && references.sections) {
+          console.log(`Using ${references.sections.length} reference sections for context-aware extraction`);
+        }
+      }
       
       // Use a different chunking strategy for Llama 3.2 1B - 
       // it has a 128K context window, so we can potentially send more at once
@@ -601,9 +1103,28 @@ Common medical abbreviations:
             `Processing document section ${i+1} of ${chunks.length}`
           );
           
+          // Store current chunk index for tracking
+          this.currentChunkIndex = i;
+          
           // Process each chunk using the numbered list approach
-          const chunkResult = await this.processSingleChunk(chunks[i], schema, model);
+          const chunkResult = await this.processSingleChunk(
+            chunks[i], 
+            schema, 
+            model, 
+            documentId, 
+            references
+          );
           chunkResults.push(chunkResult);
+          
+          // Track important sections if context tracking is enabled
+          if (this.contextTrackingEnabled && documentId && chunkResult) {
+            this.trackImportantFieldsFromResult(documentId, chunkResult, chunks[i]);
+          }
+          
+          // NEW: Track chunk sections for comprehensive context tracking
+          if (this.contextTracking.enabled && documentId && references) {
+            this.trackChunkSections(documentId, chunks[i], references, chunkResult);
+          }
           
           // Log the extracted fields for this chunk
           console.log(`Chunk ${i+1} extracted fields:`, 
@@ -626,7 +1147,25 @@ Common medical abbreviations:
         return this.mergeChunkResults(chunkResults);
       } else {
         // For shorter texts, process directly
-        return this.processSingleChunk(text, schema, model);
+        const result = await this.processSingleChunk(
+          text, 
+          schema, 
+          model, 
+          documentId,
+          references
+        );
+        
+        // Track important fields if context tracking is enabled
+        if (this.contextTrackingEnabled && documentId && result) {
+          this.trackImportantFieldsFromResult(documentId, result, text);
+        }
+        
+        // NEW: Track context for single chunk
+        if (this.contextTracking.enabled && documentId && references) {
+          this.trackChunkSections(documentId, text, references, result);
+        }
+        
+        return result;
       }
     } catch (error) {
       console.error('Information extraction error:', error);
@@ -681,13 +1220,26 @@ Common medical abbreviations:
 
   /**
    * Process a single chunk of text using the numbered list approach
+   * @param {string} text - Text chunk to process
+   * @param {Object|null} schema - Optional schema
+   * @param {string|null} model - Optional model override
+   * @param {string|null} documentId - Optional document ID for context
+   * @param {Object|null} references - Optional reference sections for context
    */
-  async processSingleChunk(text, schema, model) {
-    // Create the combined prompt
-    const combinedPrompt = `${this.extractionPrompt}
-
-TEXT TO EXTRACT FROM:
-${text}`;
+  async processSingleChunk(text, schema, model, documentId = null, references = null) {
+    // Create enhanced prompt with reference context if available
+    let combinedPrompt = this.extractionPrompt;
+    
+    // Add reference context if available
+    if (references && references.sections && references.sections.length > 0) {
+      const relevantSections = this.findRelevantReferenceSections(text, references.sections);
+      if (relevantSections.length > 0) {
+        const contextInfo = relevantSections.map(s => `- ${s.type}: ${s.text.substring(0, 100)}...`).join('\n');
+        combinedPrompt += `\n\nREFERENCE CONTEXT (from document structure):\n${contextInfo}\n`;
+      }
+    }
+    
+    combinedPrompt += `\n\nTEXT TO EXTRACT FROM:\n${text}`;
     
     // Use a lower temperature for more deterministic results
     const extractionOptions = {

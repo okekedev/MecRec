@@ -206,3 +206,6 @@ const section = {
 const relevantTypeIds = getRelatedSectionTypesForField(fieldName);
 const isRelevantSection = relevantTypeIds.includes(section.typeId);
 */
+
+export default SectionType;
+export { getRelatedSectionTypesForField, FieldSectionMapping };
