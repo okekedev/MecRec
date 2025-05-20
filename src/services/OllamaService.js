@@ -1,3 +1,4 @@
+
 /**
  * Enhanced OllamaService with Llama 3.2 1B optimization
  * Modified to use numbered list extraction instead of JSON
@@ -66,7 +67,9 @@ Common medical abbreviations:
 - DC = Discharge
 - Hx = History
 - Tx = Treatment
-- Rx = Prescription`;// To track extraction progress
+- Rx = Prescription`;
+
+    // To track extraction progress
     this.extractionProgress = {
       status: 'idle',
       progress: 0,
@@ -601,11 +604,10 @@ Common medical abbreviations:
 
   /**
    * Parse a numbered list response from the LLM into a structured object
-   * This replaces the JSON parsing functions with our new approach
-   * @param {string} text - The LLM response with numbered list
-   * @returns {Object} - Structured data object
+   * Simplified version that just captures everything after each number
    */
   parseNumberedListFromLLM(text) {
+    // Initialize result object with default fields
     const result = {
       extractionMethod: 'numbered-list',
       extractionDate: new Date().toISOString(),
@@ -626,43 +628,66 @@ Common medical abbreviations:
       additionalComments: ''
     };
     
-    // Create a mapping from list numbers to field names
+    // Field mapping - maps numbers to field names
     const fieldMapping = {
       1: 'patientName',
       2: 'patientDOB',
       3: 'insurance',
       4: 'location',
-      5: 'dx',           // Diagnosis
-      6: 'pcp',          // Primary Care Provider
-      7: 'dc',           // Discharge Info
+      5: 'dx',
+      6: 'pcp',
+      7: 'dc',
       8: 'wounds',
       9: 'antibiotics',
-      10: 'cardiacDrips', // Cardiac Medications
-      11: 'labs',         // Lab results
-      12: 'faceToFace',   // Face to Face evaluation
-      13: 'history',      // Medical History
-      14: 'mentalHealthState', // Mental Health
+      10: 'cardiacDrips',
+      11: 'labs',
+      12: 'faceToFace',
+      13: 'history',
+      14: 'mentalHealthState',
       15: 'additionalComments'
     };
     
-    // Split by new lines
+    // Log what we're parsing
+    console.log(`Parsing numbered list response (${text.length} chars)`);
+    
+    // Split by lines and process each one
     const lines = text.split('\n');
+    console.log(`Found ${lines.length} lines to parse`);
     
     // Process each line
     for (const line of lines) {
-      // Look for patterns like "1. Patient Name: John Doe"
-      const match = line.match(/^\s*(\d+)\s*\.?\s*.*?:\s*(.*?)\s*$/);
+      // Skip empty lines
+      if (!line.trim()) continue;
+      
+      // Simple regex that matches a number at the start of a line followed by anything
+      // This captures "1. Something" or "1) Something" or "1 Something"
+      const match = line.match(/^\s*(\d+)[\.\)\s]+(.+)$/);
+      
       if (match) {
-        const [, numberStr, value] = match;
+        const [, numberStr, content] = match;
         const number = parseInt(numberStr, 10);
         
-        // Map to the correct field name
+        // Get the field name from our mapping
         const fieldName = fieldMapping[number];
-        if (fieldName && value && value.toLowerCase() !== 'not found') {
-          result[fieldName] = value.trim();
+        
+        // If we have a valid field name and the content isn't 'not found'
+        if (fieldName && content && !content.toLowerCase().includes('not found') && content.trim() !== '') {
+          // Store the content in the appropriate field
+          result[fieldName] = content.trim();
+          console.log(`Field ${number} (${fieldName}): "${content.trim()}"`);
         }
       }
     }
+    
+    // Log what we found
+    const fieldsFilled = Object.entries(result)
+      .filter(([key, value]) => value && 
+             !key.startsWith('_') && 
+             key !== 'extractionMethod' && 
+             key !== 'extractionDate')
+      .map(([key]) => key);
+    
+    console.log(`Extracted ${fieldsFilled.length} fields: ${fieldsFilled.join(', ')}`);
     
     return result;
   }
@@ -839,24 +864,6 @@ ${text}`;
         `Failed to extract information: ${error.message}`
       );
       
-      // Try a more aggressive fallback approach to salvage any data
-      try {
-        // Look for any numbered entries in the text
-        const fallbackData = this.extractWithFallbackParser(result);
-        
-        if (Object.keys(fallbackData).filter(k => k !== 'extractionMethod' && k !== 'extractionDate').length > 0) {
-          console.log('Successfully extracted some data with fallback parser');
-          return {
-            ...fallbackData,
-            extractionMethod: 'fallback-numbered-list',
-            extractionDate: new Date().toISOString(),
-            _originalOutput: result // Store the original for debugging
-          };
-        }
-      } catch (fallbackError) {
-        console.error('Fallback parsing also failed:', fallbackError);
-      }
-      
       // Return error information with raw output for debugging
       const errorObj = {
         extractionMethod: 'failed',
@@ -870,114 +877,6 @@ ${text}`;
       error.rawOutput = result;
       throw error;
     }
-  }
-  
-  /**
-   * Fallback parser that tries to extract any numbered list items
-   * @param {string} text - Raw LLM output
-   * @returns {Object} - Extracted data object
-   */
-  extractWithFallbackParser(text) {
-    const result = {
-      extractionMethod: 'fallback-numbered-list',
-      extractionDate: new Date().toISOString(),
-      patientName: '',
-      patientDOB: '',
-      insurance: '',
-      location: '',
-      dx: '',
-      pcp: '',
-      dc: '',
-      wounds: '',
-      antibiotics: '',
-      cardiacDrips: '',
-      labs: '',
-      faceToFace: '',
-      history: '',
-      mentalHealthState: '',
-      additionalComments: ''
-    };
-    
-    // Look for any lines with numbers followed by text
-    const lines = text.split('\n');
-    
-    // Field name hints to help with fuzzy matching
-    const fieldHints = {
-      patientName: ['patient', 'name', 'person'],
-      patientDOB: ['dob', 'birth', 'date of birth', 'born'],
-      insurance: ['insurance', 'coverage', 'provider'],
-      location: ['location', 'facility', 'hospital', 'place'],
-      dx: ['dx', 'diagnosis', 'condition', 'ailment'],
-      pcp: ['pcp', 'doctor', 'physician', 'provider'],
-      dc: ['dc', 'discharge', 'released'],
-      wounds: ['wounds', 'injury', 'laceration', 'cut'],
-      antibiotics: ['antibiotics', 'antibiotic', 'medication'],
-      cardiacDrips: ['cardiac', 'heart', 'drip', 'medication'],
-      labs: ['labs', 'laboratory', 'test', 'result'],
-      faceToFace: ['face', 'meeting', 'encounter', 'visit'],
-      history: ['history', 'past', 'previous', 'background'],
-      mentalHealthState: ['mental', 'psych', 'cognitive', 'emotional'],
-      additionalComments: ['additional', 'comment', 'note', 'other']
-    };
-    
-    for (const line of lines) {
-      // Try to extract any content that looks like a field
-      const match = line.match(/(\d+)\.?\s*(.+?):\s*(.+)/);
-      if (match) {
-        const [, numberStr, label, value] = match;
-        
-        if (!value || value.toLowerCase() === 'not found' || value.trim() === '') {
-          continue;
-        }
-        
-        // Try to map to a field name based on the label and hints
-        const labelLower = label.toLowerCase();
-        let matchedField = null;
-        
-        // Check for direct matches with field name hints
-        for (const [field, hints] of Object.entries(fieldHints)) {
-          for (const hint of hints) {
-            if (labelLower.includes(hint)) {
-              matchedField = field;
-              break;
-            }
-          }
-          if (matchedField) break;
-        }
-        
-        // If a field was matched, save the value
-        if (matchedField) {
-          result[matchedField] = value.trim();
-        } else {
-          // Try mapping by number if no field matched
-          const number = parseInt(numberStr, 10);
-          const fieldMapping = {
-            1: 'patientName',
-            2: 'patientDOB',
-            3: 'insurance',
-            4: 'location',
-            5: 'dx',
-            6: 'pcp',
-            7: 'dc',
-            8: 'wounds',
-            9: 'antibiotics',
-            10: 'cardiacDrips',
-            11: 'labs',
-            12: 'faceToFace',
-            13: 'history',
-            14: 'mentalHealthState',
-            15: 'additionalComments'
-          };
-          
-          const fieldName = fieldMapping[number];
-          if (fieldName) {
-            result[fieldName] = value.trim();
-          }
-        }
-      }
-    }
-    
-    return result;
   }
 
   /**
