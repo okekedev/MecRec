@@ -1,8 +1,9 @@
-// Simplified PDFProcessorService - removed complex embeddings, simplified references
+// Simplified PDFProcessorService - works with simplified services
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 import ParallelPDFTextExtractionService from './ParallelPDFTextExtractionService';
 import OllamaService from './OllamaService';
+import MedicalFieldService from './MedicalFieldService';
 
 class PDFProcessorService {
   static instance;
@@ -11,7 +12,7 @@ class PDFProcessorService {
     this.documentsCache = new Map();
     this.textExtractionService = ParallelPDFTextExtractionService.getInstance();
     this.ollamaService = OllamaService.getInstance();
-    this.useAI = true;
+    this.medicalFieldService = MedicalFieldService.getInstance();
     this.isProcessing = false;
     this.progressCallback = null;
   }
@@ -38,10 +39,6 @@ class PDFProcessorService {
         message
       });
     }
-  }
-  
-  setUseAI(useAI) {
-    this.useAI = useAI;
   }
   
   configureOllama(baseUrl, model) {
@@ -102,27 +99,8 @@ class PDFProcessorService {
       
       this.updateProgress('processing', 0.3, 'Text Extracted', `Successfully processed ${extractionResult.pages} pages`);
       
-      // Initialize form data - AI will provide reasoning
-      let formData = {
-        extractionMethod: 'numbered-list-with-reasoning',
-        extractionDate: new Date().toISOString(),
-        patientName: '',
-        patientDOB: '',
-        insurance: '',
-        location: '',
-        dx: '',
-        pcp: '',
-        dc: '',
-        wounds: '',
-        medications: '',
-        cardiacDrips: '',
-        labsAndVitals: '',
-        faceToFace: '',
-        history: '',
-        mentalHealthState: '',
-        additionalComments: '',
-        _reasoning: {} // AI provides reasoning for each field
-      };
+      // Initialize form data using MedicalFieldService
+      let formData = this.medicalFieldService.createEmptyFormData();
       
       // Extract information using AI if available
       if (extractedText) {
@@ -171,8 +149,7 @@ class PDFProcessorService {
         formData.error = 'No text was extracted from the document';
       }
       
-      // No need for manual reference creation - AI provides reasoning
-      this.updateProgress('processing', 0.9, 'AI Processing Complete', 'Document processed with AI reasoning');
+      this.updateProgress('processing', 0.9, 'Processing Complete', 'Document processed successfully');
       
       const processedDocument = {
         id,
@@ -238,21 +215,23 @@ class PDFProcessorService {
   }
   
   /**
-   * Get AI reasoning for a specific field 
+   * Simple placeholder for field reference - no AI reasoning stored
    */
   getFieldReference(documentId, fieldName) {
     const document = this.documentsCache.get(documentId);
-    if (document && document.formData && document.formData._reasoning) {
-      const reasoning = document.formData._reasoning[fieldName];
-      if (reasoning) {
+    if (document && document.formData) {
+      const fieldValue = document.formData[fieldName];
+      if (fieldValue) {
         return {
-          extractedValue: document.formData[fieldName] || '',
-          explanation: reasoning,
+          extractedValue: fieldValue,
+          explanation: `AI extracted this information from the document text.`,
           confidence: 'AI Generated',
           timestamp: document.formData.extractionDate
         };
       }
     }
+    
+    // Return null if no value found - component will handle this
     return null;
   }
 }
