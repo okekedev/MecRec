@@ -1,5 +1,5 @@
 /**
- * Simplified OllamaService - Clean NUMBER$$ parsing
+ * Simplified OllamaService - Clean NUMBER| parsing with pipe delimiters
  * Let the AI do the heavy lifting, keep parsing simple
  */
 import MedicalFieldService from './MedicalFieldService';
@@ -37,41 +37,30 @@ class OllamaService {
   }
 
   /**
-   * Simple, effective prompt - explicit about using actual numbers
+   * Explicit prompt with clear field assignments
    */
   getSystemPrompt() {
-    return `Extract medical information from referral documents. Return exactly 15 fields using the format shown below.
+    return `Extract medical information from referral documents. Return exactly 15 fields using pipe delimiters. Put the RIGHT information in each field number. Use pipes after numbers to seperate fields rather than periods or commas.
 
-REQUIRED FORMAT (use actual numbers 1, 2, 3, etc.):
-1$ Patient full name
-2$ Date of birth
-3$ Insurance information
-4$ Healthcare facility/location
-5$ Primary diagnosis/condition
-6$ Primary care provider name
-7$ Discharge plans/instructions
-8$ Wounds, injuries, or physical findings
-9$ Medications and antibiotics
-10$ Cardiac medications or drips
-11$ Laboratory results and vital signs
-12$ Face-to-face evaluation notes
-13$ Medical history summary
-14$ Mental health assessment
-15$ Additional clinical comments
+REQUIRED FORMAT WITH SPECIFIC FIELD ASSIGNMENTS:
+1| [Extract: Patient's full name from document header/top]
+2| [Extract: Date of birth, DOB, or birth date in any format]
+3| [Extract: Insurance provider, Medicare, Medicaid, policy details]
+4| [Extract: Hospital name, clinic, medical facility location]
+5| [Extract: Primary diagnosis, main condition, chief complaint]
+6| [Extract: Doctor's name, PCP, referring physician, MD name]
+7| [Extract: Discharge plans, follow-up instructions, where patient goes next]
+8| [Extract: Physical injuries, wounds, fractures, trauma, physical findings]
+9| [Extract: ALL medications, drugs, prescriptions, antibiotics mentioned]
+10| [Extract: Heart medications, cardiac drugs, IV drips, cardiac-specific meds]
+11| [Extract: Lab results, blood work, vital signs, test values]
+12| [Extract: Physical examination notes, face-to-face evaluation, assessment]
+13| [Extract: Past medical history, previous conditions, medical background]
+14| [Extract: Mental status, psychological state, cognitive assessment]
+15| [Extract: Other clinical notes, additional observations, miscellaneous]
 
-CRITICAL: Use the actual numbers (1$, 2$, 3$, etc.) NOT the word "NUMBER".
 
-RULES:
-• Start with 1$ then 2$ then 3$ and so on
-• Complete ALL 15 fields ending with 15$
-• If no information found: write the number then $ then "Not found"
-
-Example of what to write:
-1$ John Smith
-2$ 03/15/1975
-3$ Medicare Part A
-
-DO NOT write "NUMBER$" - write the actual numbers like "1$", "2$", "3$" etc.`;
+Your response must start with "1|" and assign information to the CORRECT field numbers.`;
   }
 
   async generateCompletion(documentText) {
@@ -90,7 +79,7 @@ DO NOT write "NUMBER$" - write the actual numbers like "1$", "2$", "3$" etc.`;
           top_k: 10,
           top_p: 0.3,
           repeat_penalty: 1.1,
-          stop: ["16$$", "END"],
+          stop: ["16|", "END"],
           seed: 42
         }
       };
@@ -151,7 +140,7 @@ DO NOT write "NUMBER$" - write the actual numbers like "1$", "2$", "3$" etc.`;
   }
 
   /**
-   * Super simple parsing: NUMBER$$ to next NUMBER$$ (or end)
+   * Super simple parsing: NUMBER| to next NUMBER| (or end)
    * Capture everything in between - let AI handle the formatting
    */
   parseDelimiterResponse(text) {
@@ -160,8 +149,8 @@ DO NOT write "NUMBER$" - write the actual numbers like "1$", "2$", "3$" etc.`;
     const result = this.medicalFieldService.createEmptyFormData();
     result.extractionMethod = 'delimiter-parsed';
     
-    // Simple regex: capture from NUMBER$$ to next NUMBER$$ (or end of text)
-    const pattern = /(\d+)\$\$(.*?)(?=\d+\$\$|$)/gs;
+    // Simple regex: capture from NUMBER| to next NUMBER| (or end of text)
+    const pattern = /(\d+)\|(.*?)(?=\d+\||$)/gs;
     const matches = [...text.matchAll(pattern)];
     
     console.log(`Found ${matches.length} field matches`);
