@@ -1,4 +1,4 @@
-// PDFProcessorService with numbered list extraction instead of JSON
+// Enhanced PDFProcessorService with improved embeddings tracking and updated field mappings
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 import ParallelPDFTextExtractionService from './ParallelPDFTextExtractionService';
@@ -82,7 +82,7 @@ class PDFProcessorService {
   
   /**
    * Process a PDF document and extract text and form data
-   * Updated for numbered list approach instead of JSON
+   * Enhanced with improved embeddings tracking
    * 
    * @param {string} uri - URI of the PDF document
    * @param {string} name - Name of the document
@@ -146,7 +146,7 @@ class PDFProcessorService {
       
       this.updateProgress('processing', 0.3, 'Text Extracted', `Successfully processed ${extractionResult.pages} pages`);
       
-      // Initialize default formData structure
+      // Initialize default formData structure with updated field names
       let formData = {
         extractionMethod: 'numbered-list',
         extractionDate: new Date().toISOString(),
@@ -158,9 +158,9 @@ class PDFProcessorService {
         pcp: '',
         dc: '',
         wounds: '',
-        antibiotics: '',
+        medications: '', // Updated from 'antibiotics'
         cardiacDrips: '',
-        labs: '',
+        labsAndVitals: '', // Updated from 'labs' 
         faceToFace: '',
         history: '',
         mentalHealthState: '',
@@ -233,7 +233,7 @@ class PDFProcessorService {
       this.updateProgress('processing', 0.9, 'Creating References', 'Processing document sections');
       const references = this.referenceService.processDocument(id, extractedText);
       
-      // Generate embeddings for all paragraphs at once to improve field reference matching
+      // Enhanced embeddings generation with detailed tracking
       const paragraphEmbeddings = [];
       try {
         if (this.useAI) {
@@ -243,15 +243,21 @@ class PDFProcessorService {
             
             // Generate embeddings for each paragraph to prepare for field matching
             if (references && references.paragraphs) {
-              for (const paragraph of references.paragraphs) {
+              for (let i = 0; i < references.paragraphs.length; i++) {
+                const paragraph = references.paragraphs[i];
                 try {
                   const embedding = await this.ollamaService.generateEmbeddings(paragraph.text);
                   paragraphEmbeddings.push({
                     paragraph,
-                    embedding
+                    embedding,
+                    index: i,
+                    // Add metadata for better tracking
+                    pageNumber: this.extractPageNumber(paragraph.text),
+                    sectionType: paragraph.type,
+                    textLength: paragraph.text.length
                   });
                 } catch (embErr) {
-                  console.warn('Error generating paragraph embedding:', embErr);
+                  console.warn(`Error generating paragraph embedding for index ${i}:`, embErr);
                 }
               }
               console.log(`Generated embeddings for ${paragraphEmbeddings.length} paragraphs`);
@@ -262,8 +268,8 @@ class PDFProcessorService {
               formData._references = {};
             }
             
-            // For each extracted field, find its source in the document
-            await this.createFieldReferencesWithEmbeddings(formData, extractedText, references, paragraphEmbeddings);
+            // For each extracted field, find its source in the document with enhanced tracking
+            await this.createEnhancedFieldReferences(formData, extractedText, references, paragraphEmbeddings);
           }
         }
       } catch (embeddingError) {
@@ -308,14 +314,26 @@ class PDFProcessorService {
   }
   
   /**
-   * Create field references using pre-generated paragraph embeddings
-   * This is a more efficient approach that works with the numbered list format
+   * Extract page number from paragraph text (if available)
+   */
+  extractPageNumber(text) {
+    // Look for page markers like "--- Page 1 ---"
+    const pageMatch = text.match(/---\s*Page\s+(\d+)\s*---/i);
+    if (pageMatch) {
+      return parseInt(pageMatch[1], 10);
+    }
+    return null;
+  }
+  
+  /**
+   * Enhanced field reference creation with improved embeddings tracking
+   * This method focuses on finding the exact sections where AI referenced information
    * @param {Object} formData - Extracted form data
    * @param {string} text - Full document text
    * @param {Object} references - Document references
-   * @param {Array} paragraphEmbeddings - Pre-generated paragraph embeddings
+   * @param {Array} paragraphEmbeddings - Pre-generated paragraph embeddings with metadata
    */
-  async createFieldReferencesWithEmbeddings(formData, text, references, paragraphEmbeddings) {
+  async createEnhancedFieldReferences(formData, text, references, paragraphEmbeddings) {
     // Skip if no references or paragraph embeddings
     if (!references || !references.paragraphs || !paragraphEmbeddings || paragraphEmbeddings.length === 0) {
       return;
@@ -326,9 +344,9 @@ class PDFProcessorService {
       formData._references = {};
     }
     
-    console.log("Creating field references for all fields using pre-generated embeddings");
+    console.log("Creating enhanced field references with detailed embeddings tracking");
     
-    // For each field with content, try to find its source
+    // For each field with content, try to find its exact source using multiple strategies
     for (const [field, value] of Object.entries(formData)) {
       // Skip metadata fields or empty values
       if (field.startsWith('_') || 
@@ -341,102 +359,375 @@ class PDFProcessorService {
       }
       
       try {
-        // First try exact text matching (fastest)
-        let foundRef = false;
+        console.log(`\n--- Finding references for field: ${field} ---`);
+        console.log(`Field value: "${value}"`);
         
-        // For each paragraph, check if it contains the exact field value
-        for (const paragraphEmb of paragraphEmbeddings) {
-          const paragraph = paragraphEmb.paragraph;
-          if (paragraph.text.includes(value)) {
-            formData._references[field] = {
-              text: paragraph.text,
-              location: paragraph.type,
-              matchType: 'exact'
-            };
-            foundRef = true;
-            break;
-          }
+        // Strategy 1: Exact substring matching (highest confidence)
+        let bestMatch = this.findExactMatch(value, paragraphEmbeddings);
+        
+        // Strategy 2: If no exact match, try keyword matching
+        if (!bestMatch) {
+          bestMatch = this.findKeywordMatch(value, paragraphEmbeddings);
         }
         
-        // If no exact match, try semantic search using paragraph embeddings
-        if (!foundRef && value.length > 3) {
-          // Generate embedding for the field value
-          const fieldEmbedding = await this.ollamaService.generateEmbeddings(value);
-          
-          // Calculate similarity with each paragraph embedding
-          const scoredParagraphs = paragraphEmbeddings.map(pe => ({
-            paragraph: pe.paragraph,
-            score: this.ollamaService.cosineSimilarity(fieldEmbedding, pe.embedding)
-          }));
-          
-          // Sort by similarity score
-          scoredParagraphs.sort((a, b) => b.score - a.score);
-          
-          // Use top result if score is good enough
-          if (scoredParagraphs.length > 0 && scoredParagraphs[0].score > 0.4) {
-            const topMatch = scoredParagraphs[0];
-            formData._references[field] = {
-              text: topMatch.paragraph.text,
-              location: topMatch.paragraph.type,
-              matchType: 'semantic',
-              score: topMatch.score
-            };
-            foundRef = true;
-          }
+        // Strategy 3: If still no match, use semantic similarity with embeddings
+        if (!bestMatch && value.length > 3) {
+          bestMatch = await this.findSemanticMatch(value, paragraphEmbeddings);
         }
         
-        // If still no match, try keyword matching
-        if (!foundRef) {
-          // Extract keywords from the field value
-          const keywords = value.toLowerCase()
-            .split(/\s+/)
-            .filter(word => word.length > 3 && !['with', 'this', 'that', 'from', 'have', 'were', 'because', 'about'].includes(word));
+        // Strategy 4: Field-specific contextual matching
+        if (!bestMatch) {
+          bestMatch = this.findContextualMatch(field, value, paragraphEmbeddings);
+        }
+        
+        // Store the best match found
+        if (bestMatch) {
+          formData._references[field] = {
+            text: bestMatch.paragraph.text,
+            location: bestMatch.paragraph.type,
+            matchType: bestMatch.matchType,
+            confidence: bestMatch.confidence || 0,
+            score: bestMatch.score || 0,
+            paragraphIndex: bestMatch.index,
+            pageNumber: bestMatch.pageNumber,
+            // Enhanced tracking information
+            extractedValue: value,
+            matchedSegment: bestMatch.matchedSegment || '',
+            searchStrategies: bestMatch.searchStrategies || [],
+            timestamp: new Date().toISOString()
+          };
           
-          // Score paragraphs by keyword matches
-          const keywordMatches = [];
-          
-          for (const paragraphEmb of paragraphEmbeddings) {
-            const paragraph = paragraphEmb.paragraph;
-            const paragraphText = paragraph.text.toLowerCase();
-            let matchCount = 0;
-            
-            // Count matching keywords
-            for (const keyword of keywords) {
-              if (paragraphText.includes(keyword)) {
-                matchCount++;
-              }
-            }
-            
-            if (matchCount > 0) {
-              keywordMatches.push({
-                paragraph,
-                matchCount,
-                score: matchCount / keywords.length
-              });
-            }
+          console.log(`✓ Found reference for ${field}: ${bestMatch.matchType} match (confidence: ${bestMatch.confidence})`);
+          if (bestMatch.matchedSegment) {
+            console.log(`  Matched segment: "${bestMatch.matchedSegment}"`);
           }
+        } else {
+          console.log(`✗ No reference found for ${field}`);
           
-          // Sort by match count
-          keywordMatches.sort((a, b) => b.matchCount - a.matchCount);
-          
-          // Use top result if any matches found
-          if (keywordMatches.length > 0) {
-            const topKeywordMatch = keywordMatches[0];
-            formData._references[field] = {
-              text: topKeywordMatch.paragraph.text,
-              location: topKeywordMatch.paragraph.type,
-              matchType: 'keyword',
-              matchCount: topKeywordMatch.matchCount,
-              score: topKeywordMatch.score
-            };
-          }
+          // Store that we searched but found nothing
+          formData._references[field] = {
+            text: '',
+            location: 'Not found',
+            matchType: 'none',
+            confidence: 0,
+            extractedValue: value,
+            searchStrategies: ['exact', 'keyword', 'semantic', 'contextual'],
+            timestamp: new Date().toISOString()
+          };
         }
       } catch (error) {
         console.warn(`Error finding reference for field ${field}:`, error);
       }
     }
     
-    console.log(`Created references for ${Object.keys(formData._references).length} fields using embeddings`);
+    console.log(`\nCreated enhanced references for ${Object.keys(formData._references).length} fields`);
+  }
+  
+  /**
+   * Find exact substring matches
+   */
+  findExactMatch(value, paragraphEmbeddings) {
+    console.log(`  Strategy 1: Looking for exact match of "${value}"`);
+    
+    for (const pe of paragraphEmbeddings) {
+      const paragraph = pe.paragraph;
+      const lowerText = paragraph.text.toLowerCase();
+      const lowerValue = value.toLowerCase();
+      
+      if (lowerText.includes(lowerValue)) {
+        // Find the exact position and context
+        const startIndex = lowerText.indexOf(lowerValue);
+        const endIndex = startIndex + lowerValue.length;
+        
+        // Get some context around the match
+        const contextStart = Math.max(0, startIndex - 50);
+        const contextEnd = Math.min(paragraph.text.length, endIndex + 50);
+        const matchedSegment = paragraph.text.substring(contextStart, contextEnd);
+        
+        console.log(`    Found exact match in paragraph ${pe.index}`);
+        
+        return {
+          ...pe,
+          matchType: 'exact',
+          confidence: 1.0,
+          matchedSegment,
+          searchStrategies: ['exact']
+        };
+      }
+    }
+    
+    console.log(`    No exact match found`);
+    return null;
+  }
+  
+  /**
+   * Find matches based on keywords
+   */
+  findKeywordMatch(value, paragraphEmbeddings) {
+    console.log(`  Strategy 2: Looking for keyword matches`);
+    
+    // Extract meaningful keywords from the value
+    const keywords = this.extractKeywords(value);
+    if (keywords.length === 0) {
+      console.log(`    No meaningful keywords found in "${value}"`);
+      return null;
+    }
+    
+    console.log(`    Keywords: ${keywords.join(', ')}`);
+    
+    const keywordMatches = [];
+    
+    for (const pe of paragraphEmbeddings) {
+      const paragraph = pe.paragraph;
+      const lowerText = paragraph.text.toLowerCase();
+      let matchCount = 0;
+      let matchedKeywords = [];
+      let matchedSegments = [];
+      
+      // Count matching keywords and find their positions
+      for (const keyword of keywords) {
+        if (lowerText.includes(keyword.toLowerCase())) {
+          matchCount++;
+          matchedKeywords.push(keyword);
+          
+          // Find the context around this keyword
+          const keywordIndex = lowerText.indexOf(keyword.toLowerCase());
+          const contextStart = Math.max(0, keywordIndex - 30);
+          const contextEnd = Math.min(paragraph.text.length, keywordIndex + keyword.length + 30);
+          matchedSegments.push(paragraph.text.substring(contextStart, contextEnd));
+        }
+      }
+      
+      if (matchCount > 0) {
+        const score = matchCount / keywords.length;
+        keywordMatches.push({
+          ...pe,
+          matchCount,
+          score,
+          matchedKeywords,
+          matchedSegments: matchedSegments.join(' ... ')
+        });
+      }
+    }
+    
+    if (keywordMatches.length > 0) {
+      // Sort by match count, then by score
+      keywordMatches.sort((a, b) => {
+        if (a.matchCount !== b.matchCount) {
+          return b.matchCount - a.matchCount;
+        }
+        return b.score - a.score;
+      });
+      
+      const bestMatch = keywordMatches[0];
+      console.log(`    Best keyword match: ${bestMatch.matchCount}/${keywords.length} keywords in paragraph ${bestMatch.index}`);
+      
+      return {
+        ...bestMatch,
+        matchType: 'keyword',
+        confidence: bestMatch.score,
+        matchedSegment: bestMatch.matchedSegments,
+        searchStrategies: ['exact', 'keyword']
+      };
+    }
+    
+    console.log(`    No keyword matches found`);
+    return null;
+  }
+  
+  /**
+   * Find semantic matches using embeddings
+   */
+  async findSemanticMatch(value, paragraphEmbeddings) {
+    console.log(`  Strategy 3: Looking for semantic matches using embeddings`);
+    
+    try {
+      // Generate embedding for the field value
+      const fieldEmbedding = await this.ollamaService.generateEmbeddings(value);
+      
+      // Calculate similarity with each paragraph embedding
+      const similarities = paragraphEmbeddings.map(pe => ({
+        ...pe,
+        score: this.ollamaService.cosineSimilarity(fieldEmbedding, pe.embedding)
+      }));
+      
+      // Sort by similarity score
+      similarities.sort((a, b) => b.score - a.score);
+      
+      const bestMatch = similarities[0];
+      
+      // Only use semantic matches with a reasonable threshold
+      const SEMANTIC_THRESHOLD = 0.3;
+      if (bestMatch.score > SEMANTIC_THRESHOLD) {
+        console.log(`    Best semantic match: score ${bestMatch.score.toFixed(3)} in paragraph ${bestMatch.index}`);
+        
+        // Try to find what part of the paragraph is most relevant
+        const relevantSegment = this.findMostRelevantSegment(value, bestMatch.paragraph.text);
+        
+        return {
+          ...bestMatch,
+          matchType: 'semantic',
+          confidence: bestMatch.score,
+          matchedSegment: relevantSegment,
+          searchStrategies: ['exact', 'keyword', 'semantic']
+        };
+      } else {
+        console.log(`    Best semantic score ${bestMatch.score.toFixed(3)} below threshold ${SEMANTIC_THRESHOLD}`);
+      }
+    } catch (error) {
+      console.warn(`    Semantic matching failed:`, error);
+    }
+    
+    return null;
+  }
+  
+  /**
+   * Find contextual matches based on field type and medical context
+   */
+  findContextualMatch(field, value, paragraphEmbeddings) {
+    console.log(`  Strategy 4: Looking for contextual matches for field type "${field}"`);
+    
+    // Define field-specific context keywords
+    const fieldContexts = {
+      patientName: ['patient', 'name', 'pt', 'client'],
+      patientDOB: ['dob', 'date of birth', 'born', 'birth date', 'age'],
+      insurance: ['insurance', 'coverage', 'plan', 'policy', 'aetna', 'medicare', 'medicaid', 'bcbs'],
+      location: ['hospital', 'facility', 'clinic', 'center', 'unit', 'room', 'floor'],
+      dx: ['diagnosis', 'dx', 'condition', 'disease', 'disorder', 'icd'],
+      pcp: ['pcp', 'primary care', 'physician', 'doctor', 'provider', 'md', 'do'],
+      dc: ['discharge', 'dc', 'released', 'discharged', 'home', 'facility'],
+      wounds: ['wound', 'laceration', 'cut', 'injury', 'sore', 'ulcer', 'healing'],
+      medications: ['medication', 'medicine', 'drug', 'antibiotic', 'rx', 'prescription', 'pill', 'tablet'],
+      cardiacDrips: ['cardiac', 'drip', 'heart', 'cardio', 'iv', 'infusion', 'dopamine', 'dobutamine'],
+      labsAndVitals: ['lab', 'laboratory', 'test', 'result', 'vital', 'bp', 'blood pressure', 'temperature', 'pulse', 'o2', 'oxygen'],
+      faceToFace: ['face to face', 'f2f', 'visit', 'seen', 'evaluated', 'examined'],
+      history: ['history', 'hx', 'past', 'previous', 'prior', 'background'],
+      mentalHealthState: ['mental', 'psych', 'mood', 'depression', 'anxiety', 'cognitive', 'alert'],
+      additionalComments: ['notes', 'comments', 'remarks', 'additional', 'other', 'misc']
+    };
+    
+    const contextKeywords = fieldContexts[field] || [];
+    if (contextKeywords.length === 0) {
+      console.log(`    No context keywords defined for field "${field}"`);
+      return null;
+    }
+    
+    console.log(`    Context keywords for ${field}: ${contextKeywords.join(', ')}`);
+    
+    const contextMatches = [];
+    
+    for (const pe of paragraphEmbeddings) {
+      const paragraph = pe.paragraph;
+      const lowerText = paragraph.text.toLowerCase();
+      let contextScore = 0;
+      let matchedContexts = [];
+      
+      // Check for context keywords
+      for (const contextKeyword of contextKeywords) {
+        if (lowerText.includes(contextKeyword.toLowerCase())) {
+          contextScore++;
+          matchedContexts.push(contextKeyword);
+        }
+      }
+      
+      // Also check if the extracted value appears in this paragraph
+      const valueInParagraph = lowerText.includes(value.toLowerCase());
+      
+      if (contextScore > 0) {
+        contextMatches.push({
+          ...pe,
+          contextScore,
+          matchedContexts,
+          valueInParagraph,
+          // Boost score if value is also in paragraph
+          totalScore: contextScore + (valueInParagraph ? 2 : 0)
+        });
+      }
+    }
+    
+    if (contextMatches.length > 0) {
+      // Sort by total score
+      contextMatches.sort((a, b) => b.totalScore - a.totalScore);
+      
+      const bestMatch = contextMatches[0];
+      console.log(`    Best contextual match: ${bestMatch.contextScore} context keywords + ${bestMatch.valueInParagraph ? 'value present' : 'value not present'} in paragraph ${bestMatch.index}`);
+      
+      // Find the most relevant segment
+      let relevantSegment = '';
+      if (bestMatch.valueInParagraph) {
+        relevantSegment = this.findMostRelevantSegment(value, bestMatch.paragraph.text);
+      } else {
+        // Find segment containing context keywords
+        const lowerText = bestMatch.paragraph.text.toLowerCase();
+        for (const context of bestMatch.matchedContexts) {
+          const contextIndex = lowerText.indexOf(context.toLowerCase());
+          if (contextIndex !== -1) {
+            const start = Math.max(0, contextIndex - 40);
+            const end = Math.min(bestMatch.paragraph.text.length, contextIndex + context.length + 40);
+            relevantSegment = bestMatch.paragraph.text.substring(start, end);
+            break;
+          }
+        }
+      }
+      
+      return {
+        ...bestMatch,
+        matchType: 'contextual',
+        confidence: Math.min(bestMatch.totalScore / 3, 1.0), // Normalize confidence
+        matchedSegment: relevantSegment,
+        searchStrategies: ['exact', 'keyword', 'semantic', 'contextual']
+      };
+    }
+    
+    console.log(`    No contextual matches found`);
+    return null;
+  }
+  
+  /**
+   * Extract meaningful keywords from a value
+   */
+  extractKeywords(value) {
+    // Split by spaces and filter out common words
+    const stopWords = new Set(['a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 
+                              'has', 'he', 'in', 'is', 'it', 'its', 'of', 'on', 'that', 'the', 
+                              'to', 'was', 'were', 'will', 'with', 'have', 'this', 'not', 'but']);
+    
+    return value.toLowerCase()
+      .split(/[\s,.-]+/)
+      .filter(word => word.length > 2 && !stopWords.has(word))
+      .filter(word => /^[a-zA-Z0-9]+$/.test(word)); // Only alphanumeric words
+  }
+  
+  /**
+   * Find the most relevant segment of text for a given value
+   */
+  findMostRelevantSegment(value, text, contextSize = 60) {
+    const lowerText = text.toLowerCase();
+    const lowerValue = value.toLowerCase();
+    
+    // Try to find the value in the text
+    const valueIndex = lowerText.indexOf(lowerValue);
+    
+    if (valueIndex !== -1) {
+      // Found the value, get context around it
+      const start = Math.max(0, valueIndex - contextSize);
+      const end = Math.min(text.length, valueIndex + value.length + contextSize);
+      return text.substring(start, end);
+    }
+    
+    // If value not found exactly, try to find keywords
+    const keywords = this.extractKeywords(value);
+    for (const keyword of keywords) {
+      const keywordIndex = lowerText.indexOf(keyword.toLowerCase());
+      if (keywordIndex !== -1) {
+        const start = Math.max(0, keywordIndex - contextSize);
+        const end = Math.min(text.length, keywordIndex + keyword.length + contextSize);
+        return text.substring(start, end);
+      }
+    }
+    
+    // Fallback: return first part of the paragraph
+    return text.length > contextSize * 2 ? text.substring(0, contextSize * 2) + '...' : text;
   }
   
   /**
@@ -512,19 +803,35 @@ class PDFProcessorService {
   
   /**
    * Get reference for a specific field in a document
+   * Enhanced with detailed embeddings tracking
    * @param {string} documentId - Document ID
    * @param {string} fieldName - Field name
-   * @returns {Object|null} Field reference
+   * @returns {Object|null} Enhanced field reference with detailed tracking
    */
   getFieldReference(documentId, fieldName) {
     const document = this.documentsCache.get(documentId);
     if (document && document.formData) {
-      // Look for reference information
+      // Look for enhanced reference information first
       if (document.formData._references && document.formData._references[fieldName]) {
-        return document.formData._references[fieldName];
+        const reference = document.formData._references[fieldName];
+        
+        // Return enhanced reference with all tracking information
+        return {
+          text: reference.text,
+          location: reference.location,
+          matchType: reference.matchType,
+          confidence: reference.confidence,
+          score: reference.score,
+          paragraphIndex: reference.paragraphIndex,
+          pageNumber: reference.pageNumber,
+          extractedValue: reference.extractedValue,
+          matchedSegment: reference.matchedSegment,
+          searchStrategies: reference.searchStrategies,
+          timestamp: reference.timestamp
+        };
       }
       
-      // Fall back to looking in document references
+      // Fall back to looking in document references (legacy support)
       const references = this.referenceService.getDocumentReferences(documentId);
       if (references && references.paragraphs) {
         // Try to find a paragraph that might contain this field
@@ -538,7 +845,10 @@ class PDFProcessorService {
           if (matchingParagraph) {
             return {
               text: matchingParagraph.text,
-              location: matchingParagraph.type
+              location: matchingParagraph.type,
+              matchType: 'legacy',
+              confidence: 0.5,
+              extractedValue: fieldValue
             };
           }
         }

@@ -1,7 +1,7 @@
-
 /**
- * Enhanced OllamaService with Llama 3.2 1B optimization
- * Modified to use numbered list extraction instead of JSON
+ * Enhanced OllamaService with updated field names and improved extraction
+ * - Updated "antibiotics" to "medications" 
+ * - Updated "labs" to "labsAndVitals" to include vital signs
  */
 class OllamaService {
   static instance;
@@ -15,7 +15,7 @@ class OllamaService {
     // Alternative models if the primary one isn't available
     this.fallbackModels = ['llama3:8b', 'llama3.1:8b', 'llama3.1:1b', 'tinyllama', 'phi', 'gemma:2b'];
     
-    // Optimized extraction prompt using numbered list format instead of JSON
+    // Updated extraction prompt with new field names and enhanced descriptions
     this.extractionPrompt = `TASK: Extract medical information from the document.
 
 IMPORTANT: Return ONLY a numbered list with the information below. Do not include ANY other text.
@@ -29,10 +29,10 @@ PROVIDE EXACTLY THESE 15 ITEMS IN THIS ORDER:
 6. Primary Care Provider
 7. Discharge Info
 8. Wounds
-9. Antibiotics
-10. Cardiac Medications
-11. Labs
-12. Face to Face
+9. Medications (including antibiotics, prescriptions, and all drugs)
+10. Cardiac Medications (drips, IV cardiac drugs)
+11. Labs and Vital Signs (lab results, blood pressure, temperature, pulse, O2 levels, etc.)
+12. Face to Face (evaluations, visits, examinations)
 13. Medical History
 14. Mental Health
 15. Additional Comments
@@ -44,9 +44,11 @@ CRITICAL INSTRUCTIONS:
 - DO NOT add explanations or notes
 - DO NOT write the word "Not found" if you have actual information
 - For DOB, extract any date format you find (MM/DD/YYYY, DD-MM-YYYY, etc.)
+- For Medications: Include ALL medications, prescriptions, antibiotics, and drugs mentioned
+- For Labs and Vital Signs: Include lab results AND vital signs like BP, temp, pulse, O2 saturation
 - Write EXACTLY one numbered item per line`;
 
-    // Enhanced system prompt for numbered list approach
+    // Enhanced system prompt for updated fields
     this.systemPrompt = `You are a medical information extraction assistant specializing in clinical documents.
 
 You will extract information from medical documents in a SIMPLE NUMBERED LIST format.
@@ -61,13 +63,23 @@ CRITICAL RULES:
 6. Extract DOB regardless of format (MM/DD/YYYY, DD-MM-YYYY, etc.)
 7. Respond ONLY with the 15-item numbered list, nothing else
 
+FIELD-SPECIFIC GUIDELINES:
+- Medications: Include antibiotics, prescriptions, pills, injections, and all drugs
+- Labs and Vital Signs: Include laboratory results AND vital signs (BP, temperature, pulse, oxygen levels, etc.)
+- Cardiac Medications: Focus specifically on heart-related drips and IV medications
+- Face to Face: Any mentions of in-person evaluations, visits, or examinations
+
 Common medical abbreviations:
 - Dx = Diagnosis
 - PCP = Primary Care Provider 
 - DC = Discharge
 - Hx = History
 - Tx = Treatment
-- Rx = Prescription`;
+- Rx = Prescription
+- BP = Blood Pressure
+- HR = Heart Rate
+- O2 = Oxygen
+- IV = Intravenous`;
 
     // To track extraction progress
     this.extractionProgress = {
@@ -449,7 +461,6 @@ Common medical abbreviations:
   /**
    * Generate semantic embeddings for text
    * Used for similarity comparisons and reference tracking
-   * IMPORTANT: This function is still needed for embeddings even with the numbered list approach
    */
   async generateEmbeddings(text, model = this.defaultModel) {
     if (!model) {
@@ -604,10 +615,10 @@ Common medical abbreviations:
 
   /**
    * Parse a numbered list response from the LLM into a structured object
-   * Simplified version that just captures everything after each number
+   * Updated to handle new field names
    */
   parseNumberedListFromLLM(text) {
-    // Initialize result object with default fields
+    // Initialize result object with updated field names
     const result = {
       extractionMethod: 'numbered-list',
       extractionDate: new Date().toISOString(),
@@ -619,16 +630,16 @@ Common medical abbreviations:
       pcp: '',
       dc: '',
       wounds: '',
-      antibiotics: '',
+      medications: '', // Updated field name
       cardiacDrips: '',
-      labs: '',
+      labsAndVitals: '', // Updated field name
       faceToFace: '',
       history: '',
       mentalHealthState: '',
       additionalComments: ''
     };
     
-    // Field mapping - maps numbers to field names
+    // Updated field mapping with new field names
     const fieldMapping = {
       1: 'patientName',
       2: 'patientDOB',
@@ -638,9 +649,9 @@ Common medical abbreviations:
       6: 'pcp',
       7: 'dc',
       8: 'wounds',
-      9: 'antibiotics',
+      9: 'medications', // Updated from 'antibiotics'
       10: 'cardiacDrips',
-      11: 'labs',
+      11: 'labsAndVitals', // Updated from 'labs'
       12: 'faceToFace',
       13: 'history',
       14: 'mentalHealthState',
@@ -880,7 +891,7 @@ ${text}`;
   }
 
   /**
-   * Merge results from multiple chunks with the numbered list approach
+   * Merge results from multiple chunks with updated field names
    */
   mergeChunkResults(results) {
     const mergedResult = {
@@ -888,10 +899,10 @@ ${text}`;
       extractionDate: new Date().toISOString()
     };
     
-    // Define the expected fields
+    // Define the expected fields with updated names
     const fields = [
       'patientName', 'patientDOB', 'insurance', 'location', 'dx', 'pcp', 'dc', 'wounds', 
-      'antibiotics', 'cardiacDrips', 'labs', 'faceToFace', 
+      'medications', 'cardiacDrips', 'labsAndVitals', 'faceToFace', 
       'history', 'mentalHealthState', 'additionalComments'
     ];
     
@@ -946,7 +957,6 @@ ${text}`;
   /**
    * Find the most similar text sections using embeddings
    * Used for semantic search and reference identification
-   * The embeddings still work with the numbered list approach
    */
   async findSimilarSections(query, sections, model = this.defaultModel, topK = 3) {
     try {
@@ -981,7 +991,7 @@ ${text}`;
 
   /**
    * Determine the type of a section based on its content
-   * Used for categorizing references
+   * Updated to include new field contexts
    */
   determineSectionType(text) {
     const lowerText = text.toLowerCase();
@@ -1003,8 +1013,16 @@ ${text}`;
       return 'Medical History';
     }
     
-    if (lowerText.includes('medication') || lowerText.includes('prescription')) {
+    // Updated to include broader medication context
+    if (lowerText.includes('medication') || lowerText.includes('prescription') || lowerText.includes('antibiotic') || lowerText.includes('drug')) {
       return 'Medications';
+    }
+    
+    // Enhanced to include vital signs
+    if (lowerText.includes('lab') || lowerText.includes('test') || lowerText.includes('result') || 
+        lowerText.includes('vital') || lowerText.includes('blood pressure') || lowerText.includes('temperature') ||
+        lowerText.includes('pulse') || lowerText.includes('oxygen')) {
+      return 'Labs and Vital Signs';
     }
     
     if (lowerText.includes('insurance')) {

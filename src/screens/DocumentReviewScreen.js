@@ -1,4 +1,4 @@
-// src/screens/DocumentReviewScreen.js
+// Updated DocumentReviewScreen.js with new field names and enhanced reference display
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -172,6 +172,31 @@ const DocumentReviewScreen = () => {
     });
   };
   
+  // Enhanced field label formatting with updated names
+  const formatLabel = (camelCase) => {
+    const labelMap = {
+      'patientName': 'Patient Name',
+      'patientDOB': 'Date of Birth',
+      'insurance': 'Insurance Information',
+      'location': 'Location/Facility',
+      'dx': 'Diagnosis (Dx)',
+      'pcp': 'Primary Care Provider (PCP)',
+      'dc': 'Discharge (DC)',
+      'wounds': 'Wounds/Injuries',
+      'medications': 'Medications & Antibiotics', // Updated
+      'cardiacDrips': 'Cardiac Medications/Drips',
+      'labsAndVitals': 'Labs & Vital Signs', // Updated
+      'faceToFace': 'Face-to-Face Evaluations',
+      'history': 'Medical History',
+      'mentalHealthState': 'Mental Health State',
+      'additionalComments': 'Additional Comments'
+    };
+    
+    return labelMap[camelCase] || camelCase
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/^./, str => str.toUpperCase());
+  };
+  
   // Modern loading screen
   if (loading) {
     return (
@@ -249,43 +274,53 @@ const DocumentReviewScreen = () => {
               </View>
               
               <Text style={modernStyles.sectionDescription}>
-                Review and verify the extracted information below. Edit any incorrect data and mark each field as reviewed when complete.
+                Review and verify the extracted information below. Each field shows enhanced source tracking 
+                to help you understand where the AI found the information in the original document.
               </Text>
               
               <View style={modernStyles.fieldsContainer}>
-                {/* Ensure critical patient info is displayed first */}
+                {/* Updated field order with new names - prioritize critical patient info */}
                 {['patientName', 'patientDOB', 'insurance', 'location', 'dx', 'pcp', 'dc', 'wounds', 
-                  'antibiotics', 'cardiacDrips', 'labs', 'faceToFace', 'history', 'mentalHealthState', 
-                  'additionalComments'].map(fieldName => {
+                  'medications', 'cardiacDrips', 'labsAndVitals', 'faceToFace', 'history', 
+                  'mentalHealthState', 'additionalComments'].map(fieldName => {
                   // Skip if field doesn't exist in formData
                   if (!(fieldName in formData)) return null;
                   
-                  // Format field label from camelCase
-                  const formatLabel = (camelCase) => {
-                    if (camelCase === 'patientName') return 'Patient Name';
-                    if (camelCase === 'patientDOB') return 'Date of Birth';
-                    if (camelCase === 'dx') return 'Diagnosis (Dx)';
-                    if (camelCase === 'pcp') return 'Primary Care Provider (PCP)';
-                    if (camelCase === 'dc') return 'Discharge (DC)';
-                    
-                    return camelCase
-                      .replace(/([A-Z])/g, ' $1')
-                      .replace(/^./, str => str.toUpperCase());
-                  };
-                  
-                  // Get field reference if available
+                  // Get enhanced field reference with detailed tracking
                   const processorService = PDFProcessorService.getInstance();
                   const fieldReference = processorService.getFieldReference(documentId, fieldName);
-                  const sourceText = fieldReference ? fieldReference.text : '';
-                  const sourceType = fieldReference ? fieldReference.location : '';
+                  
+                  // Enhanced source information display
+                  let sourceText = '';
+                  let sourceType = '';
+                  let sourceConfidence = '';
+                  
+                  if (fieldReference) {
+                    sourceText = fieldReference.matchedSegment || fieldReference.text || '';
+                    sourceType = fieldReference.location || '';
+                    
+                    // Add confidence and match type information
+                    if (fieldReference.matchType && fieldReference.confidence !== undefined) {
+                      sourceConfidence = `${fieldReference.matchType} match (${Math.round(fieldReference.confidence * 100)}% confidence)`;
+                      if (fieldReference.pageNumber) {
+                        sourceConfidence += ` - Page ${fieldReference.pageNumber}`;
+                      }
+                    }
+                    
+                    // Enhance source type with additional context
+                    if (sourceConfidence) {
+                      sourceType += sourceConfidence ? ` - ${sourceConfidence}` : '';
+                    }
+                  }
                   
                   // Determine if field needs multiline
                   const needsMultiline = [
                     'history', 
                     'mentalHealthState', 
                     'additionalComments',
-                    'labs',
-                    'wounds'
+                    'labsAndVitals', // Updated field name
+                    'wounds',
+                    'medications' // Updated field name
                   ].includes(fieldName);
                   
                   return (
