@@ -1,5 +1,6 @@
 /**
- * Simplified OllamaService - Using $$ delimiter for clean parsing
+ * Simplified OllamaService - Clean NUMBER$$ parsing
+ * Let the AI do the heavy lifting, keep parsing simple
  */
 import MedicalFieldService from './MedicalFieldService';
 
@@ -36,42 +37,41 @@ class OllamaService {
   }
 
   /**
-   * System prompt with $ delimiter for simple parsing - MUST complete all 15 fields
+   * Simple, effective prompt - explicit about using actual numbers
    */
   getSystemPrompt() {
-    return `You are a medical information extraction assistant. You MUST extract information and return ALL 15 numbered items using the $ delimiter. DO NOT STOP until you complete all 15 fields.
+    return `Extract medical information from referral documents. Return exactly 15 fields using the format shown below.
 
-RETURN FORMAT - Use $ after each number (COMPLETE ALL 15):
-1$ Patient Name Here
-2$ Date of Birth Here  
-3$ Insurance Information Here
-4$ Location/Facility Here
-5$ Diagnosis Here
-6$ Primary Care Provider Here
-7$ Discharge Information Here
-8$ Wounds/Injuries Here
-9$ Medications & Antibiotics Here
-10$ Cardiac Medications/Drips Here
-11$ Labs & Vital Signs Here
-12$ Face-to-Face Evaluations Here
-13$ Medical History Here
-14$ Mental Health State Here
-15$ Additional Comments Here
+REQUIRED FORMAT (use actual numbers 1, 2, 3, etc.):
+1$ Patient full name
+2$ Date of birth
+3$ Insurance information
+4$ Healthcare facility/location
+5$ Primary diagnosis/condition
+6$ Primary care provider name
+7$ Discharge plans/instructions
+8$ Wounds, injuries, or physical findings
+9$ Medications and antibiotics
+10$ Cardiac medications or drips
+11$ Laboratory results and vital signs
+12$ Face-to-face evaluation notes
+13$ Medical history summary
+14$ Mental health assessment
+15$ Additional clinical comments
 
-CRITICAL RULES:
-- ALWAYS complete ALL 15 fields - never stop early
-- ALWAYS use the exact format: NUMBER$ CONTENT
-- If information doesn't exist, write: NUMBER$ Not found
-- Write the actual extracted information after $
-- Continue until you reach 15$ - DO NOT STOP AT 11 or any other number
-- Extract DOB in any format found (MM/DD/YYYY, DD-MM-YYYY, etc.)
-- For Medications: Include ALL drugs, prescriptions, antibiotics mentioned
-- For Labs and Vitals: Include both lab results AND vital signs
+CRITICAL: Use the actual numbers (1$, 2$, 3$, etc.) NOT the word "NUMBER".
 
-YOU MUST COMPLETE ALL 15 NUMBERED ITEMS. DO NOT STOP EARLY.
+RULES:
+• Start with 1$ then 2$ then 3$ and so on
+• Complete ALL 15 fields ending with 15$
+• If no information found: write the number then $ then "Not found"
 
-Medical abbreviations:
-Dx = Diagnosis, PCP = Primary Care Provider, DC = Discharge, BP = Blood Pressure, HR = Heart Rate, O2 = Oxygen`;
+Example of what to write:
+1$ John Smith
+2$ 03/15/1975
+3$ Medicare Part A
+
+DO NOT write "NUMBER$" - write the actual numbers like "1$", "2$", "3$" etc.`;
   }
 
   async generateCompletion(documentText) {
@@ -82,15 +82,16 @@ Dx = Diagnosis, PCP = Primary Care Provider, DC = Discharge, BP = Blood Pressure
         model: this.defaultModel,
         prompt: documentText,
         system: this.getSystemPrompt(),
-        temperature: 0.0, // Maximum consistency
+        temperature: 0.1,
         stream: false,
         options: {
-          num_predict: 2000,        // Maximum tokens to generate (increase this!)
-          num_ctx: 32768,           // Context window size
-          top_k: 1,                 // Most deterministic
-          top_p: 0.1,               // Low for consistency
-          repeat_penalty: 1.0,      // No repetition penalty
-          stop: ["16$", "END"]     // Stop if it tries to add extra fields
+          num_predict: 3000,
+          num_ctx: 8192,
+          top_k: 10,
+          top_p: 0.3,
+          repeat_penalty: 1.1,
+          stop: ["16$$", "END"],
+          seed: 42
         }
       };
 
@@ -108,6 +109,7 @@ Dx = Diagnosis, PCP = Primary Care Provider, DC = Discharge, BP = Blood Pressure
       this.updateProgress('processing', 0.7, 'Analysis complete', 'Successfully extracted information');
       
       console.log('AI Response Length:', (data.response || '').length, 'characters');
+      console.log('AI Response Preview:', (data.response || '').substring(0, 200) + '...');
       
       return data.response || JSON.stringify(data);
     } catch (error) {
@@ -148,32 +150,34 @@ Dx = Diagnosis, PCP = Primary Care Provider, DC = Discharge, BP = Blood Pressure
     }
   }
 
-  // MUCH SIMPLER AND MORE ROBUST: Parse using $ delimiter
+  /**
+   * Super simple parsing: NUMBER$$ to next NUMBER$$ (or end)
+   * Capture everything in between - let AI handle the formatting
+   */
   parseDelimiterResponse(text) {
-    console.log('Raw AI Response:', text); // Debug logging
+    console.log('Raw AI Response:', text);
     
     const result = this.medicalFieldService.createEmptyFormData();
     result.extractionMethod = 'delimiter-parsed';
     
-    // Use regex to match: number$ followed by content until next number$ or end
+    // Simple regex: capture from NUMBER$$ to next NUMBER$$ (or end of text)
     const pattern = /(\d+)\$\$(.*?)(?=\d+\$\$|$)/gs;
     const matches = [...text.matchAll(pattern)];
     
-    console.log(`Found ${matches.length} field matches`); // Debug logging
+    console.log(`Found ${matches.length} field matches`);
     
     matches.forEach(match => {
       const number = parseInt(match[1], 10);
       const content = match[2].trim();
-      console.log(`Field ${number}: "${content}"`); // Debug logging
+      console.log(`Field ${number}: "${content}"`);
       
       const field = this.medicalFieldService.getFieldByNumber(number);
       
       if (field && number >= 1 && number <= 15) {
-        // Store content unless it's explicitly "not found"
+        // Store content unless it's clearly "not found"
         if (content && 
-            !content.toLowerCase().includes('not found') && 
-            !content.toLowerCase().includes('no information') &&
-            content.length > 0) {
+            content.length > 0 &&
+            !content.toLowerCase().includes('not found')) {
           result[field.key] = content;
           console.log(`✓ Stored: ${field.key} = "${content}"`);
         } else {
