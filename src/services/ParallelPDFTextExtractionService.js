@@ -16,7 +16,7 @@ class ParallelPDFTextExtractionService {
   constructor() {
     this.progressCallback = null;
     this.cancelProcessing = false;
-    this.maxWorkers = 3; // Reduced from 20 to 3 for simplicity
+    this.maxWorkers = 20; // Reduced from 20 to 3 for simplicity
   }
   
   static getInstance() {

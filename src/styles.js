@@ -1,7 +1,4 @@
-/**
- * Global styles for the MedRec application
- * This file contains consistent styling variables and common component styles
- */
+// src/styles/index.js - Complete consolidated styles file
 import { StyleSheet, Platform, Dimensions } from 'react-native';
 
 const { width, height } = Dimensions.get('window');
@@ -110,6 +107,7 @@ export const BorderRadius = {
 
 // Shadows
 export const Shadows = {
+  none: {},
   // Soft shadow
   soft: Platform.select({
     ios: {
@@ -169,7 +167,7 @@ export const ZIndex = {
   overlay: 500,
 };
 
-// Common component styles
+// ALL COMMON COMPONENT STYLES IN ONE PLACE
 export const CommonStyles = StyleSheet.create({
   // Container styles
   screenContainer: {
@@ -190,7 +188,118 @@ export const CommonStyles = StyleSheet.create({
     ...Shadows.soft,
   },
   
-  // Button styles
+  // LOADING STYLES
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f7f9fc',
+  },
+  loadingCard: {
+    backgroundColor: Colors.white,
+    padding: Spacing.large,
+    borderRadius: BorderRadius.medium,
+    alignItems: 'center',
+    ...Shadows.medium,
+    width: '80%',
+    maxWidth: 300,
+  },
+  loadingText: {
+    marginTop: Spacing.medium,
+    fontSize: Typography.size.medium,
+    fontWeight: Typography.weight.semibold,
+    color: Colors.black,
+  },
+  loadingSubtext: {
+    marginTop: Spacing.small,
+    fontSize: Typography.size.small,
+    color: Colors.gray,
+  },
+
+  // PROGRESS BAR STYLES
+  progressBarContainer: {
+    width: '100%',
+    backgroundColor: '#e2e8f0',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: Spacing.small,
+  },
+  progressBar: {
+    height: '100%',
+    backgroundColor: Colors.primary,
+    borderRadius: 4,
+  },
+  progressPercentage: {
+    fontSize: Typography.size.medium,
+    fontWeight: Typography.weight.semibold,
+    color: Colors.primary,
+    textAlign: 'center',
+    marginTop: Spacing.small,
+  },
+
+  // HEADER STYLES
+  headerContainer: {
+    padding: Spacing.medium,
+    backgroundColor: Colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: '#edf0f7',
+    ...Shadows.soft,
+  },
+  headerTextContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.small,
+  },
+  headerText: {
+    fontSize: Typography.size.medium,
+    fontWeight: Typography.weight.semibold,
+    color: Colors.black,
+  },
+  headerPercentage: {
+    fontSize: Typography.size.medium,
+    fontWeight: Typography.weight.bold,
+    color: Colors.primary,
+  },
+  headerDetail: {
+    fontSize: Typography.size.small,
+    color: Colors.gray,
+    textAlign: 'center',
+  },
+
+  // SECTION STYLES
+  sectionContainer: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.medium,
+    padding: Spacing.large,
+    marginBottom: Spacing.large,
+    ...Shadows.medium,
+  },
+  sectionTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.medium,
+  },
+  sectionTitleIcon: {
+    width: 4,
+    height: 20,
+    backgroundColor: Colors.primary,
+    borderRadius: 2,
+    marginRight: Spacing.small,
+  },
+  sectionTitle: {
+    fontSize: Typography.size.large,
+    fontWeight: Typography.weight.semibold,
+    color: Colors.black,
+  },
+  sectionDescription: {
+    fontSize: Typography.size.medium,
+    color: Colors.gray,
+    marginBottom: Spacing.large,
+    lineHeight: 22,
+  },
+
+  // BUTTON STYLES
   primaryButton: {
     backgroundColor: Colors.primary,
     borderRadius: BorderRadius.medium,
@@ -198,6 +307,7 @@ export const CommonStyles = StyleSheet.create({
     paddingHorizontal: Spacing.large,
     alignItems: 'center',
     justifyContent: 'center',
+    ...Shadows.medium,
   },
   
   primaryButtonText: {
@@ -213,6 +323,7 @@ export const CommonStyles = StyleSheet.create({
     paddingHorizontal: Spacing.large,
     alignItems: 'center',
     justifyContent: 'center',
+    ...Shadows.soft,
   },
   
   secondaryButtonText: {
@@ -236,8 +347,120 @@ export const CommonStyles = StyleSheet.create({
     fontSize: Typography.size.medium,
     fontWeight: Typography.weight.semibold,
   },
+
+  disabledButton: {
+    backgroundColor: '#cbd5e1',
+    ...Shadows.none,
+  },
+
+  // INPUT STYLES
+  inputLabel: {
+    fontSize: Typography.size.medium,
+    color: Colors.black,
+    marginBottom: Spacing.small,
+    fontWeight: Typography.weight.medium,
+  },
   
-  // Text styles
+  input: {
+    backgroundColor: '#f7f9fc',
+    borderRadius: BorderRadius.medium,
+    padding: Spacing.medium,
+    fontSize: Typography.size.medium,
+    color: Colors.black,
+    marginBottom: Spacing.medium,
+    borderWidth: 1,
+    borderColor: '#edf0f7',
+  },
+
+  multilineInput: {
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+
+  // MESSAGE STYLES (Error/Warning/Success)
+  errorContainer: {
+    backgroundColor: Colors.accentLight,
+    borderRadius: BorderRadius.small,
+    padding: Spacing.medium,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.accent,
+    marginBottom: Spacing.medium,
+  },
+  warningContainer: {
+    backgroundColor: '#fff8e6',
+    borderRadius: BorderRadius.small,
+    padding: Spacing.medium,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.warning,
+    marginBottom: Spacing.medium,
+  },
+  successContainer: {
+    backgroundColor: Colors.secondaryLight,
+    borderRadius: BorderRadius.small,
+    padding: Spacing.medium,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.secondary,
+    marginBottom: Spacing.medium,
+  },
+  messageTitle: {
+    fontSize: Typography.size.small,
+    fontWeight: Typography.weight.semibold,
+    marginBottom: Spacing.tiny,
+  },
+  errorTitle: {
+    color: Colors.accent,
+  },
+  warningTitle: {
+    color: Colors.warning,
+  },
+  successTitle: {
+    color: Colors.secondary,
+  },
+  messageText: {
+    fontSize: Typography.size.small,
+    color: Colors.black,
+    lineHeight: Typography.lineHeight.normal,
+  },
+
+  // OVERLAY/MODAL STYLES
+  overlayBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  overlayContainer: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.medium,
+    padding: Spacing.large,
+    width: '80%',
+    maxWidth: 350,
+    alignItems: 'center',
+  },
+  overlayIconContainer: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: Colors.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Spacing.medium,
+  },
+  overlayTitle: {
+    fontSize: Typography.size.medium,
+    fontWeight: Typography.weight.semibold,
+    color: Colors.black,
+    marginBottom: Spacing.small,
+    textAlign: 'center',
+  },
+  overlayMessage: {
+    fontSize: Typography.size.small,
+    color: Colors.gray,
+    marginBottom: Spacing.medium,
+    textAlign: 'center',
+  },
+  
+  // TEXT STYLES
   title: {
     fontSize: Typography.size.xxlarge,
     color: Colors.black,
@@ -263,27 +486,7 @@ export const CommonStyles = StyleSheet.create({
     color: Colors.gray,
   },
   
-  // Input styles
-  input: {
-    height: 50,
-    backgroundColor: Colors.white,
-    borderWidth: 1,
-    borderColor: Colors.lightGray,
-    borderRadius: BorderRadius.medium,
-    paddingHorizontal: Spacing.medium,
-    fontSize: Typography.size.medium,
-    color: Colors.black,
-    marginBottom: Spacing.medium,
-  },
-  
-  inputLabel: {
-    fontSize: Typography.size.small,
-    color: Colors.gray,
-    marginBottom: Spacing.tiny,
-    fontWeight: Typography.weight.medium,
-  },
-  
-  // List styles
+  // LIST STYLES
   listItem: {
     flexDirection: 'row',
     padding: Spacing.medium,
@@ -292,7 +495,7 @@ export const CommonStyles = StyleSheet.create({
     backgroundColor: Colors.white,
   },
   
-  // Status badges
+  // STATUS BADGES
   badge: {
     paddingVertical: Spacing.tiny,
     paddingHorizontal: Spacing.small,
