@@ -1,5 +1,5 @@
 /**
- * Simplified OllamaService - Process entire document at once using long context
+ * Simplified OllamaService - Using $$ delimiter for clean parsing
  */
 import MedicalFieldService from './MedicalFieldService';
 
@@ -35,134 +35,63 @@ class OllamaService {
     }
   }
 
-  setBaseUrl(url) {
-    this.baseUrl = url.trim();
-  }
-
-  setDefaultModel(model) {
-    this.defaultModel = model.trim() || 'llama3.2:1b';
-  }
-
-  getConfig() {
-    return {
-      baseUrl: this.baseUrl,
-      defaultModel: this.defaultModel,
-      systemPrompt: this.getSystemPrompt()
-    };
-  }
-
   /**
-   * Complete system prompt in one place
+   * System prompt with $ delimiter for simple parsing - MUST complete all 15 fields
    */
   getSystemPrompt() {
-    return `You are a medical information extraction assistant. Extract information from medical documents and return EXACTLY 15 numbered items.
+    return `You are a medical information extraction assistant. You MUST extract information and return ALL 15 numbered items using the $ delimiter. DO NOT STOP until you complete all 15 fields.
 
-RETURN FORMAT - EXACTLY THIS:
-1. Patient Name
-2. Date of Birth  
-3. Insurance Information
-4. Location/Facility
-5. Diagnosis (Dx)
-6. Primary Care Provider (PCP)
-7. Discharge (DC)
-8. Wounds/Injuries
-9. Medications & Antibiotics
-10. Cardiac Medications/Drips
-11. Labs & Vital Signs
-12. Face-to-Face Evaluations
-13. Medical History
-14. Mental Health State
-15. Additional Comments
+RETURN FORMAT - Use $ after each number (COMPLETE ALL 15):
+1$ Patient Name Here
+2$ Date of Birth Here  
+3$ Insurance Information Here
+4$ Location/Facility Here
+5$ Diagnosis Here
+6$ Primary Care Provider Here
+7$ Discharge Information Here
+8$ Wounds/Injuries Here
+9$ Medications & Antibiotics Here
+10$ Cardiac Medications/Drips Here
+11$ Labs & Vital Signs Here
+12$ Face-to-Face Evaluations Here
+13$ Medical History Here
+14$ Mental Health State Here
+15$ Additional Comments Here
 
-RULES:
-- Return ONLY the 15 numbered items above
-- Write the extracted information directly after each number
-- If information doesn't exist, write "Not found" 
-- Be brief and direct
-- No explanations or extra text
+CRITICAL RULES:
+- ALWAYS complete ALL 15 fields - never stop early
+- ALWAYS use the exact format: NUMBER$ CONTENT
+- If information doesn't exist, write: NUMBER$ Not found
+- Write the actual extracted information after $
+- Continue until you reach 15$ - DO NOT STOP AT 11 or any other number
 - Extract DOB in any format found (MM/DD/YYYY, DD-MM-YYYY, etc.)
 - For Medications: Include ALL drugs, prescriptions, antibiotics mentioned
-- For Labs and Vitals: Include both lab results AND vital signs (BP, temperature, pulse, oxygen levels)
+- For Labs and Vitals: Include both lab results AND vital signs
+
+YOU MUST COMPLETE ALL 15 NUMBERED ITEMS. DO NOT STOP EARLY.
 
 Medical abbreviations:
-Dx = Diagnosis, PCP = Primary Care Provider, DC = Discharge, Hx = History, BP = Blood Pressure, HR = Heart Rate, O2 = Oxygen, IV = Intravenous`;
+Dx = Diagnosis, PCP = Primary Care Provider, DC = Discharge, BP = Blood Pressure, HR = Heart Rate, O2 = Oxygen`;
   }
 
-  async testConnection() {
-    try {
-      const response = await fetch(`${this.baseUrl}/api/version`, {
-        signal: AbortSignal.timeout(5000)
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Connection failed: ${response.status}`);
-      }
-      
-      return true;
-    } catch (error) {
-      console.error('Ollama connection failed:', error);
-      return false;
-    }
-  }
-
-  async getAvailableModels() {
-    try {
-      const response = await fetch(`${this.baseUrl}/api/tags`);
-      if (!response.ok) {
-        throw new Error(`Failed to get models: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.models) {
-        return data.models.map(model => model.name || model);
-      } else if (Array.isArray(data)) {
-        return data.map(model => model.name || model);
-      }
-      
-      return [];
-    } catch (error) {
-      console.error('Failed to get models:', error);
-      return [];
-    }
-  }
-
-  async initialize() {
-    try {
-      const isConnected = await this.testConnection();
-      if (!isConnected) {
-        return false;
-      }
-      
-      // Simple check - just try to use the default model
-      try {
-        const response = await fetch(`${this.baseUrl}/api/show`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: this.defaultModel }),
-        });
-        
-        return response.ok;
-      } catch (error) {
-        console.warn(`Model ${this.defaultModel} not available:`, error);
-        return false;
-      }
-    } catch (error) {
-      console.error('Error initializing:', error);
-      return false;
-    }
-  }
-
-  async generateCompletion(documentText, model = this.defaultModel) {
-    this.updateProgress('processing', 0.4, 'Analyzing document', `Running AI model: ${model}`);
+  async generateCompletion(documentText) {
+    this.updateProgress('processing', 0.4, 'Analyzing document', `Running AI model: ${this.defaultModel}`);
     
     try {
       const requestData = {
-        model,
+        model: this.defaultModel,
         prompt: documentText,
         system: this.getSystemPrompt(),
-        temperature: 0.1,
+        temperature: 0.0, // Maximum consistency
         stream: false,
+        options: {
+          num_predict: 2000,        // Maximum tokens to generate (increase this!)
+          num_ctx: 32768,           // Context window size
+          top_k: 1,                 // Most deterministic
+          top_p: 0.1,               // Low for consistency
+          repeat_penalty: 1.0,      // No repetition penalty
+          stop: ["16$", "END"]     // Stop if it tries to add extra fields
+        }
       };
 
       const response = await fetch(`${this.baseUrl}/api/generate`, {
@@ -178,6 +107,8 @@ Dx = Diagnosis, PCP = Primary Care Provider, DC = Discharge, Hx = History, BP = 
       const data = await response.json();
       this.updateProgress('processing', 0.7, 'Analysis complete', 'Successfully extracted information');
       
+      console.log('AI Response Length:', (data.response || '').length, 'characters');
+      
       return data.response || JSON.stringify(data);
     } catch (error) {
       this.updateProgress('error', 0.4, 'Analysis failed', `Error: ${error.message}`);
@@ -185,15 +116,14 @@ Dx = Diagnosis, PCP = Primary Care Provider, DC = Discharge, Hx = History, BP = 
     }
   }
 
-  async extractInformation(text, schema = null, model = this.defaultModel) {
+  async extractInformation(text) {
     try {
       this.updateProgress('processing', 0.3, 'Starting AI analysis', 'Preparing document for extraction');
       
-      // Process entire document at once - take advantage of long context
-      const result = await this.generateCompletion(text, model);
+      const result = await this.generateCompletion(text);
       
       try {
-        const extractedData = this.parseNumberedListResponse(result);
+        const extractedData = this.parseDelimiterResponse(result);
         this.updateProgress('processing', 0.9, 'Information extracted', 'Successfully extracted structured data');
         return extractedData;
       } catch (parseError) {
@@ -218,33 +148,39 @@ Dx = Diagnosis, PCP = Primary Care Provider, DC = Discharge, Hx = History, BP = 
     }
   }
 
-  parseNumberedListResponse(text) {
+  // MUCH SIMPLER AND MORE ROBUST: Parse using $ delimiter
+  parseDelimiterResponse(text) {
+    console.log('Raw AI Response:', text); // Debug logging
+    
     const result = this.medicalFieldService.createEmptyFormData();
-    result.extractionMethod = 'numbered-list';
+    result.extractionMethod = 'delimiter-parsed';
     
-    const lines = text.split('\n');
+    // Use regex to match: number$ followed by content until next number$ or end
+    const pattern = /(\d+)\$\$(.*?)(?=\d+\$\$|$)/gs;
+    const matches = [...text.matchAll(pattern)];
     
-    for (const line of lines) {
-      if (!line.trim()) continue;
+    console.log(`Found ${matches.length} field matches`); // Debug logging
+    
+    matches.forEach(match => {
+      const number = parseInt(match[1], 10);
+      const content = match[2].trim();
+      console.log(`Field ${number}: "${content}"`); // Debug logging
       
-      // Match: "1. Some content" or "1) Some content" or "1 Some content"
-      const match = line.match(/^\s*(\d+)[\.\)\s]+(.+)$/);
+      const field = this.medicalFieldService.getFieldByNumber(number);
       
-      if (match) {
-        const [, numberStr, content] = match;
-        const number = parseInt(numberStr, 10);
-        const field = this.medicalFieldService.getFieldByNumber(number);
-        
-        if (field && number >= 1 && number <= 15) {
-          const trimmedContent = content.trim();
-          
-          // Only store if it's not "not found" and has actual content
-          if (trimmedContent && !trimmedContent.toLowerCase().includes('not found') && trimmedContent.length > 0) {
-            result[field.key] = trimmedContent;
-          }
+      if (field && number >= 1 && number <= 15) {
+        // Store content unless it's explicitly "not found"
+        if (content && 
+            !content.toLowerCase().includes('not found') && 
+            !content.toLowerCase().includes('no information') &&
+            content.length > 0) {
+          result[field.key] = content;
+          console.log(`✓ Stored: ${field.key} = "${content}"`);
+        } else {
+          console.log(`✗ Skipped: ${field.key} (empty or not found)`);
         }
       }
-    }
+    });
     
     return result;
   }

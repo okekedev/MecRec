@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import DocumentUploader from '../components/DocumentUploader';
-import EnhancedHeader from '../components/EnhancedHeader';
+import EnhancedHeader from '../components/Header';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../styles';
 import * as Animations from '../animations';
 import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';

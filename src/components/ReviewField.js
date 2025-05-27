@@ -89,14 +89,13 @@ const ReviewField = ({
             style={[
               CommonStyles.reviewFieldInput,
               isMultiline && CommonStyles.multilineInput,
-              isReviewed && CommonStyles.reviewFieldReviewedInput
+              isReviewed ? CommonStyles.reviewFieldReviewedInput : CommonStyles.reviewFieldInputPending
             ]}
             value={value}
             onChangeText={onValueChange}
             placeholder="No information found"
             placeholderTextColor={Colors.gray}
             multiline={isMultiline}
-            numberOfLines={isMultiline ? 3 : 1}
             textAlignVertical={isMultiline ? 'top' : 'center'}
           />
         </View>
@@ -113,7 +112,7 @@ const ReviewField = ({
                 <MaterialCommunityIcons 
                   name="brain" 
                   size={16} 
-                  color={Colors.secondary} 
+                  color={Colors.primary} 
                   style={CommonStyles.reviewFieldReasoningIcon}
                 />
                 <Text style={CommonStyles.reviewFieldReasoningToggleText}>
@@ -122,7 +121,7 @@ const ReviewField = ({
                 <MaterialCommunityIcons
                   name={showReasoning ? "chevron-up" : "chevron-down"}
                   size={16}
-                  color={Colors.secondary}
+                  color={Colors.primary}
                 />
               </View>
             </TouchableOpacity>

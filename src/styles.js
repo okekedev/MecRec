@@ -322,7 +322,7 @@ export const CommonStyles = StyleSheet.create({
   },
   
   multilineInput: {
-    minHeight: 80,
+    minHeight: 120, // Increased from 80 to allow more text
     textAlignVertical: 'top',
   },
   
@@ -446,10 +446,14 @@ export const CommonStyles = StyleSheet.create({
     backgroundColor: Colors.reviewCardBackground,
     borderRadius: BorderRadius.medium,
     borderWidth: 1,
-    borderColor: Colors.reviewBorder,
+    borderColor: Colors.reviewBorder, // Always neutral border
     marginBottom: Spacing.medium,
     overflow: 'hidden',
   },
+  
+  // Removed - no longer needed
+  // reviewFieldCardPending: { ... }
+  // reviewFieldCardReviewed: { ... }
   
   reviewFieldHeaderRow: {
     flexDirection: 'row',
@@ -521,7 +525,7 @@ export const CommonStyles = StyleSheet.create({
   
   reviewFieldInput: {
     backgroundColor: Colors.reviewInputBackground,
-    borderWidth: 1,
+    borderWidth: 2, // Slightly thicker for better visibility
     borderColor: Colors.reviewBorder,
     borderRadius: BorderRadius.medium,
     paddingHorizontal: Spacing.medium,
@@ -529,12 +533,16 @@ export const CommonStyles = StyleSheet.create({
     fontSize: Typography.size.medium,
     color: Colors.black,
     marginBottom: 0,
+    // No height restrictions - allows unlimited expansion
+  },
+  
+  reviewFieldInputPending: {
+    borderColor: Colors.warning, // Yellow border for pending fields
   },
   
   reviewFieldReviewedInput: {
     backgroundColor: Colors.white,
-    borderColor: Colors.success,
-    borderWidth: 1,
+    borderColor: Colors.success, // Green border for reviewed fields
   },
   
   reviewFieldReasoningContainer: {
@@ -544,7 +552,7 @@ export const CommonStyles = StyleSheet.create({
   
   reviewFieldReasoningToggle: {
     padding: Spacing.medium,
-    backgroundColor: Colors.secondaryLight,
+    backgroundColor: Colors.reviewInputBackground, // Light grey background instead of green
   },
   
   reviewFieldReasoningToggleContent: {
@@ -558,24 +566,25 @@ export const CommonStyles = StyleSheet.create({
   
   reviewFieldReasoningToggleText: {
     fontSize: Typography.size.small,
-    color: Colors.secondary,
+    color: Colors.black, // Black text instead of green
     fontWeight: Typography.weight.medium,
     flex: 1,
   },
   
   reviewFieldReasoningContentContainer: {
     overflow: 'hidden',
+    // No maxHeight restrictions - allows unlimited expansion
   },
   
   reviewFieldReasoningContent: {
     padding: Spacing.medium,
-    backgroundColor: Colors.secondaryLight,
+    backgroundColor: Colors.lightGray, // Light grey background instead of green
   },
   
   reviewFieldReasoningLabel: {
     fontSize: Typography.size.small,
     fontWeight: Typography.weight.semibold,
-    color: Colors.secondary,
+    color: Colors.black, // Black text instead of green
     marginBottom: Spacing.small,
   },
   
@@ -584,13 +593,14 @@ export const CommonStyles = StyleSheet.create({
     borderRadius: BorderRadius.small,
     padding: Spacing.small,
     borderLeftWidth: 3,
-    borderLeftColor: Colors.secondary,
+    borderLeftColor: Colors.primary, // Blue left border instead of green
   },
   
   reviewFieldReasoningText: {
     fontSize: Typography.size.small,
     color: Colors.black,
     lineHeight: Typography.size.small * Typography.lineHeight.normal,
+    // No numberOfLines restriction - allows full text display
   },
 
   // Progress Overlay styles
@@ -841,6 +851,461 @@ export const CommonStyles = StyleSheet.create({
     color: Colors.success,
   },
   
+  // DocumentUploader specific styles
+  uploaderContainer: {
+    alignItems: 'center',
+    width: '100%',
+  },
+  
+  uploadButton: {
+    backgroundColor: Colors.primary,
+    paddingVertical: Spacing.medium,
+    paddingHorizontal: Spacing.xlarge,
+    borderRadius: BorderRadius.medium,
+    marginBottom: Spacing.large,
+    width: '100%',
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    ...Shadows.soft,
+    ...Platform.select({
+      web: {
+        cursor: 'pointer',
+      },
+    }),
+  },
+  
+  uploadButtonPressed: {
+    opacity: 0.8,
+    ...Platform.select({
+      web: {
+        transform: [{ scale: 0.98 }],
+      },
+    }),
+  },
+  
+  uploadIcon: {
+    marginRight: Spacing.small,
+  },
+  
+  uploadButtonText: {
+    color: Colors.white,
+    fontSize: Typography.size.medium,
+    fontWeight: Typography.weight.semibold,
+  },
+  
+  documentInfo: {
+    backgroundColor: Colors.white,
+    padding: Spacing.medium,
+    borderRadius: BorderRadius.medium,
+    marginBottom: Spacing.large,
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.reviewBorder,
+    ...Shadows.soft,
+  },
+  
+  documentIcon: {
+    marginRight: Spacing.small,
+  },
+  
+  documentDetails: {
+    flex: 1,
+  },
+  
+  documentName: {
+    fontSize: Typography.size.medium,
+    fontWeight: Typography.weight.medium,
+    marginBottom: Spacing.tiny,
+    color: Colors.black,
+  },
+  
+  documentSize: {
+    fontSize: Typography.size.small,
+    color: Colors.gray,
+  },
+  
+  processButton: {
+    backgroundColor: Colors.secondary,
+    paddingVertical: Spacing.medium,
+    paddingHorizontal: Spacing.xlarge,
+    borderRadius: BorderRadius.medium,
+    width: '100%',
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    ...Shadows.soft,
+    ...Platform.select({
+      web: {
+        cursor: 'pointer',
+      },
+    }),
+  },
+  
+  processIcon: {
+    marginRight: Spacing.small,
+  },
+  
+  processButtonText: {
+    color: Colors.white,
+    fontSize: Typography.size.medium,
+    fontWeight: Typography.weight.semibold,
+  },
+  
+  uploaderDisabledButton: {
+    backgroundColor: Colors.gray,
+    ...Platform.select({
+      web: {
+        cursor: 'not-allowed',
+      },
+    }),
+  },
+  
+  // Header specific styles
+  headerSafeArea: {
+    width: '100%',
+    zIndex: ZIndex.header,
+  },
+  
+  headerElevated: {
+    ...Platform.select({
+      ios: {
+        shadowColor: Colors.black,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 5,
+      },
+      android: {
+        elevation: 4,
+      },
+      web: {
+        boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.06)',
+      },
+    }),
+  },
+  
+  headerContainer: {
+    height: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.large,
+  },
+  
+  headerLeftSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  
+  headerRightSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  
+  headerIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: Spacing.medium,
+  },
+  
+  headerLogoButton: {
+    height: 40,
+    width: 100,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    marginRight: Spacing.medium,
+  },
+  
+  headerTitle: {
+    fontSize: Typography.size.large,
+    fontWeight: Typography.weight.semibold,
+    flex: 1,
+  },
+  
+  headerLogoImage: {
+    height: 90,
+    width: 90,
+  },
+  
+  headerBackIcon: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  
+  headerBackArrow: {
+    width: 10,
+    height: 10,
+    borderLeftWidth: 2,
+    borderBottomWidth: 2,
+    borderColor: Colors.black,
+    transform: [{ rotate: '45deg' }, { translateX: 2 }],
+  },
+  
+  headerIndicator: {
+    alignItems: 'center',
+    paddingBottom: 4,
+  },
+  
+  headerIndicatorInner: {
+    width: 40,
+    height: 3,
+    backgroundColor: Colors.primaryLight,
+    borderRadius: 2,
+  },
+  
+  // HomeScreen specific styles
+  homeContainer: {
+    flex: 1,
+    backgroundColor: '#f7f9fc', // Lighter, clinical background
+  },
+  
+  homeContent: {
+    flex: 1,
+  },
+  
+  homeScrollView: {
+    flex: 1,
+  },
+  
+  homeScrollContent: {
+    padding: Spacing.large,
+    paddingBottom: Spacing.xxlarge,
+  },
+  
+  homeWelcomeSection: {
+    marginBottom: Spacing.large,
+  },
+  
+  homeWelcomeContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  
+  homeWelcomeDate: {
+    fontSize: Typography.size.small,
+    color: Colors.gray,
+    marginBottom: Spacing.small,
+  },
+  
+  homeWelcomeTitle: {
+    fontSize: Typography.size.xxlarge,
+    fontWeight: Typography.weight.bold,
+    color: Colors.black,
+    marginBottom: Spacing.tiny,
+  },
+  
+  homeWelcomeSubtitle: {
+    fontSize: Typography.size.medium,
+    color: Colors.gray,
+  },
+  
+  homeLogoContainer: {
+    marginLeft: Spacing.medium,
+  },
+  
+  homeLogo: {
+    width: 50,
+    height: 50,
+    borderRadius: 12,
+    backgroundColor: Colors.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 6,
+    ...Shadows.medium,
+    overflow: 'hidden',
+  },
+  
+  homeLogoImage: {
+    width: '100%',
+    height: '100%',
+  },
+  
+  homeMainActionCard: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.large,
+    padding: Spacing.large,
+    marginBottom: Spacing.large,
+    ...Shadows.medium,
+  },
+  
+  homeCardHeader: {
+    marginBottom: Spacing.large,
+  },
+  
+  homeCardTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.small,
+  },
+  
+  homeCardTitleIcon: {
+    width: 4,
+    height: 18,
+    backgroundColor: Colors.primary,
+    borderRadius: 2,
+    marginRight: Spacing.small,
+  },
+  
+  homeCardTitle: {
+    fontSize: Typography.size.large,
+    fontWeight: Typography.weight.bold,
+    color: Colors.black,
+  },
+  
+  homeCardSubtitle: {
+    fontSize: Typography.size.medium,
+    color: Colors.gray,
+    paddingLeft: Spacing.small + 4,
+  },
+  
+  homeDocumentWorkflow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.large,
+    paddingHorizontal: Spacing.small,
+  },
+  
+  homeWorkflowStep: {
+    alignItems: 'center',
+  },
+  
+  homeStepIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Spacing.small,
+    ...Shadows.soft,
+  },
+  
+  homeUploadIcon: {
+    backgroundColor: '#e8f4fc', // Light blue
+  },
+  
+  homeReviewIcon: {
+    backgroundColor: '#e8f7ef', // Light green
+  },
+  
+  homePdfIcon: {
+    backgroundColor: '#fbeae9', // Light red
+  },
+  
+  homeStepText: {
+    fontSize: Typography.size.small,
+    fontWeight: Typography.weight.medium,
+    color: Colors.black,
+  },
+  
+  homeStepConnector: {
+    height: 1,
+    flex: 1,
+    backgroundColor: '#e2e8f0',
+    marginHorizontal: Spacing.small,
+  },
+  
+  homeBeginButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.medium,
+    padding: Spacing.medium,
+    alignItems: 'center',
+    ...Shadows.soft,
+  },
+  
+  homeBeginButtonText: {
+    color: Colors.white,
+    fontSize: Typography.size.medium,
+    fontWeight: Typography.weight.semibold,
+  },
+  
+  homeQuickActions: {
+    marginBottom: Spacing.large,
+  },
+  
+  homeSectionTitle: {
+    fontSize: Typography.size.large,
+    fontWeight: Typography.weight.semibold,
+    color: Colors.black,
+    marginBottom: Spacing.medium,
+  },
+  
+  homeActionButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  
+  homeActionButton: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.medium,
+    padding: Spacing.medium,
+    alignItems: 'center',
+    width: '48%',
+    ...Shadows.soft,
+  },
+  
+  homeActionIcon: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Spacing.small,
+  },
+  
+  homeActionUploadIcon: {
+    backgroundColor: '#e8f4fc', // Light blue
+  },
+  
+  homeActionFillFormIcon: {
+    backgroundColor: '#e8f7ef', // Light green
+  },
+  
+  homeActionLabel: {
+    fontSize: Typography.size.small,
+    fontWeight: Typography.weight.medium,
+    color: Colors.black,
+  },
+  
+  homeSystemInfo: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius.medium,
+    padding: Spacing.large,
+    ...Shadows.soft,
+  },
+  
+  homeSystemInfoTitle: {
+    fontSize: Typography.size.medium,
+    fontWeight: Typography.weight.semibold,
+    color: Colors.black,
+    marginBottom: Spacing.medium,
+  },
+  
+  homeInfoRow: {
+    flexDirection: 'row',
+    marginBottom: Spacing.medium,
+  },
+  
+  homeInfoIcon: {
+    marginRight: Spacing.small,
+    marginTop: 2,
+  },
+  
+  homeSystemInfoText: {
+    flex: 1,
+    fontSize: Typography.size.small,
+    color: Colors.gray,
+    lineHeight: 20,
+  },
   
 });
 

@@ -41,11 +41,6 @@ class PDFProcessorService {
     }
   }
   
-  configureOllama(baseUrl, model) {
-    this.ollamaService.setBaseUrl(baseUrl);
-    this.ollamaService.setDefaultModel(model);
-  }
-  
   cancelProcessing() {
     if (this.isProcessing) {
       this.textExtractionService.cancel();
@@ -66,21 +61,6 @@ class PDFProcessorService {
       console.log('Processing document:', name);
       
       this.updateProgress('processing', 0.01, 'Starting', 'Beginning document processing');
-      
-      // Check AI availability
-      try {
-        this.updateProgress('processing', 0.05, 'Checking AI', 'Verifying AI model availability');
-        
-        const isConnected = await this.ollamaService.testConnection();
-        if (!isConnected) {
-          this.updateProgress('warning', 0.1, 'AI Unavailable', 'Ollama server not detected');
-        } else {
-          await this.ollamaService.initialize();
-          this.updateProgress('processing', 0.1, 'AI Ready', `Using model: ${this.ollamaService.defaultModel}`);
-        }
-      } catch (ollamaError) {
-        this.updateProgress('warning', 0.1, 'AI Check Failed', `Cannot connect to AI: ${ollamaError.message}`);
-      }
       
       // Extract text using OCR
       this.updateProgress('processing', 0.15, 'Text Extraction', 'Starting OCR processing');
@@ -107,40 +87,32 @@ class PDFProcessorService {
         try {
           this.updateProgress('processing', 0.35, 'AI Extraction', 'Starting AI information extraction');
           
-          const testConnection = await this.ollamaService.testConnection();
+          const extractedInfo = await this.ollamaService.extractInformation(extractedText);
           
-          if (testConnection) {
-            const extractedInfo = await this.ollamaService.extractInformation(extractedText);
+          this.updateProgress('processing', 0.8, 'AI Complete', 'AI extraction completed successfully');
+          
+          if (extractedInfo && extractedInfo.extractionMethod !== 'failed') {
+            console.log('AI extraction successful');
+            formData = { ...formData, ...extractedInfo };
             
-            this.updateProgress('processing', 0.8, 'AI Complete', 'AI extraction completed successfully');
-            
-            if (extractedInfo && extractedInfo.extractionMethod !== 'failed') {
-              console.log('AI extraction successful');
-              formData = { ...formData, ...extractedInfo };
-              
-              if (formData.patientName) {
-                this.updateProgress('processing', 0.85, 'Patient Identified', `Found patient: ${formData.patientName}`);
-              }
-            } else {
-              console.error('AI extraction failed:', extractedInfo?.error || 'Unknown error');
-              this.updateProgress('warning', 0.8, 'Extraction Issues', 'AI had trouble identifying information');
-              formData.extractionMethod = 'failed';
-              formData.error = extractedInfo?.error || 'Unknown error';
-              
-              if (extractedInfo?.rawOutput) {
-                formData.rawOutput = extractedInfo.rawOutput;
-              }
+            if (formData.patientName) {
+              this.updateProgress('processing', 0.85, 'Patient Identified', `Found patient: ${formData.patientName}`);
             }
           } else {
-            this.updateProgress('warning', 0.5, 'AI Unavailable', 'Could not connect to Ollama service');
-            formData.extractionMethod = 'unavailable';
-            formData.error = 'Ollama service is not available';
+            console.error('AI extraction failed:', extractedInfo?.error || 'Unknown error');
+            this.updateProgress('warning', 0.8, 'Extraction Issues', 'AI had trouble identifying information');
+            formData.extractionMethod = 'failed';
+            formData.error = extractedInfo?.error || 'Unknown error';
+            
+            if (extractedInfo?.rawOutput) {
+              formData.rawOutput = extractedInfo.rawOutput;
+            }
           }
         } catch (error) {
           console.error('Error in AI extraction:', error);
-          this.updateProgress('error', 0.5, 'AI Error', `Extraction error: ${error.message}`);
-          formData.extractionMethod = 'error';
-          formData.error = error.message;
+          this.updateProgress('warning', 0.5, 'AI Unavailable', `Could not connect to AI: ${error.message}`);
+          formData.extractionMethod = 'unavailable';
+          formData.error = `AI service unavailable: ${error.message}`;
         }
       } else {
         console.error('No text was extracted from the document');

@@ -14,7 +14,7 @@ import {
   Image
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import EnhancedHeader from '../components/EnhancedHeader';
+import EnhancedHeader from '../components/Header';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../styles';
 import * as FileSystem from 'expo-file-system';
 import { isWeb } from '../utils/platform';

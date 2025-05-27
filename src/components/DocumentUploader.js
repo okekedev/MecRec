@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   Pressable,
   ActivityIndicator,
   Alert,
@@ -12,7 +11,7 @@ import { isWeb } from '../utils/platform';
 import { pickPdfDocument, saveDocumentToAppStorage } from '../utils/documentUtils';
 import PDFProcessorService from '../services/PDFProcessorService';
 import ProgressOverlay from './ProgressOverlay';
-import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../styles';
+import { Colors, CommonStyles } from '../styles';
 import { MaterialIcons } from '@expo/vector-icons';
 
 const DocumentUploader = ({
@@ -142,29 +141,29 @@ const DocumentUploader = ({
   };
 
   return (
-    <View style={styles.container}>
+    <View style={CommonStyles.uploaderContainer}>
       <Pressable
         style={({pressed}) => [
-          styles.uploadButton,
-          pressed && styles.buttonPressed
+          CommonStyles.uploadButton,
+          pressed && CommonStyles.uploadButtonPressed
         ]}
         onPress={handleDocumentPick}
         disabled={loading}
       >
-        <MaterialIcons name="upload-file" size={24} color="#ffffff" style={styles.uploadIcon} />
-        <Text style={styles.uploadButtonText}>
+        <MaterialIcons name="upload-file" size={24} color="#ffffff" style={CommonStyles.uploadIcon} />
+        <Text style={CommonStyles.uploadButtonText}>
           {document ? 'Change Document' : 'Select PDF Document'}
         </Text>
       </Pressable>
 
       {document && (
-        <View style={styles.documentInfo}>
-          <MaterialIcons name="description" size={24} color={Colors.primary} style={styles.documentIcon} />
-          <View style={styles.documentDetails}>
-            <Text style={styles.documentName} numberOfLines={1} ellipsizeMode="middle">
+        <View style={CommonStyles.documentInfo}>
+          <MaterialIcons name="description" size={24} color={Colors.primary} style={CommonStyles.documentIcon} />
+          <View style={CommonStyles.documentDetails}>
+            <Text style={CommonStyles.documentName}>
               {document.name}
             </Text>
-            <Text style={styles.documentSize}>
+            <Text style={CommonStyles.documentSize}>
               {Math.round(document.size / 1024)} KB
             </Text>
           </View>
@@ -173,9 +172,9 @@ const DocumentUploader = ({
 
       <Pressable
         style={({pressed}) => [
-          styles.processButton, 
-          (!document || loading) && styles.disabledButton,
-          pressed && !loading && document && styles.buttonPressed
+          CommonStyles.processButton, 
+          (!document || loading) && CommonStyles.uploaderDisabledButton,
+          pressed && !loading && document && CommonStyles.uploadButtonPressed
         ]}
         onPress={handleProcessDocument}
         disabled={!document || loading}
@@ -184,8 +183,8 @@ const DocumentUploader = ({
           <ActivityIndicator color="#ffffff" />
         ) : (
           <>
-            <MaterialIcons name="send-to-mobile" size={24} color="#ffffff" style={styles.processIcon} />
-            <Text style={styles.processButtonText}>Process Document</Text>
+            <MaterialIcons name="send-to-mobile" size={24} color="#ffffff" style={CommonStyles.processIcon} />
+            <Text style={CommonStyles.processButtonText}>Process Document</Text>
           </>
         )}
       </Pressable>
@@ -201,94 +200,5 @@ const DocumentUploader = ({
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    alignItems: 'center',
-    width: '100%',
-  },
-  uploadButton: {
-    backgroundColor: Colors.primary,
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 10,
-    marginBottom: 20,
-    width: '100%',
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    ...(isWeb && {
-      cursor: 'pointer',
-      boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
-    }),
-  },
-  buttonPressed: {
-    opacity: 0.8,
-    transform: isWeb ? [{ scale: 0.98 }] : [],
-  },
-  uploadIcon: {
-    marginRight: 10,
-  },
-  uploadButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  documentInfo: {
-    backgroundColor: '#ffffff',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 20,
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  documentIcon: {
-    marginRight: 10,
-  },
-  documentDetails: {
-    flex: 1,
-  },
-  documentName: {
-    fontSize: 16,
-    fontWeight: '500',
-    marginBottom: 5,
-    maxWidth: '90%',
-  },
-  documentSize: {
-    fontSize: 14,
-    color: '#7f8c8d',
-  },
-  processButton: {
-    backgroundColor: Colors.secondary,
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 10,
-    width: '100%',
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    ...(isWeb && {
-      cursor: 'pointer',
-      boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
-    }),
-  },
-  processIcon: {
-    marginRight: 10,
-  },
-  processButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  disabledButton: {
-    backgroundColor: '#95a5a6',
-    ...(isWeb && {
-      cursor: 'not-allowed',
-    }),
-  },
-});
 
 export default DocumentUploader;

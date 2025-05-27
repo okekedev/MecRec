@@ -14,7 +14,7 @@ import {
 import { useRoute, useNavigation } from '@react-navigation/native';
 import PDFProcessorService from '../services/PDFProcessorService';
 import MedicalFieldService from '../services/MedicalFieldService';
-import EnhancedHeader from '../components/EnhancedHeader';
+import EnhancedHeader from '../components/Header';
 import ReviewField from '../components/ReviewField';
 import { Colors, CommonStyles } from '../styles';
 import * as Animations from '../animations';

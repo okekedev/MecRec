@@ -10,8 +10,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import HomeScreen from '../screens/HomeScreen';
 import DocumentUploadScreen from '../screens/DocumentUploadScreen';
 import DocumentReviewScreen from '../screens/DocumentReviewScreen';
-import PreviewPDFScreen from '../screens/PreviewPDFScreen'; // Fixed import
-import SettingsScreen from '../screens/SettingsScreen';
+import PreviewPDFScreen from '../screens/PreviewPDFScreen';
 
 const Stack = createStackNavigator();
 
@@ -84,7 +83,7 @@ const AppNavigator = () => {
         {/* PDF generation and preview */}
         <Stack.Screen 
           name="PDFPreview" 
-          component={PreviewPDFScreen} // Fixed component reference
+          component={PreviewPDFScreen}
           options={{ 
             title: 'Clinical Report',
             // Slide up animation for report preview
@@ -104,28 +103,6 @@ const AppNavigator = () => {
                   inputRange: [0, 1],
                   outputRange: [0, 0.5],
                 }),
-              },
-            }),
-          }}
-        />
-        
-        {/* Settings screen */}
-        <Stack.Screen 
-          name="Settings" 
-          component={SettingsScreen}
-          options={{ 
-            title: 'Settings',
-            // Slide in from right animation
-            cardStyleInterpolator: ({ current, layouts }) => ({
-              cardStyle: {
-                transform: [
-                  {
-                    translateX: current.progress.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [layouts.screen.width, 0],
-                    }),
-                  },
-                ],
               },
             }),
           }}
