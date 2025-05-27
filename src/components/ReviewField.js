@@ -1,4 +1,4 @@
-// Updated ReviewField.js - Using consolidated styles
+// ReviewField.js - Now using MedicalFieldService and global CommonStyles
 import React, { useState } from 'react';
 import {
   View,
@@ -23,29 +23,8 @@ const ReviewField = ({
   const [showReasoning, setShowReasoning] = useState(false);
   const [expanded] = useState(new Animated.Value(0));
   
+  // Get service instance
   const medicalFieldService = MedicalFieldService.getInstance();
-  
-  // Get field metadata from service
-  const fieldDefinition = medicalFieldService.getFieldByKey(fieldKey);
-  
-  if (!fieldDefinition) {
-    console.warn(`Unknown field key: ${fieldKey}`);
-    return null;
-  }
-  
-  // Get the numbered label from service
-  const numberedLabel = medicalFieldService.getNumberedLabel(fieldKey);
-  
-  // UI logic: determine if this field should be multiline based on the field type
-  const isMultiline = [
-    'history', 
-    'mentalHealthState', 
-    'additionalComments',
-    'labsAndVitals',
-    'wounds',
-    'medications',
-    'cardiacDrips'
-  ].includes(fieldKey);
   
   // Toggle reasoning visibility with animation
   const toggleReasoning = () => {
@@ -66,11 +45,17 @@ const ReviewField = ({
     outputRange: [0, 200]
   });
   
+  // Determine if field needs multiline input
+  const isMultiline = ['history', 'mentalHealthState', 'additionalComments', 'labsAndVitals', 'wounds', 'medications'].includes(fieldKey);
+  
+  // Get numbered label from service
+  const numberedLabel = medicalFieldService.getNumberedLabel(fieldKey);
+  
   return (
     <View style={CommonStyles.reviewFieldContainer}>
       <View style={CommonStyles.reviewFieldCard}>
         {/* Header with field name and review toggle */}
-        <View style={CommonStyles.reviewFieldHeader}>
+        <View style={CommonStyles.reviewFieldHeaderRow}>
           <View style={CommonStyles.reviewFieldLabelContainer}>
             <View style={[
               CommonStyles.reviewFieldStatusIndicator,
@@ -88,9 +73,9 @@ const ReviewField = ({
             <Switch
               value={isReviewed}
               onValueChange={onReviewChange}
-              trackColor={{ false: '#eceef1', true: Colors.primaryLight }}
-              thumbColor={isReviewed ? Colors.primary : '#9e9e9e'}
-              ios_backgroundColor="#eceef1"
+              trackColor={{ false: Colors.reviewBorder, true: Colors.primaryLight }}
+              thumbColor={isReviewed ? Colors.primary : Colors.gray}
+              ios_backgroundColor={Colors.reviewBorder}
             />
           </View>
         </View>
@@ -103,52 +88,55 @@ const ReviewField = ({
           <TextInput
             style={[
               CommonStyles.reviewFieldInput,
-              isMultiline && CommonStyles.reviewFieldMultilineInput,
+              isMultiline && CommonStyles.multilineInput,
               isReviewed && CommonStyles.reviewFieldReviewedInput
             ]}
             value={value}
             onChangeText={onValueChange}
-            placeholder={`No ${fieldDefinition.label.toLowerCase()} found`}
-            placeholderTextColor="#9e9e9e"
+            placeholder="No information found"
+            placeholderTextColor={Colors.gray}
             multiline={isMultiline}
             numberOfLines={isMultiline ? 3 : 1}
+            textAlignVertical={isMultiline ? 'top' : 'center'}
           />
         </View>
         
         {/* AI Reasoning section */}
         {aiReasoning && aiReasoning !== 'No reasoning provided' && (
-          <View style={CommonStyles.aiReasoningContainer}>
+          <View style={CommonStyles.reviewFieldReasoningContainer}>
             <TouchableOpacity
-              style={CommonStyles.aiReasoningToggle}
+              style={CommonStyles.reviewFieldReasoningToggle}
               onPress={toggleReasoning}
+              activeOpacity={0.7}
             >
-              <View style={CommonStyles.aiReasoningToggleContent}>
+              <View style={CommonStyles.reviewFieldReasoningToggleContent}>
                 <MaterialCommunityIcons 
                   name="brain" 
                   size={16} 
                   color={Colors.secondary} 
-                  style={CommonStyles.aiReasoningIcon}
+                  style={CommonStyles.reviewFieldReasoningIcon}
                 />
-                <Text style={CommonStyles.aiReasoningToggleText}>
+                <Text style={CommonStyles.reviewFieldReasoningToggleText}>
                   {showReasoning ? 'Hide AI Reasoning' : 'Show AI Reasoning'}
                 </Text>
-                <View style={[
-                  CommonStyles.aiReasoningArrow,
-                  showReasoning && CommonStyles.aiReasoningArrowUp
-                ]} />
+                <MaterialCommunityIcons
+                  name={showReasoning ? "chevron-up" : "chevron-down"}
+                  size={16}
+                  color={Colors.secondary}
+                />
               </View>
             </TouchableOpacity>
             
             <Animated.View 
               style={[
-                CommonStyles.aiReasoningContentContainer,
+                CommonStyles.reviewFieldReasoningContentContainer,
                 { maxHeight }
               ]}
             >
-              <View style={CommonStyles.aiReasoningContent}>
-                <Text style={CommonStyles.aiReasoningLabel}>AI Explanation:</Text>
-                <View style={CommonStyles.aiReasoningTextBox}>
-                  <Text style={CommonStyles.aiReasoningText}>
+              <View style={CommonStyles.reviewFieldReasoningContent}>
+                <Text style={CommonStyles.reviewFieldReasoningLabel}>AI Explanation:</Text>
+                <View style={CommonStyles.reviewFieldReasoningTextBox}>
+                  <Text style={CommonStyles.reviewFieldReasoningText}>
                     {aiReasoning}
                   </Text>
                 </View>

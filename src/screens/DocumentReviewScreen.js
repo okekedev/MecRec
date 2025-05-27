@@ -1,4 +1,4 @@
-// src/screens/DocumentReviewScreen.js - Using consolidated styles
+// DocumentReviewScreen.js - Using consolidated styles and proper service architecture
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -65,7 +65,7 @@ const DocumentReviewScreen = () => {
         
         setDocumentData(document);
         
-        // Use service to get clean form data
+        // Use service to get clean form data - service handles field order and structure
         const fieldOrder = medicalFieldService.getFieldOrder();
         const cleanFormData = {};
         
@@ -115,7 +115,7 @@ const DocumentReviewScreen = () => {
     }));
   };
   
-  // Calculate progress
+  // Calculate progress - uses service to get field order
   const calculateProgress = () => {
     const fieldOrder = medicalFieldService.getFieldOrder();
     const total = fieldOrder.length;
@@ -124,13 +124,13 @@ const DocumentReviewScreen = () => {
     return total > 0 ? reviewed / total : 0;
   };
   
-  // Check if all fields are reviewed
+  // Check if all fields are reviewed - uses service
   const allFieldsReviewed = () => {
     const fieldOrder = medicalFieldService.getFieldOrder();
     return fieldOrder.every(fieldKey => reviewedFields[fieldKey]);
   };
   
-  // Mark all fields as reviewed
+  // Mark all fields as reviewed - uses service for field list
   const markAllAsReviewed = () => {
     const allReviewed = {};
     medicalFieldService.getFieldOrder().forEach(fieldKey => {
@@ -181,12 +181,13 @@ const DocumentReviewScreen = () => {
     );
   }
   
+  // Get field information from service
   const fieldOrder = medicalFieldService.getFieldOrder();
   const reviewedCount = fieldOrder.filter(fieldKey => reviewedFields[fieldKey]).length;
   const progressPercent = Math.round(calculateProgress() * 100);
   
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#f7f9fc' }}>
+    <SafeAreaView style={CommonStyles.screenContainer}>
       <EnhancedHeader 
         title="Clinical Document Review" 
         showBackButton={true}
@@ -196,7 +197,9 @@ const DocumentReviewScreen = () => {
       <View style={CommonStyles.headerContainer}>
         <View style={CommonStyles.headerTextContainer}>
           <Text style={CommonStyles.headerText}>Review Progress</Text>
-          <Text style={CommonStyles.headerPercentage}>{progressPercent}%</Text>
+          <Text style={[CommonStyles.headerPercentage, { color: getProgressColor() }]}>
+            {progressPercent}%
+          </Text>
         </View>
         <View style={CommonStyles.progressBarContainer}>
           <Animated.View 
@@ -214,115 +217,127 @@ const DocumentReviewScreen = () => {
         </Text>
       </View>
       
-      <ScrollView style={{ flex: 1 }}>
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
         <Animated.View style={{
           opacity: fadeAnim,
-          transform: [{ translateY: slideAnim }],
-          padding: 20
+          transform: [{ translateY: slideAnim }]
         }}>
-          {/* Document Header using consolidated styles */}
-          <View style={CommonStyles.sectionContainer}>
-            <Text style={CommonStyles.sectionTitle}>{documentData?.name}</Text>
-            <Text style={[CommonStyles.sectionDescription, { marginBottom: 0 }]}>
-              Processed on {new Date(documentData?.date).toLocaleDateString()}
-            </Text>
-            
-            {/* Extraction error warning using consolidated message styles */}
-            {extractionError && (
-              <View style={CommonStyles.errorContainer}>
-                <Text style={[CommonStyles.messageTitle, CommonStyles.errorTitle]}>AI Extraction Issue</Text>
-                <Text style={CommonStyles.messageText}>
-                  {extractionError}. Please review all fields carefully and update as needed.
-                </Text>
-              </View>
-            )}
-          </View>
-          
-          {/* Clinical Information Section using consolidated styles */}
-          <View style={CommonStyles.sectionContainer}>
-            <View style={CommonStyles.sectionTitleContainer}>
-              <View style={CommonStyles.sectionTitleIcon} />
-              <Text style={CommonStyles.sectionTitle}>Clinical Information Review</Text>
+          <View style={CommonStyles.contentContainer}>
+            {/* Document Header using consolidated styles */}
+            <View style={CommonStyles.sectionContainer}>
+              <Text style={CommonStyles.sectionTitle}>{documentData?.name}</Text>
+              <Text style={[CommonStyles.sectionDescription, { marginBottom: 0 }]}>
+                Processed on {new Date(documentData?.date).toLocaleDateString()}
+              </Text>
+              
+              {/* Extraction error warning using consolidated message styles */}
+              {extractionError && (
+                <View style={CommonStyles.errorContainer}>
+                  <Text style={[CommonStyles.messageTitle, CommonStyles.errorTitle]}>
+                    AI Extraction Issue
+                  </Text>
+                  <Text style={CommonStyles.messageText}>
+                    {extractionError}. Please review all fields carefully and update as needed.
+                  </Text>
+                </View>
+              )}
             </View>
             
-            <Text style={CommonStyles.sectionDescription}>
-              Review and verify the extracted information below. Each field shows AI reasoning 
-              to help you understand how the information was identified.
-            </Text>
+            {/* Clinical Information Section using consolidated styles */}
+            <View style={CommonStyles.sectionContainer}>
+              <View style={CommonStyles.sectionTitleContainer}>
+                <View style={CommonStyles.sectionTitleIcon} />
+                <Text style={CommonStyles.sectionTitle}>Clinical Information Review</Text>
+              </View>
+              
+              <Text style={CommonStyles.sectionDescription}>
+                Review and verify the extracted information below. Each field shows AI reasoning 
+                to help you understand how the information was identified.
+              </Text>
+              
+              <View style={{ marginBottom: 20 }}>
+                {/* Use service to get ordered fields */}
+                {fieldOrder.map(fieldKey => {
+                  // Get AI reasoning for this field from PDF processor service
+                  const fieldReference = pdfProcessor.getFieldReference(documentId, fieldKey);
+                  const aiReasoning = fieldReference?.explanation || 'No reasoning provided';
+                  
+                  return (
+                    <ReviewField
+                      key={fieldKey}
+                      fieldKey={fieldKey}
+                      value={formData[fieldKey] || ''}
+                      onValueChange={(newValue) => handleFieldChange(fieldKey, newValue)}
+                      isReviewed={reviewedFields[fieldKey] || false}
+                      onReviewChange={(newValue) => handleReviewToggle(fieldKey, newValue)}
+                      aiReasoning={aiReasoning}
+                    />
+                  );
+                })}
+              </View>
+              
+              <TouchableOpacity
+                style={CommonStyles.secondaryButton}
+                onPress={markAllAsReviewed}
+                activeOpacity={0.8}
+              >
+                <Text style={CommonStyles.secondaryButtonText}>Mark All as Reviewed</Text>
+              </TouchableOpacity>
+            </View>
             
-            <View style={{ marginBottom: 20 }}>
-              {/* Use service to get ordered fields */}
-              {fieldOrder.map(fieldKey => {
-                // Get AI reasoning for this field
-                const fieldReference = pdfProcessor.getFieldReference(documentId, fieldKey);
-                const aiReasoning = fieldReference?.explanation || 'No reasoning provided';
+            {/* Reviewer Authentication using consolidated styles */}
+            <View style={CommonStyles.sectionContainer}>
+              <View style={CommonStyles.sectionTitleContainer}>
+                <View style={[CommonStyles.sectionTitleIcon, { backgroundColor: Colors.secondary }]} />
+                <Text style={CommonStyles.sectionTitle}>Clinician Authentication</Text>
+              </View>
+              
+              <View style={{ marginBottom: 20 }}>
+                <Text style={CommonStyles.inputLabel}>Reviewer Name*</Text>
+                <TextInput
+                  style={CommonStyles.input}
+                  value={reviewerName}
+                  onChangeText={setReviewerName}
+                  placeholder="Enter your full name"
+                  placeholderTextColor={Colors.gray}
+                />
                 
-                return (
-                  <ReviewField
-                    key={fieldKey}
-                    fieldKey={fieldKey}
-                    value={formData[fieldKey] || ''}
-                    onValueChange={(newValue) => handleFieldChange(fieldKey, newValue)}
-                    isReviewed={reviewedFields[fieldKey] || false}
-                    onReviewChange={(newValue) => handleReviewToggle(fieldKey, newValue)}
-                    aiReasoning={aiReasoning}
-                  />
-                );
-              })}
-            </View>
-            
-            <TouchableOpacity
-              style={CommonStyles.secondaryButton}
-              onPress={markAllAsReviewed}
-            >
-              <Text style={CommonStyles.secondaryButtonText}>Mark All as Reviewed</Text>
-            </TouchableOpacity>
-          </View>
-          
-          {/* Reviewer Authentication using consolidated styles */}
-          <View style={CommonStyles.sectionContainer}>
-            <View style={CommonStyles.sectionTitleContainer}>
-              <View style={[CommonStyles.sectionTitleIcon, { backgroundColor: Colors.secondary }]} />
-              <Text style={CommonStyles.sectionTitle}>Clinician Authentication</Text>
-            </View>
-            
-            <View style={{ marginBottom: 20 }}>
-              <Text style={CommonStyles.inputLabel}>Reviewer Name*</Text>
-              <TextInput
-                style={CommonStyles.input}
-                value={reviewerName}
-                onChangeText={setReviewerName}
-                placeholder="Enter your full name"
-                placeholderTextColor={Colors.gray}
-              />
-              
-              <Text style={CommonStyles.inputLabel}>Credentials</Text>
-              <TextInput
-                style={CommonStyles.input}
-                value={reviewerCredentials}
-                onChangeText={setReviewerCredentials}
-                placeholder="e.g., RN, BSN, CPN"
-                placeholderTextColor={Colors.gray}
-              />
-              
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
-                <Text style={[CommonStyles.inputLabel, { marginBottom: 0, marginRight: 10 }]}>Review Date:</Text>
-                <Text style={{ fontSize: 16, color: Colors.gray }}>
-                  {new Date().toLocaleDateString()}
-                </Text>
+                <Text style={CommonStyles.inputLabel}>Credentials</Text>
+                <TextInput
+                  style={CommonStyles.input}
+                  value={reviewerCredentials}
+                  onChangeText={setReviewerCredentials}
+                  placeholder="e.g., RN, BSN, CPN"
+                  placeholderTextColor={Colors.gray}
+                />
+                
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10 }}>
+                  <Text style={[CommonStyles.inputLabel, { marginBottom: 0, marginRight: 10 }]}>
+                    Review Date:
+                  </Text>
+                  <Text style={{ fontSize: 16, color: Colors.gray }}>
+                    {new Date().toLocaleDateString()}
+                  </Text>
+                </View>
               </View>
+              
+              <TouchableOpacity
+                style={[
+                  CommonStyles.primaryButton,
+                  (!allFieldsReviewed() || !reviewerName.trim()) && CommonStyles.disabledButton
+                ]}
+                onPress={generatePDF}
+                disabled={!allFieldsReviewed() || !reviewerName.trim()}
+                activeOpacity={0.8}
+              >
+                <Text style={[
+                  CommonStyles.primaryButtonText,
+                  (!allFieldsReviewed() || !reviewerName.trim()) && CommonStyles.disabledButtonText
+                ]}>
+                  Generate Clinical Report
+                </Text>
+              </TouchableOpacity>
             </View>
-            
-            <TouchableOpacity
-              style={[
-                CommonStyles.primaryButton,
-                (!allFieldsReviewed() || !reviewerName.trim()) && CommonStyles.disabledButton
-              ]}
-              onPress={generatePDF}
-              disabled={!allFieldsReviewed() || !reviewerName.trim()}
-            >
-              <Text style={CommonStyles.primaryButtonText}>Generate Clinical Report</Text>
-            </TouchableOpacity>
           </View>
         </Animated.View>
       </ScrollView>
