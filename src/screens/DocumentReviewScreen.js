@@ -1,4 +1,4 @@
-// Updated DocumentReviewScreen.js with new field names and enhanced reference display
+// Updated DocumentReviewScreen.js with AI reasoning approach
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -45,17 +45,13 @@ const DocumentReviewScreen = () => {
       try {
         setLoading(true);
         
-        // Get the PDF processor service
         const processorService = PDFProcessorService.getInstance();
-        
-        // Load the document by ID
         const document = await processorService.getDocumentById(documentId);
         
         if (!document) {
           throw new Error('Document not found');
         }
         
-        // Debug logging
         console.log('Document loaded:', documentId);
         console.log('Form data fields:', Object.keys(document.formData).filter(k => !k.startsWith('_')));
         
@@ -67,12 +63,10 @@ const DocumentReviewScreen = () => {
           setExtractionError(document.formData.error || 'Error during information extraction');
         }
         
-        // Set document data
         setDocumentData(document);
         
-        // Set form data
+        // Set form data - filter out metadata fields
         if (document.formData) {
-          // Filter out metadata fields for the form
           const filteredFormData = {};
           Object.keys(document.formData).forEach(key => {
             if (!key.startsWith('_') && key !== 'extractionMethod' && key !== 'extractionDate' && key !== 'error') {
@@ -92,7 +86,7 @@ const DocumentReviewScreen = () => {
         
         setLoading(false);
         
-        // Start animations after loading
+        // Start animations
         Animated.parallel([
           Animations.fadeIn(fadeAnim, 400),
           Animations.slideInUp(slideAnim, 30, 500)
@@ -162,7 +156,6 @@ const DocumentReviewScreen = () => {
       return;
     }
     
-    // Navigate to PDF preview with the data
     navigation.navigate('PDFPreview', {
       documentId,
       formData,
@@ -172,7 +165,7 @@ const DocumentReviewScreen = () => {
     });
   };
   
-  // Enhanced field label formatting with updated names
+  // Field label formatting
   const formatLabel = (camelCase) => {
     const labelMap = {
       'patientName': 'Patient Name',
@@ -183,9 +176,9 @@ const DocumentReviewScreen = () => {
       'pcp': 'Primary Care Provider (PCP)',
       'dc': 'Discharge (DC)',
       'wounds': 'Wounds/Injuries',
-      'medications': 'Medications & Antibiotics', // Updated
+      'medications': 'Medications & Antibiotics',
       'cardiacDrips': 'Cardiac Medications/Drips',
-      'labsAndVitals': 'Labs & Vital Signs', // Updated
+      'labsAndVitals': 'Labs & Vital Signs',
       'faceToFace': 'Face-to-Face Evaluations',
       'history': 'Medical History',
       'mentalHealthState': 'Mental Health State',
@@ -197,40 +190,36 @@ const DocumentReviewScreen = () => {
       .replace(/^./, str => str.toUpperCase());
   };
   
-  // Modern loading screen
+  // Loading screen
   if (loading) {
     return (
-      <View style={modernStyles.loadingContainer}>
-        <View style={modernStyles.loadingCard}>
+      <View style={styles.loadingContainer}>
+        <View style={styles.loadingCard}>
           <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={modernStyles.loadingText}>Loading medical document</Text>
-          <Text style={modernStyles.loadingSubtext}>Preparing data for review</Text>
+          <Text style={styles.loadingText}>Loading medical document</Text>
+          <Text style={styles.loadingSubtext}>Preparing data for review</Text>
         </View>
       </View>
     );
   }
   
   return (
-    <SafeAreaView style={modernStyles.container}>
+    <SafeAreaView style={styles.container}>
       <EnhancedHeader 
         title="Clinical Document Review" 
         showBackButton={true}
       />
       
-      {/* Progress Bar with percentage */}
-      <View style={modernStyles.progressContainer}>
-        <View style={modernStyles.progressTextContainer}>
-          <Text style={modernStyles.progressText}>
-            Review Progress
-          </Text>
-          <Text style={modernStyles.progressPercentage}>
-            {Math.round(calculateProgress())}%
-          </Text>
+      {/* Progress Bar */}
+      <View style={styles.progressContainer}>
+        <View style={styles.progressTextContainer}>
+          <Text style={styles.progressText}>Review Progress</Text>
+          <Text style={styles.progressPercentage}>{Math.round(calculateProgress())}%</Text>
         </View>
-        <View style={modernStyles.progressBarContainer}>
+        <View style={styles.progressBarContainer}>
           <Animated.View 
             style={[
-              modernStyles.progressBar, 
+              styles.progressBar, 
               { 
                 width: `${calculateProgress()}%`,
                 backgroundColor: calculateProgress() < 30 
@@ -244,83 +233,62 @@ const DocumentReviewScreen = () => {
         </View>
       </View>
       
-      <ScrollView style={modernStyles.scrollView}>
+      <ScrollView style={styles.scrollView}>
         <Animated.View style={{
           opacity: fadeAnim,
           transform: [{ translateY: slideAnim }]
         }}>
-          <View style={modernStyles.content}>
-            <View style={modernStyles.documentHeader}>
-              <Text style={modernStyles.documentName}>{documentData?.name}</Text>
-              <Text style={modernStyles.documentDate}>
+          <View style={styles.content}>
+            <View style={styles.documentHeader}>
+              <Text style={styles.documentName}>{documentData?.name}</Text>
+              <Text style={styles.documentDate}>
                 Processed on {new Date(documentData?.date).toLocaleDateString()}
               </Text>
               
-              {/* Display extraction warning if there was an error */}
+              {/* Extraction error warning */}
               {extractionError && (
-                <View style={modernStyles.extractionErrorContainer}>
-                  <Text style={modernStyles.extractionErrorTitle}>AI Extraction Issue</Text>
-                  <Text style={modernStyles.extractionErrorText}>
+                <View style={styles.extractionErrorContainer}>
+                  <Text style={styles.extractionErrorTitle}>AI Extraction Issue</Text>
+                  <Text style={styles.extractionErrorText}>
                     {extractionError}. Please review all fields carefully and update as needed.
                   </Text>
                 </View>
               )}
             </View>
             
-            <View style={modernStyles.sectionContainer}>
-              <View style={modernStyles.sectionTitleContainer}>
-                <View style={modernStyles.sectionTitleIcon} />
-                <Text style={modernStyles.sectionTitle}>Clinical Information Review</Text>
+            <View style={styles.sectionContainer}>
+              <View style={styles.sectionTitleContainer}>
+                <View style={styles.sectionTitleIcon} />
+                <Text style={styles.sectionTitle}>Clinical Information Review</Text>
               </View>
               
-              <Text style={modernStyles.sectionDescription}>
-                Review and verify the extracted information below. Each field shows enhanced source tracking 
-                to help you understand where the AI found the information in the original document.
+              <Text style={styles.sectionDescription}>
+                Review and verify the extracted information below. Each field shows AI reasoning 
+                to help you understand how the information was identified.
               </Text>
               
-              <View style={modernStyles.fieldsContainer}>
-                {/* Updated field order with new names - prioritize critical patient info */}
+              <View style={styles.fieldsContainer}>
                 {['patientName', 'patientDOB', 'insurance', 'location', 'dx', 'pcp', 'dc', 'wounds', 
                   'medications', 'cardiacDrips', 'labsAndVitals', 'faceToFace', 'history', 
                   'mentalHealthState', 'additionalComments'].map(fieldName => {
-                  // Skip if field doesn't exist in formData
+                  
                   if (!(fieldName in formData)) return null;
                   
-                  // Get enhanced field reference with detailed tracking
+                  // Get AI reasoning for this field
                   const processorService = PDFProcessorService.getInstance();
                   const fieldReference = processorService.getFieldReference(documentId, fieldName);
                   
-                  // Enhanced source information display
-                  let sourceText = '';
-                  let sourceType = '';
-                  let sourceConfidence = '';
-                  
-                  if (fieldReference) {
-                    sourceText = fieldReference.matchedSegment || fieldReference.text || '';
-                    sourceType = fieldReference.location || '';
-                    
-                    // Add confidence and match type information
-                    if (fieldReference.matchType && fieldReference.confidence !== undefined) {
-                      sourceConfidence = `${fieldReference.matchType} match (${Math.round(fieldReference.confidence * 100)}% confidence)`;
-                      if (fieldReference.pageNumber) {
-                        sourceConfidence += ` - Page ${fieldReference.pageNumber}`;
-                      }
-                    }
-                    
-                    // Enhance source type with additional context
-                    if (sourceConfidence) {
-                      sourceType += sourceConfidence ? ` - ${sourceConfidence}` : '';
-                    }
-                  }
+                  // AI reasoning is much simpler
+                  const aiReasoning = fieldReference?.explanation || 'No reasoning provided';
                   
                   // Determine if field needs multiline
                   const needsMultiline = [
                     'history', 
                     'mentalHealthState', 
                     'additionalComments',
-                    'labsAndVitals', // Updated field name
+                    'labsAndVitals',
                     'wounds',
-                    'medications' // Updated field name
+                    'medications'
                   ].includes(fieldName);
                   
                   return (
@@ -331,8 +299,7 @@ const DocumentReviewScreen = () => {
                       onValueChange={(newValue) => handleFieldChange(fieldName, newValue)}
                       isReviewed={reviewedFields[fieldName] || false}
                       onReviewChange={(newValue) => handleReviewToggle(fieldName, newValue)}
-                      sourceText={sourceText}
-                      sourceType={sourceType}
+                      aiReasoning={aiReasoning}
                       multiline={needsMultiline}
                     />
                   );
@@ -340,44 +307,42 @@ const DocumentReviewScreen = () => {
               </View>
               
               <TouchableOpacity
-                style={modernStyles.markAllButton}
+                style={styles.markAllButton}
                 onPress={markAllAsReviewed}
               >
-                <Text style={modernStyles.markAllButtonText}>
-                  Mark All as Reviewed
-                </Text>
+                <Text style={styles.markAllButtonText}>Mark All as Reviewed</Text>
               </TouchableOpacity>
             </View>
             
-            {/* Authentication section */}
-            <View style={modernStyles.sectionContainer}>
-              <View style={modernStyles.sectionTitleContainer}>
-                <View style={[modernStyles.sectionTitleIcon, modernStyles.authIcon]} />
-                <Text style={modernStyles.sectionTitle}>Clinician Authentication</Text>
+            {/* Reviewer Authentication */}
+            <View style={styles.sectionContainer}>
+              <View style={styles.sectionTitleContainer}>
+                <View style={[styles.sectionTitleIcon, styles.authIcon]} />
+                <Text style={styles.sectionTitle}>Clinician Authentication</Text>
               </View>
               
-              <View style={modernStyles.reviewerInfoContainer}>
-                <Text style={modernStyles.inputLabel}>Reviewer Name*</Text>
+              <View style={styles.reviewerInfoContainer}>
+                <Text style={styles.inputLabel}>Reviewer Name*</Text>
                 <TextInput
-                  style={modernStyles.reviewerInput}
+                  style={styles.reviewerInput}
                   value={reviewerName}
                   onChangeText={setReviewerName}
                   placeholder="Enter your full name"
                   placeholderTextColor={Colors.gray}
                 />
                 
-                <Text style={modernStyles.inputLabel}>Credentials</Text>
+                <Text style={styles.inputLabel}>Credentials</Text>
                 <TextInput
-                  style={modernStyles.reviewerInput}
+                  style={styles.reviewerInput}
                   value={reviewerCredentials}
                   onChangeText={setReviewerCredentials}
                   placeholder="e.g., RN, BSN, CPN"
                   placeholderTextColor={Colors.gray}
                 />
                 
-                <View style={modernStyles.reviewDateContainer}>
-                  <Text style={modernStyles.reviewDateLabel}>Review Date:</Text>
-                  <Text style={modernStyles.reviewDate}>
+                <View style={styles.reviewDateContainer}>
+                  <Text style={styles.reviewDateLabel}>Review Date:</Text>
+                  <Text style={styles.reviewDate}>
                     {new Date().toLocaleDateString()}
                   </Text>
                 </View>
@@ -385,15 +350,13 @@ const DocumentReviewScreen = () => {
               
               <TouchableOpacity
                 style={[
-                  modernStyles.generatePDFButton,
-                  (!allFieldsReviewed || !reviewerName.trim()) && modernStyles.disabledButton
+                  styles.generatePDFButton,
+                  (!allFieldsReviewed || !reviewerName.trim()) && styles.disabledButton
                 ]}
                 onPress={generatePDF}
                 disabled={!allFieldsReviewed || !reviewerName.trim()}
               >
-                <Text style={modernStyles.generatePDFButtonText}>
-                  Generate Clinical Report
-                </Text>
+                <Text style={styles.generatePDFButtonText}>Generate Clinical Report</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -403,10 +366,10 @@ const DocumentReviewScreen = () => {
   );
 };
 
-const modernStyles = StyleSheet.create({
+const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f7f9fc', // Lighter, more clinical background
+    backgroundColor: '#f7f9fc',
   },
   loadingContainer: {
     flex: 1,
