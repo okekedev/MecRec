@@ -1,4 +1,4 @@
-// src/screens/DocumentReviewScreen.js - Enhanced with contextual highlighting display
+// src/screens/DocumentReviewScreen.js - No highlighting version
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -188,20 +188,13 @@ const DocumentReviewScreen = () => {
     return Colors.success;
   };
   
-  // ENHANCED: Format highlighted text within context
+  // SIMPLIFIED: Just return the context text as-is, no highlighting logic
   const formatContextText = (block) => {
-    if (!block.context || block.highlightStart === undefined) {
-      return { before: '', highlighted: block.text, after: '' };
-    }
-    
-    const before = block.context.substring(0, block.highlightStart);
-    const highlighted = block.context.substring(
-      block.highlightStart, 
-      block.highlightStart + block.highlightLength
-    );
-    const after = block.context.substring(block.highlightStart + block.highlightLength);
-    
-    return { before, highlighted, after };
+    return { 
+      before: block.context || block.text || 'No context available', 
+      highlighted: '', 
+      after: '' 
+    };
   };
   
   // Loading screen
@@ -466,7 +459,7 @@ const DocumentReviewScreen = () => {
   );
 };
 
-// ENHANCED: Styles for contextual source viewer
+// MODIFIED: Styles for contextual source viewer - NO YELLOW HIGHLIGHTING
 const styles = {
   sourceViewerHeader: {
     flexDirection: 'row',
@@ -559,11 +552,11 @@ const styles = {
     color: Colors.gray,
   },
   contextHighlighted: {
-    backgroundColor: Colors.warning + '40', // 40% opacity
+    // NO YELLOW BACKGROUND - same style as other text
     color: Colors.black,
-    fontWeight: '600',
-    paddingHorizontal: 2,
-    borderRadius: 2,
+    fontWeight: '400', // Same weight as other text
+    paddingHorizontal: 0,
+    borderRadius: 0,
   },
   contextAfter: {
     color: Colors.gray,

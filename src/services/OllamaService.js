@@ -92,10 +92,7 @@ IMPORTANT: Extract actual information from the document. Do not return empty fie
    */
   getCoTPrompt(documentText) {
     // DEBUG: Log the document text being sent to AI
-    console.log('DEBUG: Document text being sent to AI:');
-    console.log('Document length:', documentText.length);
-    console.log('First 500 characters:', documentText.substring(0, 500));
-    console.log('Last 500 characters:', documentText.substring(Math.max(0, documentText.length - 500)));
+
     
     return `Read this medical document carefully and extract the requested information:
 
@@ -296,7 +293,7 @@ Extract the information now using the NUMBER|CONTENT format:`;
       .replace(/^[:\-\s]+|[:\-\s]+$/g, '') // Remove leading/trailing colons and dashes
       .trim();
     
-    console.log(`DEBUG: Cleaned "${content}" -> "${cleaned}"`);
+   
     return cleaned;
   }
 }
