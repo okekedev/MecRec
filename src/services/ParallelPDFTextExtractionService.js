@@ -1,11 +1,11 @@
 /**
- * Fixed ParallelPDFTextExtractionService - Properly capture positions during OCR
- * Updated to correctly extract word positions from Tesseract.js results
+ * Tesseract-Only PDFTextExtractionService - Simplified OCR-first approach
+ * Removed PDF.js fallback logic - uses Tesseract.js as the primary method
  */
 import Tesseract from 'tesseract.js';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf';
 
-// Set PDF.js worker for web
+// Set PDF.js worker for web (still needed for PDF rendering to canvas)
 if (typeof window !== 'undefined' && 'Worker' in window) {
   pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@2.16.105/legacy/build/pdf.worker.min.js';
 }
@@ -16,7 +16,7 @@ class ParallelPDFTextExtractionService {
   constructor() {
     this.progressCallback = null;
     this.cancelProcessing = false;
-    this.maxWorkers = 2; // Reduced for better stability
+    this.maxWorkers = 3;
     
     // Store positions during OCR processing
     this.lastExtractedPositions = [];
@@ -56,91 +56,35 @@ class ParallelPDFTextExtractionService {
   }
   
   /**
-   * Extract text AND positions in single OCR run
+   * SIMPLIFIED: Extract text using Tesseract.js OCR as primary method
    */
   async extractText(uri) {
     try {
       this.cancelProcessing = false;
       
       this.updateProgress('processing', 0.05, 'Starting', 'Loading PDF document');
-      console.log('Extracting text AND positions from PDF:', uri);
+      console.log('🤖 Extracting text using Tesseract OCR from PDF:', uri);
       
       // Clear previous positions
       this.lastExtractedPositions = [];
       
-      // Load PDF
+      // Load PDF (still needed to render pages to canvas for OCR)
       const loadingTask = pdfjs.getDocument(uri);
       const pdf = await loadingTask.promise;
       const totalPages = pdf.numPages;
       
-      console.log(`PDF loaded with ${totalPages} pages`);
-      this.updateProgress('processing', 0.15, 'PDF Loaded', `Processing ${totalPages} pages`);
+      console.log(`📄 PDF loaded with ${totalPages} pages - processing with OCR`);
+      this.updateProgress('processing', 0.15, 'PDF Loaded', `Processing ${totalPages} pages with OCR`);
       
-      // Try PDF.js text extraction first (for searchable PDFs)
-      let pdfJsText = '';
-      let pdfJsSuccess = false;
-      let pdfJsPositions = [];
+      // Process directly with OCR
+      console.log('🤖 Using Tesseract OCR for text extraction and position capture...');
+      this.updateProgress('processing', 0.2, 'OCR Processing', 'Starting OCR text extraction with position tracking');
       
-      try {
-        console.log('DEBUG: Trying PDF.js text extraction...');
-        for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
-          const page = await pdf.getPage(pageNum);
-          const textContent = await page.getTextContent();
-          
-          let pageText = '';
-          textContent.items.forEach((item, index) => {
-            if (item.str) {
-              pageText += item.str + ' ';
-              
-              // Capture PDF.js positions
-              pdfJsPositions.push({
-                text: item.str.trim(),
-                page: pageNum,
-                x: item.transform[4],
-                y: item.transform[5], 
-                width: item.width,
-                height: item.height,
-                index: index,
-                source: 'pdfjs'
-              });
-            }
-          });
-          
-          if (pageText.trim()) {
-            pdfJsText += `\n\n--- Page ${pageNum} ---\n\n${pageText.trim()}`;
-          }
-        }
-        
-        pdfJsSuccess = pdfJsText.trim().length > 100;
-        
-        if (pdfJsSuccess) {
-          console.log(`DEBUG: ✅ PDF.js extraction successful - ${pdfJsText.length} characters, ${pdfJsPositions.length} positions`);
-          this.lastExtractedPositions = pdfJsPositions;
-          
-          this.updateProgress('complete', 1.0, 'Text Extraction Complete', 
-            `Extracted ${pdfJsText.length} characters using PDF.js`);
-          
-          return {
-            text: pdfJsText,
-            isOcr: false,
-            pages: totalPages,
-            confidence: 'PDF.js',
-            positions: pdfJsPositions
-          };
-        }
-      } catch (pdfJsError) {
-        console.warn('DEBUG: PDF.js text extraction failed, falling back to OCR:', pdfJsError);
-      }
-      
-      // Fall back to OCR with position capture
-      console.log('DEBUG: Using OCR extraction with position capture...');
-      this.updateProgress('processing', 0.3, 'OCR Processing', 'PDF text not searchable, using OCR with position tracking');
-      
-      return await this.processWithOCRAndPositions(pdf, totalPages);
+      return await this.processWithOCRAndRealPositions(pdf, totalPages);
       
     } catch (error) {
-      console.error('PDF extraction error:', error);
-      this.updateProgress('error', 0.5, 'Error', `Extraction failed: ${error.message}`);
+      console.error('❌ OCR extraction error:', error);
+      this.updateProgress('error', 0.5, 'Error', `OCR extraction failed: ${error.message}`);
       
       return {
         text: `Error extracting text: ${error.message}`,
@@ -153,9 +97,9 @@ class ParallelPDFTextExtractionService {
   }
   
   /**
-   * OCR processing that captures both text AND positions
+   * OCR processing that captures REAL text positions from Tesseract.js
    */
-  async processWithOCRAndPositions(pdf, totalPages) {
+  async processWithOCRAndRealPositions(pdf, totalPages) {
     const workers = await this.createWorkers();
     const pageTexts = [];
     const allPositions = [];
@@ -176,7 +120,7 @@ class ParallelPDFTextExtractionService {
           const workerIndex = (pageNum - 1) % workers.length;
           const worker = workers[workerIndex];
           
-          batchPromises.push(this.processPageWithOCRAndPositions(pdf, pageNum, worker));
+          batchPromises.push(this.processPageWithOCR(pdf, pageNum, worker));
         }
         
         const batchResults = await Promise.all(batchPromises);
@@ -191,13 +135,13 @@ class ParallelPDFTextExtractionService {
           }
         });
         
-        const progress = 0.4 + (0.5 * (batchEnd / totalPages));
+        const progress = 0.3 + (0.6 * (batchEnd / totalPages));
         this.updateProgress('processing', progress, 'OCR Processing', 
-          `Completed ${batchEnd}/${totalPages} pages`);
+          `OCR completed ${batchEnd}/${totalPages} pages`);
       }
       
       // Combine results
-      this.updateProgress('processing', 0.95, 'Finalizing', 'Combining page results');
+      this.updateProgress('processing', 0.95, 'Finalizing', 'Combining OCR results');
       
       let fullText = '';
       pageTexts.forEach((pageResult, index) => {
@@ -208,17 +152,18 @@ class ParallelPDFTextExtractionService {
       
       // Store positions for later use
       this.lastExtractedPositions = allPositions;
-      console.log(`DEBUG: ✅ OCR complete - ${fullText.length} characters, ${allPositions.length} positions`);
+      console.log(`✅ OCR complete - ${fullText.length} characters, ${allPositions.length} REAL positions`);
       
       await this.cleanupWorkers(workers);
       
-      this.updateProgress('complete', 1.0, 'Complete', 'OCR text extraction with positions completed');
+      this.updateProgress('complete', 1.0, 'Complete', 'OCR text extraction with real positions completed');
       
       return {
         text: fullText,
         isOcr: true,
         pages: totalPages,
-        positions: allPositions
+        positions: allPositions,
+        confidence: 'Tesseract OCR'
       };
       
     } catch (error) {
@@ -228,15 +173,15 @@ class ParallelPDFTextExtractionService {
   }
   
   /**
-   * FIXED: Process single page and capture word positions correctly
+   * Process single page with Tesseract OCR and capture REAL word positions
    */
-  async processPageWithOCRAndPositions(pdf, pageNum, worker) {
+  async processPageWithOCR(pdf, pageNum, worker) {
     try {
-      console.log(`DEBUG: OCR processing page ${pageNum} with position capture...`);
+      console.log(`🤖 OCR processing page ${pageNum} with position capture...`);
       
       const page = await pdf.getPage(pageNum);
       
-      // Render page to canvas with higher resolution for better OCR
+      // Render page to canvas with high resolution for better OCR
       const viewport = page.getViewport({ scale: 2.0 });
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d');
@@ -248,67 +193,61 @@ class ParallelPDFTextExtractionService {
         viewport: viewport
       }).promise;
       
-      // Convert canvas to blob
+      // Convert canvas to blob for Tesseract
       const blob = await new Promise(resolve => {
         canvas.toBlob(resolve, 'image/png');
       });
       
-      // FIXED: Run OCR with explicit options to get word-level data
-      const recognitionOptions = {
-        rectangle: { left: 0, top: 0, width: canvas.width, height: canvas.height }
-      };
+      // Run Tesseract OCR with blocks output to get real bounding boxes
+      console.log(`🔍 Running Tesseract OCR with blocks output for page ${pageNum}...`);
       
-      // First, let's see what data structure we get
-      const result = await worker.recognize(blob, recognitionOptions);
-      const { data } = result;
-      
-      // DEBUG: Log the complete data structure
-      console.log(`DEBUG: Full OCR result structure for page ${pageNum}:`, {
-        hasData: !!data,
-        dataKeys: data ? Object.keys(data) : [],
-        text: data?.text ? `${data.text.substring(0, 100)}...` : 'No text',
-        confidence: data?.confidence,
-        hasBlocks: !!data?.blocks,
-        blockCount: data?.blocks?.length || 0,
-        hasParagraphs: !!data?.paragraphs,
-        paragraphCount: data?.paragraphs?.length || 0,
-        hasLines: !!data?.lines,
-        lineCount: data?.lines?.length || 0,
-        hasWords: !!data?.words,
-        wordCount: data?.words?.length || 0,
-        hasSymbols: !!data?.symbols,
-        symbolCount: data?.symbols?.length || 0
+      const { data } = await worker.recognize(blob, {
+        tesseract_pageseg_mode: 6,    // Uniform block of text
+        preserve_interword_spaces: 1  // Better text formatting
+      }, {
+        // Request blocks output format to get bounding boxes
+        blocks: true,
+        text: true
       });
       
       // Extract text
       const extractedText = data.text || '';
       
-      // FIXED: Extract positions with extensive debugging
+      // Extract REAL word positions from blocks output
       const positions = [];
       
-      // Method 0: Try blocks first (highest level)
+      console.log(`📊 Processing Tesseract blocks output for page ${pageNum}...`);
+      console.log(`📋 Found ${data.blocks ? data.blocks.length : 0} blocks`);
+      
       if (data.blocks && data.blocks.length > 0) {
-        console.log(`DEBUG: Trying blocks approach - found ${data.blocks.length} blocks`);
-        
-        data.blocks.forEach((block, bIndex) => {
+        // Navigate through blocks -> paragraphs -> lines -> words
+        data.blocks.forEach((block, blockIndex) => {
           if (block.paragraphs) {
-            block.paragraphs.forEach((paragraph, pIndex) => {
+            block.paragraphs.forEach((paragraph, paraIndex) => {
               if (paragraph.lines) {
-                paragraph.lines.forEach((line, lIndex) => {
+                paragraph.lines.forEach((line, lineIndex) => {
                   if (line.words) {
-                    line.words.forEach((word, wIndex) => {
-                      if (word.text && word.text.trim() && word.confidence > 10) {
-                        positions.push({
-                          text: word.text.trim(),
-                          page: pageNum,
-                          x: word.bbox.x0,
-                          y: word.bbox.y0,
-                          width: word.bbox.x1 - word.bbox.x0,
-                          height: word.bbox.y1 - word.bbox.y0,
-                          confidence: word.confidence,
-                          index: `b${bIndex}-p${pIndex}-l${lIndex}-w${wIndex}`,
-                          source: 'ocr'
-                        });
+                    line.words.forEach((word, wordIndex) => {
+                      if (word.text && word.text.trim() && word.confidence > 30) {
+                        // Get REAL positions from Tesseract blocks output
+                        const bbox = word.bbox;
+                        if (bbox && typeof bbox.x0 === 'number') {
+                          positions.push({
+                            text: word.text.trim(),
+                            page: pageNum,
+                            x: bbox.x0,
+                            y: bbox.y0,
+                            width: bbox.x1 - bbox.x0,
+                            height: bbox.y1 - bbox.y0,
+                            confidence: word.confidence,
+                            index: wordIndex,
+                            source: 'tesseract-ocr',
+                            blockIndex,
+                            paraIndex,
+                            lineIndex,
+                            wordIndex
+                          });
+                        }
                       }
                     });
                   }
@@ -319,183 +258,20 @@ class ParallelPDFTextExtractionService {
         });
       }
       
-      // Method 1: Try direct paragraphs/lines/words hierarchy
-      if (positions.length === 0 && data.paragraphs && data.paragraphs.length > 0) {
-        console.log(`DEBUG: Trying paragraphs approach - found ${data.paragraphs.length} paragraphs`);
-        
-        data.paragraphs.forEach((paragraph, pIndex) => {
-          if (paragraph.lines) {
-            paragraph.lines.forEach((line, lIndex) => {
-              if (line.words) {
-                line.words.forEach((word, wIndex) => {
-                  if (word.text && word.text.trim() && word.confidence > 10) {
-                    positions.push({
-                      text: word.text.trim(),
-                      page: pageNum,
-                      x: word.bbox.x0,
-                      y: word.bbox.y0,
-                      width: word.bbox.x1 - word.bbox.x0,
-                      height: word.bbox.y1 - word.bbox.y0,
-                      confidence: word.confidence,
-                      index: `p${pIndex}-l${lIndex}-w${wIndex}`,
-                      source: 'ocr'
-                    });
-                  }
-                });
-              }
-            });
-          }
-        });
-      }
-      
-      // Method 2: Try direct lines
-      if (positions.length === 0 && data.lines && data.lines.length > 0) {
-        console.log(`DEBUG: Trying lines approach - found ${data.lines.length} lines`);
-        
-        data.lines.forEach((line, lIndex) => {
-          if (line.words) {
-            line.words.forEach((word, wIndex) => {
-              if (word.text && word.text.trim() && word.confidence > 10) {
-                positions.push({
-                  text: word.text.trim(),
-                  page: pageNum,
-                  x: word.bbox.x0,
-                  y: word.bbox.y0,
-                  width: word.bbox.x1 - word.bbox.x0,
-                  height: word.bbox.y1 - word.bbox.y0,
-                  confidence: word.confidence,
-                  index: `l${lIndex}-w${wIndex}`,
-                  source: 'ocr'
-                });
-              }
-            });
-          }
-        });
-      }
-      
-      // Method 3: Try direct words array
-      if (positions.length === 0 && data.words && data.words.length > 0) {
-        console.log(`DEBUG: Trying direct words approach - found ${data.words.length} words`);
-        
-        data.words.forEach((word, index) => {
-          if (word.text && word.text.trim() && word.confidence > 10) {
-            positions.push({
-              text: word.text.trim(),
-              page: pageNum,
-              x: word.bbox.x0,
-              y: word.bbox.y0,
-              width: word.bbox.x1 - word.bbox.x0,
-              height: word.bbox.y1 - word.bbox.y0,
-              confidence: word.confidence,
-              index: index,
-              source: 'ocr'
-            });
-          }
-        });
-      }
-      
-      // Method 4: Try symbols (character level) - create synthetic words
-      if (positions.length === 0 && data.symbols && data.symbols.length > 0) {
-        console.log(`DEBUG: Trying symbols approach - found ${data.symbols.length} symbols`);
-        
-        // Group symbols into words by spatial proximity and whitespace
-        let currentWord = '';
-        let wordSymbols = [];
-        let wordIndex = 0;
-        
-        for (let i = 0; i < data.symbols.length; i++) {
-          const symbol = data.symbols[i];
-          
-          if (symbol.text && symbol.bbox) {
-            const isWhitespace = /\s/.test(symbol.text);
-            
-            if (isWhitespace || i === data.symbols.length - 1) {
-              // End of word - process accumulated symbols
-              if (currentWord.trim() && wordSymbols.length > 0) {
-                const firstSymbol = wordSymbols[0];
-                const lastSymbol = wordSymbols[wordSymbols.length - 1];
-                
-                positions.push({
-                  text: currentWord.trim(),
-                  page: pageNum,
-                  x: firstSymbol.bbox.x0,
-                  y: firstSymbol.bbox.y0,
-                  width: lastSymbol.bbox.x1 - firstSymbol.bbox.x0,
-                  height: Math.max(...wordSymbols.map(s => s.bbox.y1)) - Math.min(...wordSymbols.map(s => s.bbox.y0)),
-                  confidence: Math.round(wordSymbols.reduce((sum, s) => sum + s.confidence, 0) / wordSymbols.length),
-                  index: wordIndex++,
-                  source: 'ocr'
-                });
-              }
-              
-              // Reset for next word
-              currentWord = '';
-              wordSymbols = [];
-            } else {
-              // Add to current word
-              currentWord += symbol.text;
-              wordSymbols.push(symbol);
-            }
-          }
-        }
-      }
-      
-      // Method 5: FALLBACK - Create synthetic positions from text if we still have nothing
-      if (positions.length === 0 && extractedText.trim()) {
-        console.log(`DEBUG: Creating synthetic positions from text - ${extractedText.length} characters`);
-        
-        // Split text into words and create approximate positions
-        const words = extractedText.split(/\s+/).filter(word => word.trim());
-        const wordsPerLine = 10; // Rough estimate
-        const lineHeight = 20;
-        const charWidth = 8;
-        
-        words.forEach((word, index) => {
-          const lineNum = Math.floor(index / wordsPerLine);
-          const wordInLine = index % wordsPerLine;
-          
-          positions.push({
-            text: word.trim(),
-            page: pageNum,
-            x: wordInLine * charWidth * 8, // Approximate x position
-            y: lineNum * lineHeight + 50, // Approximate y position
-            width: word.length * charWidth,
-            height: lineHeight - 2,
-            confidence: 75, // Synthetic confidence
-            index: index,
-            source: 'synthetic'
-          });
-        });
-        
-        console.log(`DEBUG: Created ${positions.length} synthetic positions`);
-      }
-      
       // Clean up canvas
       canvas.width = 0;
       canvas.height = 0;
       
-      console.log(`DEBUG: Page ${pageNum} complete - ${extractedText.length} characters, ${positions.length} positions`);
+      console.log(`✅ Page ${pageNum} OCR complete - ${extractedText.length} characters, ${positions.length} positions`);
       
       // Show sample positions for debugging
       if (positions.length > 0) {
-        console.log(`DEBUG: Sample positions from page ${pageNum}:`);
+        console.log(`📍 Sample OCR positions from page ${pageNum}:`);
         positions.slice(0, 5).forEach((pos, i) => {
-          console.log(`  ${i + 1}. "${pos.text}" at (${Math.round(pos.x)}, ${Math.round(pos.y)}) confidence: ${pos.confidence}%`);
+          console.log(`  ${i + 1}. "${pos.text}" at (${Math.round(pos.x)}, ${Math.round(pos.y)}) conf: ${pos.confidence}% [OCR]`);
         });
       } else {
-        console.log(`DEBUG: ⚠️ No positions extracted from page ${pageNum} - check OCR data structure`);
-        
-        // Debug: Log the structure of the OCR data
-        console.log('DEBUG: OCR data structure:', {
-          hasParagraphs: !!data.paragraphs,
-          paragraphCount: data.paragraphs ? data.paragraphs.length : 0,
-          hasWords: !!data.words,
-          wordCount: data.words ? data.words.length : 0,
-          hasSymbols: !!data.symbols,
-          symbolCount: data.symbols ? data.symbols.length : 0,
-          hasLines: !!data.lines,
-          lineCount: data.lines ? data.lines.length : 0
-        });
+        console.warn(`⚠️ No positions found for page ${pageNum} - check OCR output`);
       }
       
       return {
@@ -506,7 +282,7 @@ class ParallelPDFTextExtractionService {
       };
       
     } catch (error) {
-      console.error(`Error processing page ${pageNum}:`, error);
+      console.error(`❌ Error processing page ${pageNum} with OCR:`, error);
       return {
         pageNum,
         text: `Error processing page ${pageNum}: ${error.message}`,
@@ -517,36 +293,28 @@ class ParallelPDFTextExtractionService {
   }
   
   /**
-   * Create Tesseract workers with proper configuration
+   * Create Tesseract workers
    */
   async createWorkers() {
-    console.log(`Creating ${this.maxWorkers} Tesseract workers`);
+    console.log(`🏭 Creating ${this.maxWorkers} Tesseract OCR workers`);
     const workers = [];
     
     for (let i = 0; i < this.maxWorkers; i++) {
       try {
-        const worker = await Tesseract.createWorker('eng', 1);
-        
-        // Configure worker for better word detection
-        await worker.setParameters({
-          tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK,
-          tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,;:!?()-/@ ',
-          preserve_interword_spaces: '1'
-        });
-        
+        const worker = await Tesseract.createWorker('eng');
         workers.push(worker);
-        console.log(`Created worker ${i + 1}/${this.maxWorkers}`);
+        console.log(`✅ Created OCR worker ${i + 1}/${this.maxWorkers}`);
       } catch (error) {
-        console.warn(`Failed to create worker ${i + 1}:`, error);
+        console.warn(`⚠️ Failed to create OCR worker ${i + 1}:`, error);
         break;
       }
     }
     
     if (workers.length === 0) {
-      throw new Error('Failed to create any Tesseract workers');
+      throw new Error('Failed to create any Tesseract OCR workers');
     }
     
-    console.log(`Successfully created ${workers.length} workers`);
+    console.log(`✅ Successfully created ${workers.length} OCR workers`);
     return workers;
   }
   
@@ -554,14 +322,14 @@ class ParallelPDFTextExtractionService {
    * Clean up workers
    */
   async cleanupWorkers(workers) {
-    console.log(`Cleaning up ${workers.length} workers`);
+    console.log(`🧹 Cleaning up ${workers.length} OCR workers`);
     
     const cleanupPromises = workers.map(worker => 
-      worker.terminate().catch(err => console.warn('Error terminating worker:', err))
+      worker.terminate().catch(err => console.warn('⚠️ Error terminating OCR worker:', err))
     );
     
     await Promise.all(cleanupPromises);
-    console.log('All workers terminated');
+    console.log('✅ All OCR workers terminated');
   }
 }
 

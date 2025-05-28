@@ -1,4 +1,4 @@
-// src/services/PDFProcessorService.js - Enhanced with contextual highlighting
+// src/services/PDFProcessorService.js - Complete fixed version with proper context and expansion
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 import ParallelPDFTextExtractionService from './ParallelPDFTextExtractionService';
@@ -42,6 +42,31 @@ class PDFProcessorService {
         message
       });
     }
+  }
+  
+  /**
+   * UNIFIED EXPANSION VALUES - Change these to adjust ALL highlighting
+   */
+  getExpansionValues() {
+    return {
+      horizontalPadding: 25, // 🎯 CHANGE THIS to adjust width of ALL highlights
+      verticalPadding: 15    // 🎯 CHANGE THIS to adjust height of ALL highlights
+    };
+  }
+  
+  /**
+   * UNIFORM BOUNDING BOX EXPANSION - Uses unified values
+   */
+  expandBoundingBox(position) {
+    const { horizontalPadding, verticalPadding } = this.getExpansionValues();
+    
+    return {
+      ...position, // Keep all original data
+      x: position.x - horizontalPadding,
+      y: position.y - verticalPadding,
+      width: position.width + (horizontalPadding * 2),
+      height: position.height + (verticalPadding * 2)
+    };
   }
   
   /**
@@ -168,7 +193,7 @@ class PDFProcessorService {
   }
   
   /**
-   * ENHANCED: Find contextual blocks with smarter phrase matching
+   * FIXED: Find contextual blocks with uniform expansion applied
    */
   findSourcePositions(documentId, fieldValue) {
     console.log(`DEBUG: 🔍 Looking for contextual blocks for: "${fieldValue}"`);
@@ -193,8 +218,8 @@ class PDFProcessorService {
     let phraseMatches = this.findPhraseMatches(positions, searchText);
     
     if (phraseMatches.length > 0) {
-      console.log(`DEBUG: ✅ Found ${phraseMatches.length} phrase matches - using these`);
-      return phraseMatches.slice(0, 3);
+      console.log(`DEBUG: ✅ Found ${phraseMatches.length} phrase matches - applying uniform expansion`);
+      return phraseMatches.slice(0, 3).map(match => this.expandBoundingBox(match));
     }
     
     // STRATEGY 2: Find meaningful word sequences (fallback)
@@ -202,8 +227,8 @@ class PDFProcessorService {
     let sequenceMatches = this.findSequenceMatches(positions, searchText);
     
     if (sequenceMatches.length > 0) {
-      console.log(`DEBUG: ✅ Found ${sequenceMatches.length} sequence matches`);
-      return sequenceMatches.slice(0, 3);
+      console.log(`DEBUG: ✅ Found ${sequenceMatches.length} sequence matches - applying uniform expansion`);
+      return sequenceMatches.slice(0, 3).map(match => this.expandBoundingBox(match));
     }
     
     // STRATEGY 3: Find significant words only (skip common words)
@@ -211,15 +236,26 @@ class PDFProcessorService {
     let significantMatches = this.findSignificantWordMatches(positions, searchText);
     
     console.log(`DEBUG: 🎯 Final result: Found ${significantMatches.length} contextual blocks for "${fieldValue}"`);
-    return significantMatches.slice(0, 3);
+    
+    // Apply uniform expansion to all results
+    const expandedMatches = significantMatches.slice(0, 3).map(match => this.expandBoundingBox(match));
+    
+    if (expandedMatches.length > 0) {
+      console.log(`DEBUG: 📦 Applied uniform expansion (+25px horizontal, +15px vertical) to ${expandedMatches.length} matches`);
+      expandedMatches.forEach((match, i) => {
+        console.log(`  ${i + 1}. "${match.text}" expanded to (${Math.round(match.x)}, ${Math.round(match.y)}) ${Math.round(match.width)}x${Math.round(match.height)}`);
+      });
+    }
+    
+    return expandedMatches;
   }
   
   /**
-   * Find complete phrase matches in document
+   * Find complete phrase matches in document - WITH MORE CONTEXT
    */
   findPhraseMatches(positions, searchText) {
     const results = [];
-    const CONTEXT_RADIUS = 150;
+    const CONTEXT_RADIUS = 500; // 🔧 INCREASED from 150 to 500 for more context
     
     // Group positions by page and sort by reading order
     const pageGroups = {};
@@ -240,7 +276,7 @@ class PDFProcessorService {
       
       // Build text sequences and look for phrase matches
       for (let i = 0; i < pagePositions.length - 5; i++) {
-        const windowSize = Math.min(20, pagePositions.length - i); // Look at 20 words at a time
+        const windowSize = Math.min(50, pagePositions.length - i); // 🔧 INCREASED from 20 to 50 words
         const textWindow = pagePositions.slice(i, i + windowSize);
         const windowText = textWindow.map(p => p.text).join(' ').toLowerCase();
         
@@ -269,12 +305,12 @@ class PDFProcessorService {
             matchType: 'phrase',
             highlightStart: contextText.toLowerCase().indexOf(searchText),
             highlightLength: searchText.length,
-            source: textWindow[0]?.source || 'synthetic',
+            source: textWindow[0]?.source || 'contextual',
             wordCount: contextWords.length
           });
           
           console.log(`DEBUG: ✅ Found phrase match on page ${pageNum}: "${searchText}"`);
-          console.log(`DEBUG: Context: "${contextText.substring(0, 80)}..."`);
+          console.log(`DEBUG: Context (${contextWords.length} words): "${contextText.substring(0, 150)}..."`);
         }
       }
     });
@@ -283,7 +319,7 @@ class PDFProcessorService {
   }
   
   /**
-   * Find meaningful word sequences (for things like "Morphine 4 mg IV")
+   * Find meaningful word sequences - WITH MORE CONTEXT
    */
   findSequenceMatches(positions, searchText) {
     const results = [];
@@ -314,10 +350,10 @@ class PDFProcessorService {
         
         // Check if this is one of our significant words
         if (significantWords.includes(currentWord)) {
-          // Look for other significant words nearby
+          // Look for other significant words nearby - INCREASED search area
           const nearbyWords = pagePositions.filter(pos => 
-            Math.abs(pos.x - currentPos.x) < 300 &&
-            Math.abs(pos.y - currentPos.y) < 30 &&
+            Math.abs(pos.x - currentPos.x) < 800 && // 🔧 INCREASED from 300 to 800
+            Math.abs(pos.y - currentPos.y) < 100 && // 🔧 INCREASED from 30 to 100
             significantWords.includes(pos.text.toLowerCase())
           ).sort((a, b) => {
             const yDiff = a.y - b.y;
@@ -329,7 +365,7 @@ class PDFProcessorService {
             const contextWords = this.getContextAroundPosition(
               pagePositions, 
               pagePositions.indexOf(currentPos), 
-              200
+              500 // 🔧 INCREASED from 200 to 500 for more context
             );
             const contextText = contextWords.map(p => p.text).join(' ');
             const boundingBox = this.calculateBoundingBox(contextWords);
@@ -350,11 +386,11 @@ class PDFProcessorService {
               matchType: 'sequence',
               highlightStart: contextText.toLowerCase().indexOf(highlightedText.toLowerCase()),
               highlightLength: highlightedText.length,
-              source: currentPos.source || 'synthetic',
+              source: currentPos.source || 'contextual',
               wordCount: contextWords.length
             });
             
-            console.log(`DEBUG: ✅ Found sequence match: "${highlightedText}"`);
+            console.log(`DEBUG: ✅ Found sequence match with ${contextWords.length} context words: "${highlightedText}"`);
           }
         }
       }
@@ -418,102 +454,13 @@ class PDFProcessorService {
   }
   
   /**
-   * Check if a word is too common to be useful for matching
-   */
-  isCommonWord(word) {
-    const commonWords = [
-      'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
-      'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had',
-      'will', 'would', 'could', 'should', 'may', 'might', 'can', 'must',
-      'this', 'that', 'these', 'those', 'he', 'she', 'it', 'they', 'we', 'you',
-      'his', 'her', 'its', 'their', 'our', 'your', 'my', 'me', 'him', 'them', 'us',
-      'not', 'no', 'yes', 'all', 'any', 'some', 'most', 'many', 'much', 'more',
-      'very', 'so', 'too', 'also', 'only', 'just', 'now', 'then', 'here', 'there'
-    ];
-    return commonWords.includes(word.toLowerCase());
-  }
-  
-  /**
-   * Get context words around a specific position
-   */
-  getContextAroundPosition(pagePositions, centerIndex, radius) {
-    const centerPos = pagePositions[centerIndex];
-    
-    return pagePositions.filter(pos => 
-      Math.abs(pos.x - centerPos.x) < radius &&
-      Math.abs(pos.y - centerPos.y) < 40
-    ).sort((a, b) => {
-      const yDiff = a.y - b.y;
-      if (Math.abs(yDiff) < 15) return a.x - b.x;
-      return yDiff;
-    });
-  }
-  
-  /**
-   * Calculate actual confidence from OCR results
-   */
-  calculateActualConfidence(words) {
-    if (!words || words.length === 0) return 50;
-    
-    const validConfidences = words
-      .map(w => w.confidence)
-      .filter(c => c && c > 0 && c <= 100);
-    
-    if (validConfidences.length === 0) return 50;
-    
-    return Math.round(validConfidences.reduce((sum, c) => sum + c, 0) / validConfidences.length);
-  }
-  
-  /**
-   * Calculate bounding box for a group of words
-   */
-  calculateBoundingBox(words) {
-    if (!words || words.length === 0) {
-      return { x: 0, y: 0, width: 100, height: 20 };
-    }
-    
-    const minX = Math.min(...words.map(w => w.x));
-    const minY = Math.min(...words.map(w => w.y));
-    const maxX = Math.max(...words.map(w => w.x + w.width));
-    const maxY = Math.max(...words.map(w => w.y + w.height));
-    
-    return {
-      x: minX,
-      y: minY,
-      width: maxX - minX,
-      height: maxY - minY
-    };
-  }
-  
-  /**
-   * Remove duplicate results that are too similar
-   */
-  removeDuplicateResults(results) {
-    return results.filter((result, index) => {
-      return !results.slice(0, index).some(prevResult => 
-        prevResult.page === result.page &&
-        Math.abs(prevResult.x - result.x) < 50 &&
-        Math.abs(prevResult.y - result.y) < 20
-      );
-    }).sort((a, b) => {
-      // Sort by match type priority, then by page
-      const typeOrder = { phrase: 0, sequence: 1, exact: 2, partial: 3 };
-      const aOrder = typeOrder[a.matchType] || 4;
-      const bOrder = typeOrder[b.matchType] || 4;
-      
-      if (aOrder !== bOrder) return aOrder - bOrder;
-      if (a.page !== b.page) return a.page - b.page;
-      return a.y - b.y;
-    });
-  }
-  
-  /**
-   * Build contextual blocks from matching words
+   * FIXED: Build contextual blocks with reasonable context radius
    */
   buildContextualBlocks(matchingWords, allPositions) {
-    const CONTEXT_RADIUS_X = 200; // pixels horizontal
-    const CONTEXT_RADIUS_Y = 40;  // pixels vertical
-    const MIN_CONTEXT_WORDS = 5;  // minimum words for context
+    // 🔧 FIXED: Reasonable context radius instead of massive values
+    const CONTEXT_RADIUS_X = 200; // REDUCED from 2000 to 200 pixels horizontal
+    const CONTEXT_RADIUS_Y = 50;  // REDUCED from 400 to 50 pixels vertical  
+    const MIN_CONTEXT_WORDS = 5;  // REDUCED from 20 to 5 minimum words for context
     
     const blocks = [];
     
@@ -527,9 +474,9 @@ class PDFProcessorService {
     Object.entries(pageGroups).forEach(([page, words]) => {
       const pageNum = parseInt(page);
       
-      // For each matching word, build a context block
+      // For each matching word, build a reasonable context block
       words.forEach(matchWord => {
-        // Find all words within spatial proximity
+        // Find all words within REASONABLE spatial proximity
         const contextWords = allPositions.filter(pos => 
           pos.page === pageNum &&
           Math.abs(pos.x - matchWord.x) <= CONTEXT_RADIUS_X &&
@@ -571,12 +518,13 @@ class PDFProcessorService {
           const highlightedText = matchWord.text;
           const highlightStart = contextText.toLowerCase().indexOf(matchWord.text.toLowerCase());
           
-          // Calculate bounding box
+          // Calculate bounding box WITH EXPANSION
+          const { horizontalPadding, verticalPadding } = this.getExpansionValues();
           const boundingBox = {
-            x: Math.min(...uniqueWords.map(w => w.x)),
-            y: Math.min(...uniqueWords.map(w => w.y)),
-            width: Math.max(...uniqueWords.map(w => w.x + w.width)) - Math.min(...uniqueWords.map(w => w.x)),
-            height: Math.max(...uniqueWords.map(w => w.y + w.height)) - Math.min(...uniqueWords.map(w => w.y))
+            x: Math.min(...uniqueWords.map(w => w.x)) - horizontalPadding,
+            y: Math.min(...uniqueWords.map(w => w.y)) - verticalPadding,
+            width: (Math.max(...uniqueWords.map(w => w.x + w.width)) - Math.min(...uniqueWords.map(w => w.x))) + (horizontalPadding * 2),
+            height: (Math.max(...uniqueWords.map(w => w.y + w.height)) - Math.min(...uniqueWords.map(w => w.y))) + (verticalPadding * 2)
           };
           
           // Calculate average confidence
@@ -594,6 +542,8 @@ class PDFProcessorService {
             source: matchWord.source,
             wordCount: uniqueWords.length
           });
+          
+          console.log(`DEBUG: ✅ Built reasonable contextual block: "${highlightedText}" with ${uniqueWords.length} context words`);
         }
       });
     });
@@ -624,19 +574,96 @@ class PDFProcessorService {
   }
   
   /**
-   * Calculate text similarity (simple implementation)
+   * Check if a word is too common to be useful for matching
    */
-  calculateSimilarity(text1, text2) {
-    const longer = text1.length > text2.length ? text1 : text2;
-    const shorter = text1.length > text2.length ? text2 : text1;
+  isCommonWord(word) {
+    const commonWords = [
+      'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
+      'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had',
+      'will', 'would', 'could', 'should', 'may', 'might', 'can', 'must',
+      'this', 'that', 'these', 'those', 'he', 'she', 'it', 'they', 'we', 'you',
+      'his', 'her', 'its', 'their', 'our', 'your', 'my', 'me', 'him', 'them', 'us',
+      'not', 'no', 'yes', 'all', 'any', 'some', 'most', 'many', 'much', 'more',
+      'very', 'so', 'too', 'also', 'only', 'just', 'now', 'then', 'here', 'there'
+    ];
+    return commonWords.includes(word.toLowerCase());
+  }
+  
+  /**
+   * Get context words around a specific position - WITH MORE CONTEXT
+   */
+  getContextAroundPosition(pagePositions, centerIndex, radius) {
+    const centerPos = pagePositions[centerIndex];
     
-    if (longer.length === 0) return 1.0;
+    return pagePositions.filter(pos => 
+      Math.abs(pos.x - centerPos.x) < radius &&
+      Math.abs(pos.y - centerPos.y) < 100 // 🔧 INCREASED from 40 to 100 for more vertical context
+    ).sort((a, b) => {
+      const yDiff = a.y - b.y;
+      if (Math.abs(yDiff) < 15) return a.x - b.x;
+      return yDiff;
+    });
+  }
+  
+  /**
+   * Calculate actual confidence from OCR results
+   */
+  calculateActualConfidence(words) {
+    if (!words || words.length === 0) return 50;
     
-    const matches = shorter.split('').filter((char, i) => 
-      longer[i] && longer[i].toLowerCase() === char.toLowerCase()
-    ).length;
+    const validConfidences = words
+      .map(w => w.confidence)
+      .filter(c => c && c > 0 && c <= 100);
     
-    return matches / longer.length;
+    if (validConfidences.length === 0) return 50;
+    
+    return Math.round(validConfidences.reduce((sum, c) => sum + c, 0) / validConfidences.length);
+  }
+  
+  /**
+   * Calculate bounding box for a group of words WITH EXPANSION APPLIED
+   */
+  calculateBoundingBox(words) {
+    if (!words || words.length === 0) {
+      return { x: 0, y: 0, width: 100, height: 20 };
+    }
+    
+    const minX = Math.min(...words.map(w => w.x));
+    const minY = Math.min(...words.map(w => w.y));
+    const maxX = Math.max(...words.map(w => w.x + w.width));
+    const maxY = Math.max(...words.map(w => w.y + w.height));
+    
+    // 🎯 APPLY EXPANSION HERE TOO - so phrase/sequence matches also get expanded
+    const { horizontalPadding, verticalPadding } = this.getExpansionValues();
+    
+    return {
+      x: minX - horizontalPadding,
+      y: minY - verticalPadding,
+      width: (maxX - minX) + (horizontalPadding * 2),
+      height: (maxY - minY) + (verticalPadding * 2)
+    };
+  }
+  
+  /**
+   * Remove duplicate results that are too similar
+   */
+  removeDuplicateResults(results) {
+    return results.filter((result, index) => {
+      return !results.slice(0, index).some(prevResult => 
+        prevResult.page === result.page &&
+        Math.abs(prevResult.x - result.x) < 50 &&
+        Math.abs(prevResult.y - result.y) < 20
+      );
+    }).sort((a, b) => {
+      // Sort by match type priority, then by page
+      const typeOrder = { phrase: 0, sequence: 1, exact: 2, partial: 3 };
+      const aOrder = typeOrder[a.matchType] || 4;
+      const bOrder = typeOrder[b.matchType] || 4;
+      
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      if (a.page !== b.page) return a.page - b.page;
+      return a.y - b.y;
+    });
   }
   
   /**
@@ -653,13 +680,13 @@ class PDFProcessorService {
       return null;
     }
     
-    // Find contextual source positions
+    // Find contextual source positions with uniform expansion
     const sourcePositions = this.findSourcePositions(documentId, fieldValue);
     
     return {
       extractedValue: fieldValue,
       explanation: sourcePositions.length > 0 ? 
-        `Found "${fieldValue}" in ${sourcePositions.length} contextual location(s) in the document.` :
+        `Found "${fieldValue}" in ${sourcePositions.length} contextual location(s) with generous highlighting.` :
         `AI extracted this information from the document text.`,
       confidence: 'AI Generated',
       timestamp: document.formData.extractionDate,
