@@ -185,7 +185,7 @@ const HomeScreen = () => {
                 <View style={[CommonStyles.homeActionIcon, CommonStyles.homeActionFillFormIcon]}>
                   <MaterialIcons name="edit-document" size={28} color={Colors.secondary} />
                 </View>
-                <Text style={CommonStyles.homeActionLabel}>Fill Form</Text>
+                <Text style={CommonStyles.homeActionLabel}>Blank Form</Text>
               </TouchableOpacity>
             </View>
           </Animated.View>
