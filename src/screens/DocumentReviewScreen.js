@@ -1,4 +1,4 @@
-// src/screens/DocumentReviewScreen.js - Add PDF viewer with highlights
+// src/screens/DocumentReviewScreen.js - Enhanced with contextual highlighting display
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -39,10 +39,10 @@ const DocumentReviewScreen = () => {
   const [reviewerCredentials, setReviewerCredentials] = useState('');
   const [extractionError, setExtractionError] = useState('');
   
-  // NEW: Source highlighting state
-  const [showPdfViewer, setShowPdfViewer] = useState(false);
+  // Enhanced source highlighting state
+  const [showSourceViewer, setShowSourceViewer] = useState(false);
   const [highlightedField, setHighlightedField] = useState(null);
-  const [sourcePositions, setSourcePositions] = useState([]);
+  const [contextualBlocks, setContextualBlocks] = useState([]);
   
   // Animation references
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -106,17 +106,19 @@ const DocumentReviewScreen = () => {
     loadDocument();
   }, [documentId]);
   
-  // NEW: Handle showing source in PDF
+  // ENHANCED: Handle showing contextual source blocks
   const handleShowSource = (fieldKey, fieldValue) => {
-    console.log(`Showing source for ${fieldKey}: ${fieldValue}`);
+    console.log(`Showing contextual source for ${fieldKey}: ${fieldValue}`);
     
-    // Get source positions from PDF processor
+    // Get contextual source positions from PDF processor
     const fieldReference = pdfProcessor.getFieldReference(documentId, fieldKey);
     
     if (fieldReference && fieldReference.hasSourceHighlighting) {
       setHighlightedField({ fieldKey, fieldValue });
-      setSourcePositions(fieldReference.sourcePositions);
-      setShowPdfViewer(true);
+      setContextualBlocks(fieldReference.sourcePositions);
+      setShowSourceViewer(true);
+      
+      console.log(`DEBUG: Showing ${fieldReference.sourcePositions.length} contextual blocks`);
     } else {
       Alert.alert('No Source Found', 'Could not locate this information in the document.');
     }
@@ -184,6 +186,22 @@ const DocumentReviewScreen = () => {
     if (progress < 0.3) return Colors.warning;
     if (progress < 0.7) return Colors.info;
     return Colors.success;
+  };
+  
+  // ENHANCED: Format highlighted text within context
+  const formatContextText = (block) => {
+    if (!block.context || block.highlightStart === undefined) {
+      return { before: '', highlighted: block.text, after: '' };
+    }
+    
+    const before = block.context.substring(0, block.highlightStart);
+    const highlighted = block.context.substring(
+      block.highlightStart, 
+      block.highlightStart + block.highlightLength
+    );
+    const after = block.context.substring(block.highlightStart + block.highlightLength);
+    
+    return { before, highlighted, after };
   };
   
   // Loading screen
@@ -259,7 +277,7 @@ const DocumentReviewScreen = () => {
               )}
             </View>
             
-            {/* Clinical Information Section - UPDATED with source highlighting */}
+            {/* Clinical Information Section - Enhanced */}
             <View style={CommonStyles.sectionContainer}>
               <View style={CommonStyles.sectionTitleContainer}>
                 <View style={CommonStyles.sectionTitleIcon} />
@@ -267,7 +285,7 @@ const DocumentReviewScreen = () => {
               </View>
               
               <Text style={CommonStyles.sectionDescription}>
-                Review and verify the extracted information below. Click "Show in Document" to see where the AI found each piece of information.
+                Review and verify the extracted information below. Click "Show in Document" to see the contextual source where the AI found each piece of information.
               </Text>
               
               <View style={{ marginBottom: 20 }}>
@@ -358,94 +376,227 @@ const DocumentReviewScreen = () => {
         </Animated.View>
       </ScrollView>
       
-      {/* NEW: PDF Viewer Modal with Highlights */}
+      {/* ENHANCED: Contextual Source Viewer Modal */}
       <Modal
-        visible={showPdfViewer}
+        visible={showSourceViewer}
         animationType="slide"
-        onRequestClose={() => setShowPdfViewer(false)}
+        onRequestClose={() => setShowSourceViewer(false)}
       >
         <SafeAreaView style={{ flex: 1, backgroundColor: Colors.reviewBackground }}>
-          <View style={styles.pdfViewerHeader}>
+          <View style={styles.sourceViewerHeader}>
             <TouchableOpacity
               style={styles.closeButton}
-              onPress={() => setShowPdfViewer(false)}
+              onPress={() => setShowSourceViewer(false)}
             >
               <MaterialCommunityIcons name="close" size={24} color={Colors.black} />
             </TouchableOpacity>
-            <Text style={styles.pdfViewerTitle}>
-              Source: {highlightedField?.fieldValue}
-            </Text>
+            <View style={styles.headerContent}>
+              <Text style={styles.sourceViewerTitle}>
+                Source Context: {highlightedField?.fieldValue}
+              </Text>
+              <Text style={styles.sourceViewerSubtitle}>
+                Found {contextualBlocks.length} contextual location(s)
+              </Text>
+            </View>
           </View>
           
-          <View style={styles.pdfViewerContent}>
-            {/* Simple PDF viewer with highlights */}
-            <Text style={styles.highlightInfo}>
-              Found {sourcePositions.length} location(s) in document
-            </Text>
+          <ScrollView style={styles.sourceViewerContent}>
+            {contextualBlocks.map((block, index) => {
+              const { before, highlighted, after } = formatContextText(block);
+              
+              return (
+                <View key={index} style={styles.contextualBlock}>
+                  <View style={styles.blockHeader}>
+                    <View style={styles.blockHeaderLeft}>
+                      <MaterialCommunityIcons 
+                        name="map-marker" 
+                        size={16} 
+                        color={Colors.secondary} 
+                        style={styles.locationIcon}
+                      />
+                      <Text style={styles.blockLocation}>
+                        Page {block.page}
+                      </Text>
+                    </View>
+                    <View style={styles.blockHeaderRight}>
+                      <Text style={styles.blockConfidence}>
+                        {Math.round(block.confidence)}% confidence
+                      </Text>
+                      <Text style={styles.blockType}>
+                        {block.matchType} match
+                      </Text>
+                    </View>
+                  </View>
+                  
+                  <View style={styles.contextContainer}>
+                    <Text style={styles.contextText}>
+                      <Text style={styles.contextBefore}>{before}</Text>
+                      <Text style={styles.contextHighlighted}>{highlighted}</Text>
+                      <Text style={styles.contextAfter}>{after}</Text>
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.blockFooter}>
+                    <Text style={styles.blockCoords}>
+                      Position: ({Math.round(block.x)}, {Math.round(block.y)}) • 
+                      {block.wordCount} words • {block.source} source
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
             
-            {sourcePositions.map((position, index) => (
-              <View key={index} style={styles.positionInfo}>
-                <Text style={styles.positionText}>
-                  Page {position.page}: "{position.text}" 
-                </Text>
-                <Text style={styles.positionCoords}>
-                  Location: X:{Math.round(position.x)}, Y:{Math.round(position.y)}
+            {contextualBlocks.length === 0 && (
+              <View style={styles.noContextMessage}>
+                <MaterialCommunityIcons 
+                  name="alert-circle-outline" 
+                  size={48} 
+                  color={Colors.gray} 
+                />
+                <Text style={styles.noContextTitle}>No Context Found</Text>
+                <Text style={styles.noContextText}>
+                  Could not locate contextual information for this field in the document.
                 </Text>
               </View>
-            ))}
-          </View>
+            )}
+          </ScrollView>
         </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
 };
 
-// NEW: Styles for PDF viewer
+// ENHANCED: Styles for contextual source viewer
 const styles = {
-  pdfViewerHeader: {
+  sourceViewerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: Colors.reviewBorder,
-    backgroundColor: Colors.white
+    backgroundColor: Colors.white,
+    elevation: 2,
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   closeButton: {
-    marginRight: 16
+    marginRight: 16,
+    padding: 4,
   },
-  pdfViewerTitle: {
+  headerContent: {
+    flex: 1,
+  },
+  sourceViewerTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: Colors.black,
-    flex: 1
+    marginBottom: 2,
   },
-  pdfViewerContent: {
-    flex: 1,
-    padding: 16
-  },
-  highlightInfo: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: Colors.primary,
-    marginBottom: 16
-  },
-  positionInfo: {
-    backgroundColor: Colors.white,
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: Colors.secondary
-  },
-  positionText: {
-    fontSize: 16,
-    color: Colors.black,
-    marginBottom: 4
-  },
-  positionCoords: {
+  sourceViewerSubtitle: {
     fontSize: 14,
-    color: Colors.gray
-  }
+    color: Colors.gray,
+  },
+  sourceViewerContent: {
+    flex: 1,
+    padding: 16,
+  },
+  contextualBlock: {
+    backgroundColor: Colors.white,
+    borderRadius: 12,
+    marginBottom: 16,
+    overflow: 'hidden',
+    elevation: 2,
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  blockHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: Colors.primaryLight,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.reviewBorder,
+  },
+  blockHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  locationIcon: {
+    marginRight: 6,
+  },
+  blockLocation: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  blockHeaderRight: {
+    alignItems: 'flex-end',
+  },
+  blockConfidence: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: Colors.secondary,
+  },
+  blockType: {
+    fontSize: 12,
+    color: Colors.gray,
+    textTransform: 'capitalize',
+  },
+  contextContainer: {
+    padding: 16,
+  },
+  contextText: {
+    fontSize: 16,
+    lineHeight: 24,
+    color: Colors.black,
+  },
+  contextBefore: {
+    color: Colors.gray,
+  },
+  contextHighlighted: {
+    backgroundColor: Colors.warning + '40', // 40% opacity
+    color: Colors.black,
+    fontWeight: '600',
+    paddingHorizontal: 2,
+    borderRadius: 2,
+  },
+  contextAfter: {
+    color: Colors.gray,
+  },
+  blockFooter: {
+    padding: 12,
+    backgroundColor: Colors.reviewBackground,
+    borderTopWidth: 1,
+    borderTopColor: Colors.reviewBorder,
+  },
+  blockCoords: {
+    fontSize: 12,
+    color: Colors.gray,
+    fontFamily: 'monospace',
+  },
+  noContextMessage: {
+    alignItems: 'center',
+    padding: 32,
+    marginTop: 32,
+  },
+  noContextTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.gray,
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  noContextText: {
+    fontSize: 14,
+    color: Colors.gray,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
 };
 
 export default DocumentReviewScreen;
