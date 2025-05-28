@@ -135,7 +135,7 @@ const PDFPreviewScreen = () => {
       const pageHeight = 279; // Letter height in mm
       const margin = 15;
       const contentWidth = pageWidth - (margin * 2);
-      const bottomMargin = 25; // Space for footer
+      const bottomMargin = 18; // Reduced space for footer (was 25)
       const availableHeight = pageHeight - margin - bottomMargin;
       
       let currentY = margin;
@@ -162,24 +162,26 @@ const PDFPreviewScreen = () => {
       // Try to get the logo as data URL
       const logoDataUrl = await getLogoAsDataUrl();
       
-      // HEADER SECTION
+      // DUAL HEADER SECTION WITH TWO LOGOS
+      const headerHeight = 25;
+      
+      // Left side - MedRec logo (from assets)
       if (logoDataUrl) {
         doc.addImage(logoDataUrl, 'PNG', margin, currentY, 40, 15);
-        currentY += 20;
       } else {
-        // SIMPLIFIED FALLBACK - just blue text
+        // Fallback text for left logo
         doc.setTextColor(41, 128, 185);
         doc.setFontSize(16);
         doc.setFont('helvetica', 'bold');
-        doc.text('MedRec', margin, currentY + 12);
-        currentY += 20;
+        doc.text('Healing Hands', margin, currentY + 12);
       }
+    
       
       // Document title
       doc.setFontSize(20);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(41, 128, 185);
-      doc.text('Medical Document Review Report', margin, currentY);
+      doc.text('Referral Review', margin, currentY);
       currentY += 10;
       
       // Document metadata
@@ -343,7 +345,7 @@ const PDFPreviewScreen = () => {
         // Footer line
         doc.setDrawColor(200, 200, 200);
         doc.setLineWidth(0.3);
-        doc.line(margin, pageHeight - 20, margin + contentWidth, pageHeight - 20);
+        doc.line(margin, pageHeight - 15, margin + contentWidth, pageHeight - 15);
         
         // Footer text
         doc.setFontSize(8);
@@ -351,12 +353,12 @@ const PDFPreviewScreen = () => {
         doc.text(
           `Generated on ${new Date().toLocaleDateString()} by MedRec Clinical Review System`, 
           margin, 
-          pageHeight - 15
+          pageHeight - 10
         );
         doc.text(
           `Page ${i} of ${pageCount}`, 
           margin + contentWidth - 25, 
-          pageHeight - 15
+          pageHeight - 10
         );
       }
       
@@ -465,13 +467,13 @@ const PDFPreviewScreen = () => {
                   <View style={modernStyles.reportHeader}>
                     <View style={modernStyles.logoPlaceholder}>
                       <Image 
-                        source={require('../assets/MedRecLogo.png')} 
+                        source={require('../assets/medreclogo.png')} 
                         style={modernStyles.logoImage}
                         resizeMode="contain"
                       />
                     </View>
                     <View style={modernStyles.reportTitleContainer}>
-                      <Text style={modernStyles.reportTitle}>HHHC Referral Review</Text>
+                      <Text style={modernStyles.reportTitle}>Medical Document Review Report</Text>
                       <Text style={modernStyles.reportDate}>
                         Generated on {new Date().toLocaleDateString()}
                       </Text>
@@ -688,7 +690,7 @@ const modernStyles = StyleSheet.create({
     fontSize: Typography.size.large,
     fontWeight: Typography.weight.bold,
     color: Colors.primary,
-    marginBottom: Spacing.medium,
+    marginBottom: Spacing.tiny,
   },
   reportDate: {
     fontSize: Typography.size.small,
@@ -768,7 +770,7 @@ const modernStyles = StyleSheet.create({
     marginBottom: Spacing.medium,
   },
   fieldPreview: {
-    marginBottom: Spacing.medium,
+    marginBottom: Spacing.large,
   },
   fieldLabel: {
     fontSize: Typography.size.medium,

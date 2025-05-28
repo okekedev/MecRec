@@ -49,7 +49,7 @@ OUTPUT FORMAT RULES:
 - Extract real information from the document
 - Do not leave fields empty unless truly no information exists
 - Look carefully for patient names, dates, diagnoses, medications, etc.
-- Do not include the text in the format example, just the extracted data
+- Do not include any text from the format example
 - Use the pipe symbol (|) to separate the number from the content
 - Ensure the content is relevant to the field number. Do not skip fields.
 
@@ -149,6 +149,7 @@ Extract the information now using the NUMBER|CONTENT format:`;
         top_p: 0.4,        // Less restrictive for better extraction
         repeat_penalty: 1.1,
         stop: ["16|", "END", "---"],
+        seed: 42
       }
     };
 
