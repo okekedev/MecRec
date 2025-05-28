@@ -1,4 +1,4 @@
-// src/components/ProgressOverlay.js - Optimized version with consolidated icon/color logic
+// src/components/ProgressOverlay.js - Fixed to stay open until AI analysis complete
 import React, { useEffect, useRef } from 'react';
 import {
   View,
@@ -23,9 +23,29 @@ const ProgressOverlay = ({
   const rotateAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   
-  // Animate in when visible changes
+  // ENHANCED: Internal state to control when to actually close
+  const [shouldShow, setShouldShow] = React.useState(false);
+  const [isCompleting, setIsCompleting] = React.useState(false);
+  
+  // Handle visibility logic - stay open until truly complete
   useEffect(() => {
     if (visible) {
+      setShouldShow(true);
+      setIsCompleting(false);
+    } else if (status === 'complete' || status === 'error') {
+      // Only start closing process when explicitly complete or error
+      setIsCompleting(true);
+      // Delay closing to show completion state
+      setTimeout(() => {
+        setShouldShow(false);
+      }, 1500); // Show completion for 1.5 seconds
+    }
+    // Don't auto-close for any other reason
+  }, [visible, status]);
+  
+  // Animate in when shouldShow changes
+  useEffect(() => {
+    if (shouldShow) {
       // Fade in and scale up
       Animated.parallel([
         Animated.timing(fadeAnim, {
@@ -40,15 +60,17 @@ const ProgressOverlay = ({
         })
       ]).start();
       
-      // Start continuous rotation for the icon
-      Animated.loop(
-        Animated.timing(rotateAnim, {
-          toValue: 1,
-          duration: 3000,
-          easing: Easing.linear,
-          useNativeDriver: true,
-        })
-      ).start();
+      // Start continuous rotation for the icon (only if not completing)
+      if (!isCompleting) {
+        Animated.loop(
+          Animated.timing(rotateAnim, {
+            toValue: 1,
+            duration: 3000,
+            easing: Easing.linear,
+            useNativeDriver: true,
+          })
+        ).start();
+      }
       
       // Start pulse animation
       startPulseAnimation();
@@ -67,7 +89,7 @@ const ProgressOverlay = ({
         })
       ]).start();
     }
-  }, [visible]);
+  }, [shouldShow, isCompleting]);
   
   // Pulse animation function
   const startPulseAnimation = () => {
@@ -83,22 +105,22 @@ const ProgressOverlay = ({
         useNativeDriver: true,
       })
     ]).start(() => {
-      if (visible) {
+      if (shouldShow && !isCompleting) {
         startPulseAnimation();
       }
     });
   };
   
-  // CONSOLIDATED: Get step configuration (icon, colors) in one place
+  // ENHANCED: Better step configuration with proper completion detection
   const getStepConfig = () => {
     const step = currentStep.toLowerCase();
     
     // Define configurations for different step types
     const configs = {
-      mapping: {
-        icon: 'map-marker-outline',
-        color: Colors.secondary,
-        bgColor: Colors.secondaryLight,
+      starting: {
+        icon: 'rocket-launch-outline',
+        color: Colors.primary,
+        bgColor: Colors.primaryLight,
       },
       ocr: {
         icon: 'text-recognition', 
@@ -107,13 +129,23 @@ const ProgressOverlay = ({
       },
       ai: {
         icon: 'brain',
-        color: Colors.primary, 
-        bgColor: Colors.primaryLight,
+        color: Colors.secondary, 
+        bgColor: Colors.secondaryLight,
       },
-      list: {
-        icon: 'format-list-numbered',
-        color: Colors.primary,
-        bgColor: Colors.primaryLight,
+      complete: {
+        icon: 'check-circle',
+        color: Colors.success,
+        bgColor: '#e8f7ef',
+      },
+      error: {
+        icon: 'alert-circle',
+        color: Colors.accent,
+        bgColor: Colors.accentLight,
+      },
+      warning: {
+        icon: 'alert-outline',
+        color: Colors.warning,
+        bgColor: '#fff8f0',
       },
       default: {
         icon: 'file-document-outline',
@@ -122,24 +154,42 @@ const ProgressOverlay = ({
       }
     };
     
-    // Determine which config to use based on step content
-    if (step.includes('position') || step.includes('mapping') || step.includes('citation')) {
-      return configs.mapping;
-    } else if (step.includes('ocr') || step.includes('text')) {
-      return configs.ocr;
-    } else if (step.includes('ai') || step.includes('extract') || step.includes('analy') || step.includes('medical')) {
-      return configs.ai;
-    } else if (step.includes('list') || step.includes('numbered')) {
-      return configs.list;
+    // Handle completion states first
+    if (status === 'complete') {
+      return configs.complete;
+    } else if (status === 'error') {
+      return configs.error;
+    } else if (status === 'warning') {
+      return configs.warning;
     }
     
-    // Handle status-based colors
-    switch (status) {
-      case 'error': return { ...configs.default, color: Colors.accent, bgColor: Colors.accentLight };
-      case 'warning': return { ...configs.default, color: Colors.warning, bgColor: '#fff8f0' };
-      case 'complete': return { ...configs.default, color: Colors.success, bgColor: Colors.secondaryLight };
-      default: return configs.default;
+    // ENHANCED: Better step detection based on content and progress
+    if (step.includes('start') || step.includes('beginning') || progress < 0.15) {
+      return configs.starting;
+    } else if (step.includes('ocr') || step.includes('text') || step.includes('extract') || (progress >= 0.15 && progress < 0.4)) {
+      return configs.ocr;
+    } else if (step.includes('ai') || step.includes('medical') || step.includes('analy') || step.includes('brain') || progress >= 0.4) {
+      return configs.ai;
     }
+    
+    return configs.default;
+  };
+  
+  // ENHANCED: Better status messages based on progress
+  const getDisplayMessage = () => {
+    if (status === 'complete') return 'Processing Complete!';
+    if (status === 'error') return 'Processing Error';
+    if (status === 'warning') return 'Warning';
+    
+    // Custom messages based on progress and step
+    if (progress >= 0.95) return 'Finalizing Results...';
+    if (progress >= 0.85) return 'AI Analysis Complete';
+    if (progress >= 0.4) return 'AI Analyzing Medical Information...';
+    if (progress >= 0.3) return 'Text Extraction Complete';
+    if (progress >= 0.15) return 'Processing Document with OCR...';
+    if (progress >= 0.01) return 'Starting Document Processing...';
+    
+    return currentStep || status || 'Processing...';
   };
   
   // Calculate rotation for the spinner icon
@@ -152,14 +202,15 @@ const ProgressOverlay = ({
   const progressWidth = `${Math.round(progress * 100)}%`;
   
   // Don't render anything if not visible
-  if (!visible) return null;
+  if (!shouldShow) return null;
   
   const stepConfig = getStepConfig();
+  const displayMessage = getDisplayMessage();
   
   return (
     <Modal
       transparent={true}
-      visible={visible}
+      visible={shouldShow}
       animationType="none"
     >
       <View style={CommonStyles.overlayBackdrop}>
@@ -185,7 +236,10 @@ const ProgressOverlay = ({
               }
             ]}
           >
-            <Animated.View style={{ transform: [{ rotate: spin }] }}>
+            {/* Only rotate if still processing (not complete/error) */}
+            <Animated.View style={{ 
+              transform: (status === 'complete' || status === 'error') ? [] : [{ rotate: spin }]
+            }}>
               <MaterialCommunityIcons 
                 name={stepConfig.icon}
                 size={40} 
@@ -199,7 +253,7 @@ const ProgressOverlay = ({
             CommonStyles.overlayTitle,
             { color: stepConfig.color }
           ]}>
-            {currentStep || status}
+            {displayMessage}
           </Text>
           
           {/* Detailed message */}
@@ -230,12 +284,28 @@ const ProgressOverlay = ({
             {Math.round(progress * 100)}%
           </Text>
           
-          {/* Additional info for source mapping steps */}
-          {(currentStep.toLowerCase().includes('position') || 
-            currentStep.toLowerCase().includes('mapping') || 
-            currentStep.toLowerCase().includes('citation')) && (
-            <Text style={styles.sourceMappingHint}>
-              Preparing source highlighting for clinical review
+          {/* ENHANCED: Phase-specific hints */}
+          {progress < 0.3 && status !== 'complete' && status !== 'error' && (
+            <Text style={styles.phaseHint}>
+              Extracting text from document...
+            </Text>
+          )}
+          
+          {progress >= 0.3 && progress < 0.85 && status !== 'complete' && status !== 'error' && (
+            <Text style={styles.phaseHint}>
+              AI analyzing medical information...
+            </Text>
+          )}
+          
+          {progress >= 0.85 && progress < 1.0 && status !== 'complete' && status !== 'error' && (
+            <Text style={styles.phaseHint}>
+              Finalizing extraction results...
+            </Text>
+          )}
+          
+          {status === 'complete' && (
+            <Text style={styles.completeHint}>
+              Ready for clinical review
             </Text>
           )}
         </Animated.View>
@@ -244,14 +314,21 @@ const ProgressOverlay = ({
   );
 };
 
-// Styles
+// ENHANCED: Better styles
 const styles = {
-  sourceMappingHint: {
+  phaseHint: {
     fontSize: 12,
     color: Colors.gray,
     textAlign: 'center',
     marginTop: 8,
     fontStyle: 'italic'
+  },
+  completeHint: {
+    fontSize: 12,
+    color: Colors.success,
+    textAlign: 'center',
+    marginTop: 8,
+    fontWeight: '500'
   }
 };
 

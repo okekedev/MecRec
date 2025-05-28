@@ -49,6 +49,9 @@ OUTPUT FORMAT RULES:
 - Extract real information from the document
 - Do not leave fields empty unless truly no information exists
 - Look carefully for patient names, dates, diagnoses, medications, etc.
+- Do not include the text in the format example, just the extracted data
+- Use the pipe symbol (|) to separate the number from the content
+- Ensure the content is relevant to the field number. Do not skip fields.
 
 FORMAT EXAMPLE:
 1|John Smith
@@ -137,7 +140,7 @@ Extract the information now using the NUMBER|CONTENT format:`;
       model: modelName,
       prompt: this.getCoTPrompt(documentText),
       system: this.getSystemPrompt(),
-      temperature: 0.2, // Slightly higher to encourage extraction
+      temperature: 0.1, // Slightly higher to encourage extraction
       stream: false,
       options: {
         num_predict: 3000,  // More tokens for detailed extraction
