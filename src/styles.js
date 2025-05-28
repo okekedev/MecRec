@@ -1015,7 +1015,7 @@ export const CommonStyles = StyleSheet.create({
   },
   
   headerLogoButton: {
-    height: 40,
+    height: 30,
     width: 100,
     justifyContent: 'center',
     alignItems: 'flex-start',
@@ -1029,8 +1029,8 @@ export const CommonStyles = StyleSheet.create({
   },
   
   headerLogoImage: {
-    height: 90,
-    width: 90,
+    height: 100,
+    width: 100,
   },
   
   headerBackIcon: {
@@ -1056,7 +1056,7 @@ export const CommonStyles = StyleSheet.create({
   
   headerIndicatorInner: {
     width: 40,
-    height: 3,
+    height: 0,
     backgroundColor: Colors.primaryLight,
     borderRadius: 2,
   },

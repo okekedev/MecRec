@@ -80,10 +80,10 @@ const HomeScreen = () => {
               <View>
                 <Text style={CommonStyles.homeWelcomeDate}>{currentDate}</Text>
                 <Text style={CommonStyles.homeWelcomeTitle}>
-                  Medical Document Review System
+                  Medical Referral Platform
                 </Text>
                 <Text style={CommonStyles.homeWelcomeSubtitle}>
-                  Process, review, and generate clinical reports
+                  Process, review, and generate referral summaries
                 </Text>
               </View>
               
