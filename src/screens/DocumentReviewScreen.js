@@ -1,4 +1,4 @@
-// DocumentReviewScreen.js - Using consolidated styles and proper service architecture
+// src/screens/DocumentReviewScreen.js - Add PDF viewer with highlights
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -9,7 +9,8 @@ import {
   Alert,
   SafeAreaView,
   ActivityIndicator,
-  Animated
+  Animated,
+  Modal
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import PDFProcessorService from '../services/PDFProcessorService';
@@ -18,6 +19,7 @@ import EnhancedHeader from '../components/Header';
 import ReviewField from '../components/ReviewField';
 import { Colors, CommonStyles } from '../styles';
 import * as Animations from '../animations';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 const DocumentReviewScreen = () => {
   const route = useRoute();
@@ -28,7 +30,7 @@ const DocumentReviewScreen = () => {
   const pdfProcessor = PDFProcessorService.getInstance();
   const medicalFieldService = MedicalFieldService.getInstance();
   
-  // State variables
+  // Existing state
   const [loading, setLoading] = useState(true);
   const [documentData, setDocumentData] = useState(null);
   const [formData, setFormData] = useState({});
@@ -37,11 +39,16 @@ const DocumentReviewScreen = () => {
   const [reviewerCredentials, setReviewerCredentials] = useState('');
   const [extractionError, setExtractionError] = useState('');
   
+  // NEW: Source highlighting state
+  const [showPdfViewer, setShowPdfViewer] = useState(false);
+  const [highlightedField, setHighlightedField] = useState(null);
+  const [sourcePositions, setSourcePositions] = useState([]);
+  
   // Animation references
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   
-  // Load document data
+  // Existing useEffect for loading document
   useEffect(() => {
     const loadDocument = async () => {
       try {
@@ -65,7 +72,7 @@ const DocumentReviewScreen = () => {
         
         setDocumentData(document);
         
-        // Use service to get clean form data - service handles field order and structure
+        // Use service to get clean form data
         const fieldOrder = medicalFieldService.getFieldOrder();
         const cleanFormData = {};
         
@@ -75,7 +82,7 @@ const DocumentReviewScreen = () => {
         
         setFormData(cleanFormData);
         
-        // Initialize reviewed fields for all known fields
+        // Initialize reviewed fields
         const initialReviewed = {};
         fieldOrder.forEach(fieldKey => {
           initialReviewed[fieldKey] = false;
@@ -99,7 +106,23 @@ const DocumentReviewScreen = () => {
     loadDocument();
   }, [documentId]);
   
-  // Update field value
+  // NEW: Handle showing source in PDF
+  const handleShowSource = (fieldKey, fieldValue) => {
+    console.log(`Showing source for ${fieldKey}: ${fieldValue}`);
+    
+    // Get source positions from PDF processor
+    const fieldReference = pdfProcessor.getFieldReference(documentId, fieldKey);
+    
+    if (fieldReference && fieldReference.hasSourceHighlighting) {
+      setHighlightedField({ fieldKey, fieldValue });
+      setSourcePositions(fieldReference.sourcePositions);
+      setShowPdfViewer(true);
+    } else {
+      Alert.alert('No Source Found', 'Could not locate this information in the document.');
+    }
+  };
+  
+  // Existing handler functions
   const handleFieldChange = (fieldKey, value) => {
     setFormData(prev => ({
       ...prev,
@@ -107,7 +130,6 @@ const DocumentReviewScreen = () => {
     }));
   };
   
-  // Toggle field review status
   const handleReviewToggle = (fieldKey, value) => {
     setReviewedFields(prev => ({
       ...prev,
@@ -115,7 +137,7 @@ const DocumentReviewScreen = () => {
     }));
   };
   
-  // Calculate progress - uses service to get field order
+  // Existing utility functions
   const calculateProgress = () => {
     const fieldOrder = medicalFieldService.getFieldOrder();
     const total = fieldOrder.length;
@@ -124,13 +146,11 @@ const DocumentReviewScreen = () => {
     return total > 0 ? reviewed / total : 0;
   };
   
-  // Check if all fields are reviewed - uses service
   const allFieldsReviewed = () => {
     const fieldOrder = medicalFieldService.getFieldOrder();
     return fieldOrder.every(fieldKey => reviewedFields[fieldKey]);
   };
   
-  // Mark all fields as reviewed - uses service for field list
   const markAllAsReviewed = () => {
     const allReviewed = {};
     medicalFieldService.getFieldOrder().forEach(fieldKey => {
@@ -139,7 +159,6 @@ const DocumentReviewScreen = () => {
     setReviewedFields(allReviewed);
   };
   
-  // Generate PDF
   const generatePDF = () => {
     if (!allFieldsReviewed()) {
       Alert.alert('Error', 'Please review all fields before generating a report.');
@@ -160,7 +179,6 @@ const DocumentReviewScreen = () => {
     });
   };
   
-  // Get progress color based on completion
   const getProgressColor = () => {
     const progress = calculateProgress();
     if (progress < 0.3) return Colors.warning;
@@ -168,7 +186,7 @@ const DocumentReviewScreen = () => {
     return Colors.success;
   };
   
-  // Loading screen using consolidated styles
+  // Loading screen
   if (loading) {
     return (
       <View style={CommonStyles.loadingContainer}>
@@ -181,7 +199,6 @@ const DocumentReviewScreen = () => {
     );
   }
   
-  // Get field information from service
   const fieldOrder = medicalFieldService.getFieldOrder();
   const reviewedCount = fieldOrder.filter(fieldKey => reviewedFields[fieldKey]).length;
   const progressPercent = Math.round(calculateProgress() * 100);
@@ -193,7 +210,7 @@ const DocumentReviewScreen = () => {
         showBackButton={true}
       />
       
-      {/* Progress Header using consolidated styles */}
+      {/* Progress Header - existing code */}
       <View style={CommonStyles.headerContainer}>
         <View style={CommonStyles.headerTextContainer}>
           <Text style={CommonStyles.headerText}>Review Progress</Text>
@@ -223,14 +240,13 @@ const DocumentReviewScreen = () => {
           transform: [{ translateY: slideAnim }]
         }}>
           <View style={CommonStyles.contentContainer}>
-            {/* Document Header using consolidated styles */}
+            {/* Document Header - existing code */}
             <View style={CommonStyles.sectionContainer}>
               <Text style={CommonStyles.sectionTitle}>{documentData?.name}</Text>
               <Text style={[CommonStyles.sectionDescription, { marginBottom: 0 }]}>
                 Processed on {new Date(documentData?.date).toLocaleDateString()}
               </Text>
               
-              {/* Extraction error warning using consolidated message styles */}
               {extractionError && (
                 <View style={CommonStyles.errorContainer}>
                   <Text style={[CommonStyles.messageTitle, CommonStyles.errorTitle]}>
@@ -243,7 +259,7 @@ const DocumentReviewScreen = () => {
               )}
             </View>
             
-            {/* Clinical Information Section using consolidated styles */}
+            {/* Clinical Information Section - UPDATED with source highlighting */}
             <View style={CommonStyles.sectionContainer}>
               <View style={CommonStyles.sectionTitleContainer}>
                 <View style={CommonStyles.sectionTitleIcon} />
@@ -251,16 +267,14 @@ const DocumentReviewScreen = () => {
               </View>
               
               <Text style={CommonStyles.sectionDescription}>
-                Review and verify the extracted information below. Each field shows AI reasoning 
-                to help you understand how the information was identified.
+                Review and verify the extracted information below. Click "Show in Document" to see where the AI found each piece of information.
               </Text>
               
               <View style={{ marginBottom: 20 }}>
-                {/* Use service to get ordered fields */}
                 {fieldOrder.map(fieldKey => {
-                  // Get AI reasoning for this field from PDF processor service
                   const fieldReference = pdfProcessor.getFieldReference(documentId, fieldKey);
                   const aiReasoning = fieldReference?.explanation || 'No reasoning provided';
+                  const hasSourceHighlighting = fieldReference?.hasSourceHighlighting || false;
                   
                   return (
                     <ReviewField
@@ -271,6 +285,8 @@ const DocumentReviewScreen = () => {
                       isReviewed={reviewedFields[fieldKey] || false}
                       onReviewChange={(newValue) => handleReviewToggle(fieldKey, newValue)}
                       aiReasoning={aiReasoning}
+                      hasSourceHighlighting={hasSourceHighlighting}
+                      onShowSource={handleShowSource}
                     />
                   );
                 })}
@@ -285,7 +301,7 @@ const DocumentReviewScreen = () => {
               </TouchableOpacity>
             </View>
             
-            {/* Reviewer Authentication using consolidated styles */}
+            {/* Reviewer Authentication - existing code unchanged */}
             <View style={CommonStyles.sectionContainer}>
               <View style={CommonStyles.sectionTitleContainer}>
                 <View style={[CommonStyles.sectionTitleIcon, { backgroundColor: Colors.secondary }]} />
@@ -341,8 +357,95 @@ const DocumentReviewScreen = () => {
           </View>
         </Animated.View>
       </ScrollView>
+      
+      {/* NEW: PDF Viewer Modal with Highlights */}
+      <Modal
+        visible={showPdfViewer}
+        animationType="slide"
+        onRequestClose={() => setShowPdfViewer(false)}
+      >
+        <SafeAreaView style={{ flex: 1, backgroundColor: Colors.reviewBackground }}>
+          <View style={styles.pdfViewerHeader}>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setShowPdfViewer(false)}
+            >
+              <MaterialCommunityIcons name="close" size={24} color={Colors.black} />
+            </TouchableOpacity>
+            <Text style={styles.pdfViewerTitle}>
+              Source: {highlightedField?.fieldValue}
+            </Text>
+          </View>
+          
+          <View style={styles.pdfViewerContent}>
+            {/* Simple PDF viewer with highlights */}
+            <Text style={styles.highlightInfo}>
+              Found {sourcePositions.length} location(s) in document
+            </Text>
+            
+            {sourcePositions.map((position, index) => (
+              <View key={index} style={styles.positionInfo}>
+                <Text style={styles.positionText}>
+                  Page {position.page}: "{position.text}" 
+                </Text>
+                <Text style={styles.positionCoords}>
+                  Location: X:{Math.round(position.x)}, Y:{Math.round(position.y)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
+};
+
+// NEW: Styles for PDF viewer
+const styles = {
+  pdfViewerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.reviewBorder,
+    backgroundColor: Colors.white
+  },
+  closeButton: {
+    marginRight: 16
+  },
+  pdfViewerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: Colors.black,
+    flex: 1
+  },
+  pdfViewerContent: {
+    flex: 1,
+    padding: 16
+  },
+  highlightInfo: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: Colors.primary,
+    marginBottom: 16
+  },
+  positionInfo: {
+    backgroundColor: Colors.white,
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.secondary
+  },
+  positionText: {
+    fontSize: 16,
+    color: Colors.black,
+    marginBottom: 4
+  },
+  positionCoords: {
+    fontSize: 14,
+    color: Colors.gray
+  }
 };
 
 export default DocumentReviewScreen;

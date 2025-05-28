@@ -1,6 +1,5 @@
 /**
- * Simplified OllamaService - Clean NUMBER| parsing with pipe delimiters
- * Let the AI do the heavy lifting, keep parsing simple
+ * Debug OllamaService - Add logging to understand why extraction is empty
  */
 import MedicalFieldService from './MedicalFieldService';
 
@@ -9,7 +8,8 @@ class OllamaService {
 
   constructor() {
     this.baseUrl = 'http://localhost:11434';
-    this.defaultModel = 'llama3.2:1b';
+    this.defaultModel = 'monotykamary/medichat-llama3';
+    this.fallbackModel = 'llama3.2:1b';
     this.medicalFieldService = MedicalFieldService.getInstance();
     this.progressCallback = null;
   }
@@ -37,99 +37,185 @@ class OllamaService {
   }
 
   /**
-   * Explicit prompt with clear field assignments
+   * DEBUG: Enhanced system prompt with more guidance
    */
   getSystemPrompt() {
-    return `Extract medical information from referral documents. Return exactly 15 fields using pipe delimiters. Put the RIGHT information in each field number. Use pipes after numbers to seperate fields rather than periods or commas.
+    return `You are a medical AI assistant specialized in extracting information from clinical documents.
 
-REQUIRED FORMAT WITH SPECIFIC FIELD ASSIGNMENTS:
-1| [Extract: Patient's full name from document header/top]
-2| [Extract: Date of birth, DOB, or birth date in any format]
-3| [Extract: Insurance provider, Medicare, Medicaid, policy details]
-4| [Extract: Hospital name, clinic, medical facility location]
-5| [Extract: Primary diagnosis, main condition, chief complaint]
-6| [Extract: Doctor's name, PCP, referring physician, MD name]
-7| [Extract: Discharge plans, follow-up instructions, where patient goes next]
-8| [Extract: Physical injuries, wounds, fractures, trauma, physical findings]
-9| [Extract: ALL medications, drugs, prescriptions, antibiotics mentioned]
-10| [Extract: Heart medications, cardiac drugs, IV drips, cardiac-specific meds]
-11| [Extract: Lab results, blood work, vital signs, test values]
-12| [Extract: Physical examination notes, face-to-face evaluation, assessment]
-13| [Extract: Past medical history, previous conditions, medical background]
-14| [Extract: Mental status, psychological state, cognitive assessment]
-15| [Extract: Other clinical notes, additional observations, miscellaneous]
+TASK: Read the medical document carefully and extract specific information into 15 numbered fields.
 
+OUTPUT FORMAT RULES:
+- Each line starts with: NUMBER|EXTRACTED_INFORMATION
+- Extract real information from the document
+- Do not leave fields empty unless truly no information exists
+- Look carefully for patient names, dates, diagnoses, medications, etc.
 
-Your response must start with "1|" and assign information to the CORRECT field numbers.`;
+FORMAT EXAMPLE:
+1|John Smith
+2|01/15/1980
+3|Medicare Part A
+4|General Hospital
+5|Type 2 Diabetes
+6|Dr. Sarah Johnson
+7|Home with follow-up
+8|No acute findings
+9|Metformin 500mg BID
+10|Lisinopril 10mg daily
+11|A1C 7.2%, Glucose 140
+12|Alert and oriented
+13|Hypertension, diabetes
+14|Normal cognition
+15|Patient compliant with medications
+
+FIELD DEFINITIONS:
+1 = Patient's full name (look for names, patient identifiers)
+2 = Date of birth or age (look for DOB, birth date, age)
+3 = Insurance (Medicare, Medicaid, insurance company names)
+4 = Medical facility (hospital name, clinic, medical center)
+5 = Primary diagnosis (main medical condition, chief complaint)
+6 = Primary care provider (doctor names, PCP, referring physician)
+7 = Discharge disposition (where patient goes: home, facility, etc.)
+8 = Physical findings (wounds, injuries, physical exam results)
+9 = Medications (all drugs, prescriptions, treatments mentioned)
+10 = Cardiac medications (heart-specific drugs only)
+11 = Laboratory data (lab results, vital signs, test values)
+12 = Physical examination (examination notes, assessments)
+13 = Medical history (past conditions, previous medical issues)
+14 = Mental status (cognitive state, mental health notes)
+15 = Additional notes (other important clinical information)
+
+IMPORTANT: Extract actual information from the document. Do not return empty fields unless the information truly doesn't exist in the document.`;
+  }
+
+  /**
+   * DEBUG: Enhanced document prompt with better instructions
+   */
+  getCoTPrompt(documentText) {
+    // DEBUG: Log the document text being sent to AI
+    console.log('DEBUG: Document text being sent to AI:');
+    console.log('Document length:', documentText.length);
+    console.log('First 500 characters:', documentText.substring(0, 500));
+    console.log('Last 500 characters:', documentText.substring(Math.max(0, documentText.length - 500)));
+    
+    return `Read this medical document carefully and extract the requested information:
+
+MEDICAL DOCUMENT TEXT:
+${documentText}
+
+INSTRUCTIONS:
+1. Read the entire document above
+2. Look for patient information, medical details, diagnoses, medications, etc.
+3. Extract information into the 15 numbered fields using pipe format
+4. Put actual information after each pipe symbol
+5. Only leave a field empty (NUMBER|) if that information truly doesn't exist
+
+Extract the information now using the NUMBER|CONTENT format:`;
   }
 
   async generateCompletion(documentText) {
-    this.updateProgress('processing', 0.4, 'Analyzing document', `Running AI model: ${this.defaultModel}`);
+    // DEBUG: Check if document text is meaningful
+    if (!documentText || documentText.trim().length < 50) {
+      console.warn('DEBUG: Document text is very short or empty:', documentText);
+    }
+    
+    this.updateProgress('processing', 0.4, 'Medical AI Analysis', `Using medichat-llama3 model`);
     
     try {
-      const requestData = {
-        model: this.defaultModel,
-        prompt: documentText,
-        system: this.getSystemPrompt(),
-        temperature: 0.1,
-        stream: false,
-        options: {
-          num_predict: 3000,
-          num_ctx: 8192,
-          top_k: 10,
-          top_p: 0.3,
-          repeat_penalty: 1.1,
-          stop: ["16|", "END"],
-          seed: 42
-        }
-      };
-
-      const response = await fetch(`${this.baseUrl}/api/generate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestData),
-      });
-
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      this.updateProgress('processing', 0.7, 'Analysis complete', 'Successfully extracted information');
-      
-      console.log('AI Response Length:', (data.response || '').length, 'characters');
-      console.log('AI Response Preview:', (data.response || '').substring(0, 200) + '...');
-      
-      return data.response || JSON.stringify(data);
+      return await this.tryModelGeneration(this.defaultModel, documentText);
     } catch (error) {
-      this.updateProgress('error', 0.4, 'Analysis failed', `Error: ${error.message}`);
-      throw error;
+      console.warn('Medichat model failed, trying fallback:', error.message);
+      this.updateProgress('processing', 0.45, 'Switching models', 'Trying alternative model');
+      
+      try {
+        return await this.tryModelGeneration(this.fallbackModel, documentText);
+      } catch (fallbackError) {
+        throw new Error(`Both models failed: ${error.message}, ${fallbackError.message}`);
+      }
     }
+  }
+
+  async tryModelGeneration(modelName, documentText) {
+    // DEBUG: More balanced parameters - not too restrictive
+    const requestData = {
+      model: modelName,
+      prompt: this.getCoTPrompt(documentText),
+      system: this.getSystemPrompt(),
+      temperature: 0.2, // Slightly higher to encourage extraction
+      stream: false,
+      options: {
+        num_predict: 3000,  // More tokens for detailed extraction
+        num_ctx: 8192,
+        top_k: 20,         // Less restrictive to allow medical terminology
+        top_p: 0.4,        // Less restrictive for better extraction
+        repeat_penalty: 1.1,
+        stop: ["16|", "END", "---"],
+        seed: 42
+      }
+    };
+
+    // DEBUG: Log the request being sent
+    console.log('DEBUG: Sending request to model:', modelName);
+    console.log('DEBUG: Request parameters:', JSON.stringify(requestData.options, null, 2));
+
+    const response = await fetch(`${this.baseUrl}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestData),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    this.updateProgress('processing', 0.7, 'Medical analysis complete', 'Extracted clinical information');
+    
+    // DEBUG: Log the full response
+    console.log('DEBUG: Full AI Response:', data.response);
+    console.log('DEBUG: Response length:', (data.response || '').length);
+    
+    return data.response || JSON.stringify(data);
   }
 
   async extractInformation(text) {
     try {
-      this.updateProgress('processing', 0.3, 'Starting AI analysis', 'Preparing document for extraction');
+      this.updateProgress('processing', 0.3, 'Starting medical analysis', 'Preparing document for medichat AI');
+      
+      // DEBUG: Log the text being processed
+      console.log('DEBUG: Text being processed for extraction:');
+      console.log('Text length:', text.length);
+      console.log('Text preview:', text.substring(0, 200) + '...');
       
       const result = await this.generateCompletion(text);
       
       try {
         const extractedData = this.parseDelimiterResponse(result);
-        this.updateProgress('processing', 0.9, 'Information extracted', 'Successfully extracted structured data');
+        
+        // DEBUG: Log extraction results
+        console.log('DEBUG: Extraction results:');
+        Object.entries(extractedData).forEach(([key, value]) => {
+          if (value && typeof value === 'string' && value.trim()) {
+            console.log(`DEBUG: ${key} = "${value}"`);
+          }
+        });
+        
+        this.updateProgress('processing', 0.9, 'Medical extraction complete', 'Successfully extracted clinical data');
         return extractedData;
       } catch (parseError) {
-        this.updateProgress('error', 0.7, 'Parsing error', `Failed to extract: ${parseError.message}`);
+        console.error('DEBUG: Parse error:', parseError);
+        this.updateProgress('error', 0.7, 'Medical parsing error', `Failed to extract: ${parseError.message}`);
         
         return {
           extractionMethod: 'failed',
-          error: 'Parsing error',
+          error: 'Medical parsing error',
           errorDetails: parseError.message,
           rawOutput: result,
           timestamp: new Date().toISOString()
         };
       }
     } catch (error) {
-      this.updateProgress('error', 0.5, 'Extraction failed', `Error: ${error.message}`);
+      console.error('DEBUG: Extraction error:', error);
+      this.updateProgress('error', 0.5, 'Medical extraction failed', `Error: ${error.message}`);
       return {
         extractionMethod: 'failed',
         error: error.message,
@@ -139,43 +225,79 @@ Your response must start with "1|" and assign information to the CORRECT field n
     }
   }
 
-  /**
-   * Super simple parsing: NUMBER| to next NUMBER| (or end)
-   * Capture everything in between - let AI handle the formatting
-   */
   parseDelimiterResponse(text) {
-    console.log('Raw AI Response:', text);
+    console.log('DEBUG: Parsing AI response...');
+    console.log('DEBUG: Raw response:', text);
     
     const result = this.medicalFieldService.createEmptyFormData();
-    result.extractionMethod = 'delimiter-parsed';
+    result.extractionMethod = 'medichat-parsed';
     
-    // Simple regex: capture from NUMBER| to next NUMBER| (or end of text)
-    const pattern = /(\d+)\|(.*?)(?=\d+\||$)/gs;
+    const pattern = /^(\d+)\s*\|\s*(.*?)$/gm;
     const matches = [...text.matchAll(pattern)];
     
-    console.log(`Found ${matches.length} field matches`);
+    console.log(`DEBUG: Found ${matches.length} pipe-delimited matches`);
     
-    matches.forEach(match => {
+    if (matches.length === 0) {
+      console.error('DEBUG: No pipe format found in response');
+      result.extractionMethod = 'format_error';
+      result.error = 'AI response did not follow required pipe delimiter format';
+      return result;
+    }
+    
+    matches.forEach((match, index) => {
       const number = parseInt(match[1], 10);
-      const content = match[2].trim();
-      console.log(`Field ${number}: "${content}"`);
+      let content = match[2].trim();
       
-      const field = this.medicalFieldService.getFieldByNumber(number);
+      console.log(`DEBUG: Match ${index + 1}: Field ${number} = "${content}"`);
       
-      if (field && number >= 1 && number <= 15) {
-        // Store content unless it's clearly "not found"
-        if (content && 
-            content.length > 0 &&
-            !content.toLowerCase().includes('not found')) {
+      if (this.isValidMedicalContent(content, number)) {
+        const field = this.medicalFieldService.getFieldByNumber(number);
+        
+        if (field && number >= 1 && number <= 15) {
+          content = this.cleanMedicalContent(content);
           result[field.key] = content;
-          console.log(`✓ Stored: ${field.key} = "${content}"`);
-        } else {
-          console.log(`✗ Skipped: ${field.key} (empty or not found)`);
+          console.log(`DEBUG: ✓ Stored ${field.key} = "${content}"`);
         }
+      } else {
+        console.log(`DEBUG: ✗ Invalid content for field ${number}: "${content}"`);
       }
     });
     
     return result;
+  }
+
+  isValidMedicalContent(content, fieldNumber) {
+    if (!content || content.length < 1) {
+      console.log(`DEBUG: Content empty or too short: "${content}"`);
+      return false;
+    }
+    
+    const invalidPatterns = [
+      /^(not found|none|n\/a|unknown|not specified|not mentioned)$/i,
+      /^(no|null|undefined|empty)$/i,
+      /^\[.*\]$/, // Bracketed instructions
+      /^extract:/i, // Instruction remnants
+      /^(here|content|info|information)$/i // Generic placeholders
+    ];
+    
+    const isInvalid = invalidPatterns.some(pattern => pattern.test(content.trim()));
+    if (isInvalid) {
+      console.log(`DEBUG: Content matches invalid pattern: "${content}"`);
+    }
+    
+    return !isInvalid;
+  }
+
+  cleanMedicalContent(content) {
+    const cleaned = content
+      .replace(/^\[|\]$/g, '') // Remove brackets
+      .replace(/^Extract:\s*/i, '') // Remove instruction prefixes
+      .replace(/\s+/g, ' ') // Normalize spaces
+      .replace(/^[:\-\s]+|[:\-\s]+$/g, '') // Remove leading/trailing colons and dashes
+      .trim();
+    
+    console.log(`DEBUG: Cleaned "${content}" -> "${cleaned}"`);
+    return cleaned;
   }
 }
 

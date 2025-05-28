@@ -1,4 +1,4 @@
-// ReviewField.js - Now using MedicalFieldService and global CommonStyles
+// src/components/ReviewField.js - Add "Show Source" button
 import React, { useState } from 'react';
 import {
   View,
@@ -18,7 +18,10 @@ const ReviewField = ({
   onValueChange,
   isReviewed,
   onReviewChange,
-  aiReasoning
+  aiReasoning,
+  // NEW: Add props for source highlighting
+  onShowSource,
+  hasSourceHighlighting = false
 }) => {
   const [showReasoning, setShowReasoning] = useState(false);
   const [expanded] = useState(new Animated.Value(0));
@@ -98,9 +101,26 @@ const ReviewField = ({
             multiline={isMultiline}
             textAlignVertical={isMultiline ? 'top' : 'center'}
           />
+          
+          {/* NEW: Show Source button */}
+          {value && hasSourceHighlighting && (
+            <TouchableOpacity
+              style={styles.showSourceButton}
+              onPress={() => onShowSource(fieldKey, value)}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons 
+                name="map-marker" 
+                size={16} 
+                color={Colors.secondary} 
+                style={styles.sourceIcon}
+              />
+              <Text style={styles.showSourceText}>Show in Document</Text>
+            </TouchableOpacity>
+          )}
         </View>
         
-        {/* AI Reasoning section */}
+        {/* AI Reasoning section - existing code unchanged */}
         {aiReasoning && aiReasoning !== 'No reasoning provided' && (
           <View style={CommonStyles.reviewFieldReasoningContainer}>
             <TouchableOpacity
@@ -146,6 +166,28 @@ const ReviewField = ({
       </View>
     </View>
   );
+};
+
+// NEW: Styles for Show Source button
+const styles = {
+  showSourceButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginTop: 8,
+    backgroundColor: Colors.secondaryLight,
+    borderRadius: 6,
+    alignSelf: 'flex-start'
+  },
+  sourceIcon: {
+    marginRight: 6
+  },
+  showSourceText: {
+    fontSize: 14,
+    color: Colors.secondary,
+    fontWeight: '500'
+  }
 };
 
 export default ReviewField;

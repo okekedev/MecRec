@@ -1,4 +1,4 @@
-// src/components/ProgressOverlay.js - Using consolidated styles
+// src/components/ProgressOverlay.js - Add progress steps for source mapping
 import React, { useEffect, useRef } from 'react';
 import {
   View,
@@ -98,28 +98,55 @@ const ProgressOverlay = ({
   // Calculate width of progress bar
   const progressWidth = `${Math.round(progress * 100)}%`;
   
-  // Get the appropriate icon based on the current step
+  // UPDATED: Get the appropriate icon based on the current step
   const getIcon = () => {
     const step = currentStep.toLowerCase();
     
-    if (step.includes('ocr') || step.includes('text')) {
+    // NEW: Handle source mapping steps
+    if (step.includes('position') || step.includes('mapping')) {
+      return 'map-marker-outline';
+    } else if (step.includes('ocr') || step.includes('text')) {
       return 'text-recognition';
-    } else if (step.includes('ai') || step.includes('extract') || step.includes('analy')) {
+    } else if (step.includes('ai') || step.includes('extract') || step.includes('analy') || step.includes('medical')) {
       return 'brain';
     } else if (step.includes('list') || step.includes('numbered')) {
       return 'format-list-numbered';
+    } else if (step.includes('citation') || step.includes('source')) {
+      return 'map-marker-radius';
     } else {
       return 'file-document-outline';
     }
   };
   
-  // Get status color based on status
+  // UPDATED: Get status color with new steps
   const getStatusColor = () => {
-    switch (status) {
-      case 'error': return Colors.accent;
-      case 'warning': return Colors.warning;
-      case 'complete': return Colors.success;
-      default: return Colors.primary;
+    const step = currentStep.toLowerCase();
+    
+    // NEW: Color coding for different steps
+    if (step.includes('position') || step.includes('mapping') || step.includes('citation')) {
+      return Colors.secondary; // Green for source mapping
+    } else if (step.includes('ai') || step.includes('medical')) {
+      return Colors.primary; // Blue for AI processing
+    } else {
+      switch (status) {
+        case 'error': return Colors.accent;
+        case 'warning': return Colors.warning;
+        case 'complete': return Colors.success;
+        default: return Colors.primary;
+      }
+    }
+  };
+  
+  // UPDATED: Get background color for icon
+  const getIconBackgroundColor = () => {
+    const step = currentStep.toLowerCase();
+    
+    if (step.includes('position') || step.includes('mapping') || step.includes('citation')) {
+      return Colors.secondaryLight;
+    } else if (step.includes('ai') || step.includes('medical')) {
+      return Colors.primaryLight;
+    } else {
+      return Colors.primaryLight;
     }
   };
   
@@ -145,15 +172,13 @@ const ProgressOverlay = ({
             }
           ]}
         >
-          {/* Icon section */}
+          {/* Icon section with dynamic colors */}
           <Animated.View 
             style={[
               CommonStyles.overlayIconContainer,
               { 
                 transform: [{ scale: pulseAnim }],
-                backgroundColor: currentStep.toLowerCase().includes('ai') ? 
-                  Colors.secondaryLight : 
-                  Colors.primaryLight
+                backgroundColor: getIconBackgroundColor()
               }
             ]}
           >
@@ -161,12 +186,12 @@ const ProgressOverlay = ({
               <MaterialCommunityIcons 
                 name={getIcon()}
                 size={40} 
-                color={currentStep.toLowerCase().includes('ai') ? Colors.secondary : Colors.primary}
+                color={getStatusColor()}
               />
             </Animated.View>
           </Animated.View>
           
-          {/* Status text */}
+          {/* Status text with dynamic color */}
           <Text style={[
             CommonStyles.overlayTitle,
             { color: getStatusColor() }
@@ -181,7 +206,7 @@ const ProgressOverlay = ({
             </Text>
           )}
           
-          {/* Progress bar using consolidated styles */}
+          {/* Progress bar with dynamic color */}
           <View style={CommonStyles.progressBarContainer}>
             <Animated.View 
               style={[
@@ -194,17 +219,37 @@ const ProgressOverlay = ({
             />
           </View>
           
-          {/* Percentage text */}
+          {/* Percentage text with dynamic color */}
           <Text style={[
             CommonStyles.progressPercentage,
             { color: getStatusColor(), marginBottom: 0 }
           ]}>
             {Math.round(progress * 100)}%
           </Text>
+          
+          {/* NEW: Additional info for source mapping steps */}
+          {(currentStep.toLowerCase().includes('position') || 
+            currentStep.toLowerCase().includes('mapping') || 
+            currentStep.toLowerCase().includes('citation')) && (
+            <Text style={styles.sourceMappingHint}>
+              Preparing source highlighting for clinical review
+            </Text>
+          )}
         </Animated.View>
       </View>
     </Modal>
   );
+};
+
+// NEW: Additional styles
+const styles = {
+  sourceMappingHint: {
+    fontSize: 12,
+    color: Colors.gray,
+    textAlign: 'center',
+    marginTop: 8,
+    fontStyle: 'italic'
+  }
 };
 
 export default ProgressOverlay;
