@@ -70,7 +70,7 @@ const DocumentUploadScreen = () => {
           <View style={styles.cardHeader}>
             <View style={styles.cardTitleContainer}>
               <View style={styles.cardTitleIcon} />
-              <Text style={styles.cardTitle}>Medical Document Upload</Text>
+              <Text style={styles.cardTitle}>Medical Referral Upload</Text>
             </View>
             <Text style={styles.cardSubtitle}>
               Upload a medical referral PDF for AI-powered processing

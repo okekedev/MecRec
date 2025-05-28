@@ -82,7 +82,7 @@ FIELD DEFINITIONS:
 9 = Medications (all drugs, prescriptions, treatments mentioned)
 10 = Cardiac medications (heart-specific drugs only)
 11 = Laboratory data (lab results, vital signs, test values)
-12 = Physical examination (examination notes, assessments)
+12 = Physical examination (examination notes, assessments, physician signature status)
 13 = Medical history (past conditions, previous medical issues)
 14 = Mental status (cognitive state, mental health notes)
 15 = Additional notes (other important clinical information)
@@ -149,7 +149,6 @@ Extract the information now using the NUMBER|CONTENT format:`;
         top_p: 0.4,        // Less restrictive for better extraction
         repeat_penalty: 1.1,
         stop: ["16|", "END", "---"],
-        seed: 42
       }
     };
 

@@ -263,27 +263,7 @@ const ProgressOverlay = ({
             </Text>
           )}
           
-          {/* Progress bar with dynamic color */}
-          <View style={CommonStyles.progressBarContainer}>
-            <Animated.View 
-              style={[
-                CommonStyles.progressBar,
-                { 
-                  width: progressWidth,
-                  backgroundColor: stepConfig.color
-                }
-              ]} 
-            />
-          </View>
-          
-          {/* Percentage text with dynamic color */}
-          <Text style={[
-            CommonStyles.progressPercentage,
-            { color: stepConfig.color, marginBottom: 0 }
-          ]}>
-            {Math.round(progress * 100)}%
-          </Text>
-          
+    
           {/* ENHANCED: Phase-specific hints */}
           {progress < 0.3 && status !== 'complete' && status !== 'error' && (
             <Text style={styles.phaseHint}>

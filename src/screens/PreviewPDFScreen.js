@@ -1,4 +1,4 @@
-// src/screens/PDFPreviewScreen.js
+// src/screens/PDFPreviewScreen.js - Enhanced with better layout and multi-page support
 import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
@@ -120,7 +120,7 @@ const PDFPreviewScreen = () => {
     });
   };
   
-  // Web-specific PDF generation (enhanced version)
+  // Enhanced PDF generation with better layout and multi-page support
   const generateWebPdfPreview = async () => {
     try {
       // Create a new jsPDF instance with professional settings
@@ -130,48 +130,79 @@ const PDFPreviewScreen = () => {
         format: 'letter'
       });
       
+      // Page dimensions and margins
+      const pageWidth = 216; // Letter width in mm
+      const pageHeight = 279; // Letter height in mm
+      const margin = 15;
+      const contentWidth = pageWidth - (margin * 2);
+      const bottomMargin = 25; // Space for footer
+      const availableHeight = pageHeight - margin - bottomMargin;
+      
+      let currentY = margin;
+      
+      // Helper function to check if we need a new page
+      const checkPageBreak = (neededSpace) => {
+        if (currentY + neededSpace > availableHeight) {
+          doc.addPage();
+          currentY = margin;
+          return true;
+        }
+        return false;
+      };
+      
+      // Helper function to add a section separator line
+      const addSectionSeparator = () => {
+        currentY += 5; // Space before line
+        doc.setDrawColor(220, 220, 220);
+        doc.setLineWidth(0.3);
+        doc.line(margin, currentY, margin + contentWidth, currentY);
+        currentY += 8; // Space after line
+      };
+      
       // Try to get the logo as data URL
       const logoDataUrl = await getLogoAsDataUrl();
       
-      // Add organization logo - with adjusted positioning and size for proper display
+      // HEADER SECTION
       if (logoDataUrl) {
-        // Use the actual logo image at proper scale
-        // Positioning parameters: x, y, width, height
-        doc.addImage(logoDataUrl, 'PNG', 15, 10, 40, 15);
+        doc.addImage(logoDataUrl, 'PNG', margin, currentY, 40, 15);
+        currentY += 20;
       } else {
-        // SIMPLIFIED FALLBACK - just blue text, no background rectangle
-        doc.setTextColor(41, 128, 185); // Professional blue
-        doc.setFontSize(16); // Slightly larger font for better visibility
+        // SIMPLIFIED FALLBACK - just blue text
+        doc.setTextColor(41, 128, 185);
+        doc.setFontSize(16);
         doc.setFont('helvetica', 'bold');
-        doc.text('MedRec', 15, 20); // Position adjusted to align with where the logo would be
+        doc.text('MedRec', margin, currentY + 12);
+        currentY += 20;
       }
       
-      // Add document title with styling
+      // Document title
       doc.setFontSize(20);
       doc.setFont('helvetica', 'bold');
-      doc.setTextColor(41, 128, 185); // Professional blue
-      doc.text('Medical Document Review Report', 15, 40);
+      doc.setTextColor(41, 128, 185);
+      doc.text('Medical Document Review Report', margin, currentY);
+      currentY += 10;
       
-      // Add clinical document ID and date
+      // Document metadata
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
-      doc.setTextColor(100, 100, 100); // Gray for metadata
-      doc.text(`Document ID: ${documentId}`, 15, 47);
-      doc.text(`Review Date: ${new Date(reviewDate).toLocaleDateString()}`, 15, 52);
+      doc.setTextColor(100, 100, 100);
+      doc.text(`Document ID: ${documentId}`, margin, currentY);
+      currentY += 4;
+      doc.text(`Review Date: ${new Date(reviewDate).toLocaleDateString()}`, margin, currentY);
+      currentY += 8;
       
-      // Add separator line
-      doc.setDrawColor(200, 200, 200);
-      doc.setLineWidth(0.5);
-      doc.line(15, 55, 195, 55);
+      // Main separator line after header
+      addSectionSeparator();
       
-      // Add patient information section when available
-      let y = 60;
+      // PATIENT INFORMATION SECTION (if available)
       if (formData.patientName || formData.patientDOB) {
-        doc.setFillColor(240, 240, 240); // Light gray background
-        doc.roundedRect(15, y, 180, 15, 2, 2, 'F');
+        checkPageBreak(25); // Check if we need space for patient section
+        
+        doc.setFillColor(240, 240, 240);
+        doc.roundedRect(margin, currentY, contentWidth, 15, 2, 2, 'F');
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(50, 50, 50);
-        doc.text('Patient:', 20, y + 8);
+        doc.text('Patient Information:', margin + 5, currentY + 8);
         
         let patientInfo = '';
         if (formData.patientName) {
@@ -182,106 +213,151 @@ const PDFPreviewScreen = () => {
         }
         
         doc.setFont('helvetica', 'normal');
-        doc.text(patientInfo, 50, y + 8);
+        doc.text(patientInfo, margin + 50, currentY + 8);
+        currentY += 20;
         
-        y += 20; // Move down for reviewer info
+        addSectionSeparator();
       }
       
-      // Add reviewer information in a styled box
-      doc.setFillColor(240, 240, 240); // Light gray background
-      doc.roundedRect(15, y, 180, 15, 2, 2, 'F');
+      // REVIEWER INFORMATION SECTION
+      checkPageBreak(25); // Check if we need space for reviewer section
+      
+      doc.setFillColor(240, 240, 240);
+      doc.roundedRect(margin, currentY, contentWidth, 15, 2, 2, 'F');
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(50, 50, 50);
-      doc.text('Reviewed By:', 20, y + 8);
+      doc.text('Reviewed By:', margin + 5, currentY + 8);
       doc.setFont('helvetica', 'normal');
-      doc.text(reviewerName, 50, y + 8);
       
-      // Format and add each field
-      y += 25;
+      let reviewerInfo = reviewerName;
+      if (reviewerCredentials && reviewerCredentials.trim()) {
+        reviewerInfo += `, ${reviewerCredentials}`;
+      }
+      
+      doc.text(reviewerInfo, margin + 35, currentY + 8);
+      currentY += 20;
+      
+      addSectionSeparator();
+      
+      // CLINICAL FIELDS SECTION
       const addField = (label, value) => {
-        if (!value || value.trim() === '') return y;
+        if (!value || value.trim() === '') return;
         
         // Skip patient info fields as they're shown at the top
-        if (label === 'Patient Name' || label === 'Date of Birth') return y;
+        if (label === 'Patient Name' || label === 'Date of Birth') return;
         
-        // Set field label styling
+        // Estimate space needed for this field
+        const valuePieces = doc.splitTextToSize(value, contentWidth);
+        const fieldHeight = 10 + (valuePieces.length * 5) + 10; // Label + content + spacing
+        
+        // Check if we need a new page
+        checkPageBreak(fieldHeight);
+        
+        // Field label
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(11);
         doc.setTextColor(41, 128, 185);
-        doc.text(`${label}:`, 15, y);
-        y += 5;
+        doc.text(`${label}:`, margin, currentY);
+        currentY += 6;
         
-        // Handle line breaks for long values
+        // Field value
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(10);
         doc.setTextColor(50, 50, 50);
+        doc.text(valuePieces, margin, currentY);
+        currentY += (valuePieces.length * 5) + 5;
         
-        const valuePieces = doc.splitTextToSize(value, 180);
-        doc.text(valuePieces, 15, y);
-        
-        y += (valuePieces.length * 5) + 7;
-        
-        // Add a thin line between sections
-        if (y < 250) {
-          doc.setDrawColor(220, 220, 220);
-          doc.line(15, y - 2, 195, y - 2);
+        // Light separator line between fields (not overlapping)
+        if (currentY < availableHeight - 15) { // Only add if not near bottom
+          doc.setDrawColor(230, 230, 230);
+          doc.setLineWidth(0.2);
+          doc.line(margin, currentY, margin + contentWidth, currentY);
+          currentY += 8;
         }
-        
-        return y;
       };
       
       // Field name to label mapping function
       const formatLabel = (camelCase) => {
-        if (camelCase === 'patientName') return 'Patient Name';
-        if (camelCase === 'patientDOB') return 'Date of Birth';
-        if (camelCase === 'dx') return 'Diagnosis (Dx)';
-        if (camelCase === 'pcp') return 'Primary Care Provider (PCP)';
-        if (camelCase === 'dc') return 'Discharge (DC)';
+        const labelMap = {
+          'patientName': 'Patient Name',
+          'patientDOB': 'Date of Birth',
+          'insurance': 'Insurance Information',
+          'location': 'Location/Facility',
+          'dx': 'Diagnosis (Dx)',
+          'pcp': 'Primary Care Provider (PCP)',
+          'dc': 'Discharge (DC)',
+          'wounds': 'Wounds/Injuries',
+          'medications': 'Medications & Antibiotics',
+          'cardiacDrips': 'Cardiac Medications/Drips',
+          'labsAndVitals': 'Labs & Vital Signs',
+          'faceToFace': 'Face-to-Face Evaluations',
+          'history': 'Medical History',
+          'mentalHealthState': 'Mental Health State',
+          'additionalComments': 'Additional Comments'
+        };
         
-        return camelCase
+        return labelMap[camelCase] || camelCase
           .replace(/([A-Z])/g, ' $1')
           .replace(/^./, str => str.toUpperCase());
       };
       
-      // Group related clinical fields
-      // Primary information
-      y = addField('Patient Name', formData.patientName);
-      y = addField('Date of Birth', formData.patientDOB);
-      y = addField('Insurance', formData.insurance);
-      y = addField('Location', formData.location);
-      y = addField('Diagnosis (Dx)', formData.dx);
-      y = addField('Primary Care Provider (PCP)', formData.pcp);
-      y = addField('Discharge (DC)', formData.dc);
+      // Add section header for clinical information
+      checkPageBreak(15);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.setTextColor(41, 128, 185);
+      doc.text('Clinical Information', margin, currentY);
+      currentY += 10;
       
-      // Add spacing between groups
-      y += 3;
+      // Organize fields by priority/category
+      const fieldOrder = [
+        // Primary information
+        'insurance', 'location', 'dx', 'pcp', 'dc',
+        // Clinical details  
+        'wounds', 'medications', 'cardiacDrips', 'labsAndVitals',
+        // Assessment details
+        'faceToFace', 'history', 'mentalHealthState', 'additionalComments'
+      ];
       
-      // Clinical details
-      y = addField('Wounds', formData.wounds);
-      y = addField('Antibiotics', formData.antibiotics);
-      y = addField('Cardiac Drips', formData.cardiacDrips);
-      y = addField('Labs', formData.labs);
+      // Add all fields in organized order
+      fieldOrder.forEach(fieldKey => {
+        if (formData[fieldKey]) {
+          addField(formatLabel(fieldKey), formData[fieldKey]);
+        }
+      });
       
-      // Check if we need a new page
-      if (y > 250) {
-        doc.addPage();
-        y = 20;
-      }
+      // Add any remaining fields not in the ordered list
+      Object.entries(formData).forEach(([fieldKey, value]) => {
+        if (!fieldOrder.includes(fieldKey) && 
+            !['extractionMethod', 'extractionDate', 'patientName', 'patientDOB'].includes(fieldKey) &&
+            value && value.trim() !== '') {
+          addField(formatLabel(fieldKey), value);
+        }
+      });
       
-      // Assessment details
-      y = addField('Face to Face', formData.faceToFace);
-      y = addField('History', formData.history);
-      y = addField('Mental Health State', formData.mentalHealthState);
-      y = addField('Additional Comments', formData.additionalComments);
-      
-      // Add footer with date and page numbers
+      // ADD FOOTER TO ALL PAGES
       const pageCount = doc.internal.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
+        
+        // Footer line
+        doc.setDrawColor(200, 200, 200);
+        doc.setLineWidth(0.3);
+        doc.line(margin, pageHeight - 20, margin + contentWidth, pageHeight - 20);
+        
+        // Footer text
         doc.setFontSize(8);
-        doc.setTextColor(150, 150, 150);
-        doc.text(`Generated on ${new Date().toLocaleDateString()} by MedRec Clinical Review System`, 15, 285);
-        doc.text(`Page ${i} of ${pageCount}`, 180, 285);
+        doc.setTextColor(120, 120, 120);
+        doc.text(
+          `Generated on ${new Date().toLocaleDateString()} by MedRec Clinical Review System`, 
+          margin, 
+          pageHeight - 15
+        );
+        doc.text(
+          `Page ${i} of ${pageCount}`, 
+          margin + contentWidth - 25, 
+          pageHeight - 15
+        );
       }
       
       // Get the PDF data URL for preview
@@ -336,7 +412,6 @@ const PDFPreviewScreen = () => {
       
       setGeneratingPdf(false);
       
-      // Removed navigation to DocumentList
     } catch (error) {
       console.error('Error downloading PDF:', error);
       setGeneratingPdf(false);
@@ -346,7 +421,6 @@ const PDFPreviewScreen = () => {
   
   return (
     <SafeAreaView style={modernStyles.container}>
-      {/* Updated to show the logo */}
       <EnhancedHeader
         title=""
         showBackButton={true}
@@ -391,13 +465,13 @@ const PDFPreviewScreen = () => {
                   <View style={modernStyles.reportHeader}>
                     <View style={modernStyles.logoPlaceholder}>
                       <Image 
-                        source={require('../assets/medreclogo.png')} 
+                        source={require('../assets/MedRecLogo.png')} 
                         style={modernStyles.logoImage}
                         resizeMode="contain"
                       />
                     </View>
                     <View style={modernStyles.reportTitleContainer}>
-                      <Text style={modernStyles.reportTitle}>Medical Document Review Report</Text>
+                      <Text style={modernStyles.reportTitle}>HHHC Referral Review</Text>
                       <Text style={modernStyles.reportDate}>
                         Generated on {new Date().toLocaleDateString()}
                       </Text>
@@ -422,6 +496,9 @@ const PDFPreviewScreen = () => {
                   <View style={modernStyles.reviewerInfoContainer}>
                     <Text style={modernStyles.reviewerLabel}>Reviewed By:</Text>
                     <Text style={modernStyles.reviewerName}>{reviewerName}</Text>
+                    {reviewerCredentials && (
+                      <Text style={modernStyles.reviewerCredentials}>{reviewerCredentials}</Text>
+                    )}
                     <Text style={modernStyles.reviewDate}>
                       on {new Date(reviewDate).toLocaleDateString()}
                     </Text>
@@ -431,6 +508,7 @@ const PDFPreviewScreen = () => {
                   
                   {/* Preview content - enhanced version of what will be in PDF */}
                   <View style={modernStyles.fieldsContainer}>
+                    <Text style={modernStyles.sectionHeader}>Clinical Information</Text>
                     {Object.entries(formData).map(([field, value]) => {
                       // Skip metadata fields and already shown patient info
                       if (field.startsWith('_') || 
@@ -445,11 +523,23 @@ const PDFPreviewScreen = () => {
                       
                       // Format field label from camelCase
                       const formatLabel = (camelCase) => {
-                        if (camelCase === 'dx') return 'Diagnosis (Dx)';
-                        if (camelCase === 'pcp') return 'Primary Care Provider (PCP)';
-                        if (camelCase === 'dc') return 'Discharge (DC)';
+                        const labelMap = {
+                          'dx': 'Diagnosis (Dx)',
+                          'pcp': 'Primary Care Provider (PCP)',
+                          'dc': 'Discharge (DC)',
+                          'insurance': 'Insurance Information',
+                          'location': 'Location/Facility',
+                          'wounds': 'Wounds/Injuries',
+                          'medications': 'Medications & Antibiotics',
+                          'cardiacDrips': 'Cardiac Medications/Drips',
+                          'labsAndVitals': 'Labs & Vital Signs',
+                          'faceToFace': 'Face-to-Face Evaluations',
+                          'history': 'Medical History',
+                          'mentalHealthState': 'Mental Health State',
+                          'additionalComments': 'Additional Comments'
+                        };
                         
-                        return camelCase
+                        return labelMap[camelCase] || camelCase
                           .replace(/([A-Z])/g, ' $1')
                           .replace(/^./, str => str.toUpperCase());
                       };
@@ -580,7 +670,7 @@ const modernStyles = StyleSheet.create({
     marginBottom: Spacing.large,
   },
   logoPlaceholder: {
-    width: 80, // Increased width for proper display
+    width: 80,
     height: 30,
     justifyContent: 'center',
     alignItems: 'center',
@@ -598,7 +688,7 @@ const modernStyles = StyleSheet.create({
     fontSize: Typography.size.large,
     fontWeight: Typography.weight.bold,
     color: Colors.primary,
-    marginBottom: Spacing.tiny,
+    marginBottom: Spacing.medium,
   },
   reportDate: {
     fontSize: Typography.size.small,
@@ -654,6 +744,11 @@ const modernStyles = StyleSheet.create({
     fontWeight: Typography.weight.medium,
     marginRight: Spacing.small,
   },
+  reviewerCredentials: {
+    fontSize: Typography.size.small,
+    color: Colors.primary,
+    marginRight: Spacing.small,
+  },
   reviewDate: {
     fontSize: Typography.size.small,
     color: Colors.gray,
@@ -666,8 +761,14 @@ const modernStyles = StyleSheet.create({
   fieldsContainer: {
     // Container for fields
   },
+  sectionHeader: {
+    fontSize: Typography.size.large,
+    fontWeight: Typography.weight.bold,
+    color: Colors.primary,
+    marginBottom: Spacing.medium,
+  },
   fieldPreview: {
-    marginBottom: Spacing.large,
+    marginBottom: Spacing.medium,
   },
   fieldLabel: {
     fontSize: Typography.size.medium,
