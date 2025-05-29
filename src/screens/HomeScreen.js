@@ -14,6 +14,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import Header from '../components/Header';
 import PDFProcessorService from '../services/PDFProcessorService';
+import MedicalFieldService from '../services/MedicalFieldService';
 import { Colors, CommonStyles } from '../styles';
 import * as Animations from '../animations';
 
@@ -42,6 +43,41 @@ const HomeScreen = () => {
       Animations.zoomIn(cardScale, 0.95, 700)
     ]).start();
   }, []);
+  
+  // NEW: Handle blank form navigation
+  const handleBlankFormPress = () => {
+    // Create a blank document entry for the review screen
+    const blankDocumentId = 'blank_' + Date.now().toString();
+    
+    // Get medical field service to create empty form data
+    const medicalFieldService = MedicalFieldService.getInstance();
+    const emptyFormData = medicalFieldService.createEmptyFormData();
+    
+    // Create a mock document object for blank form
+    const blankDocument = {
+      id: blankDocumentId,
+      name: 'HHHC Referral Form',
+      date: new Date().toISOString().split('T')[0],
+      uri: null, // No actual document
+      extractedText: '',
+      isOcr: false,
+      ocrConfidence: null,
+      pages: 0,
+      formData: emptyFormData,
+      hasHighlighting: false,
+      positionSource: 'blank'
+    };
+    
+    // Store the blank document temporarily in the processor service
+    const pdfProcessor = PDFProcessorService.getInstance();
+    pdfProcessor.documentsCache.set(blankDocumentId, blankDocument);
+    
+    // Navigate to document review with the blank document
+    navigation.navigate('DocumentReview', { 
+      documentId: blankDocumentId,
+      isBlankForm: true // Flag to indicate this is a blank form
+    });
+  };
   
   // Get the current date for display
   const currentDate = new Date().toLocaleDateString('en-US', {
@@ -155,7 +191,7 @@ const HomeScreen = () => {
             </TouchableOpacity>
           </Animated.View>
           
-          {/* Quick actions */}
+          {/* Quick actions - UPDATED */}
           <Animated.View
             style={[
               CommonStyles.homeQuickActions,
@@ -178,9 +214,10 @@ const HomeScreen = () => {
                 <Text style={CommonStyles.homeActionLabel}>Upload & Review</Text>
               </TouchableOpacity>
               
+              {/* UPDATED: Add onPress handler for blank form */}
               <TouchableOpacity
                 style={CommonStyles.homeActionButton}
-                onPress={() => navigation.navigate('DocumentUpload')}
+                onPress={handleBlankFormPress}
               >
                 <View style={[CommonStyles.homeActionIcon, CommonStyles.homeActionFillFormIcon]}>
                   <MaterialIcons name="edit-document" size={28} color={Colors.secondary} />

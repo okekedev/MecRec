@@ -16,7 +16,7 @@ class ParallelPDFTextExtractionService {
   constructor() {
     this.progressCallback = null;
     this.cancelProcessing = false;
-    this.maxWorkers = 5;
+    this.maxWorkers = 20;
     
     // Store positions during OCR processing
     this.lastExtractedPositions = [];
