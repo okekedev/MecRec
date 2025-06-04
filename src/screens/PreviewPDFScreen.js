@@ -135,7 +135,7 @@ const PDFPreviewScreen = () => {
       const pageHeight = 279; // Letter height in mm
       const margin = 15;
       const contentWidth = pageWidth - (margin * 2);
-      const bottomMargin = 18; // Reduced space for footer (was 25)
+      const bottomMargin = 18;
       const availableHeight = pageHeight - margin - bottomMargin;
       
       let currentY = margin;
@@ -162,36 +162,37 @@ const PDFPreviewScreen = () => {
       // Try to get the logo as data URL
       const logoDataUrl = await getLogoAsDataUrl();
       
-      // DUAL HEADER SECTION WITH TWO LOGOS
-      const headerHeight = 25;
+      // FIXED HEADER SECTION WITH PROPER SPACING
       
-      // Left side - MedRec logo (from assets)
+      // Left side - MedRec logo (from assets) - positioned at top left
       if (logoDataUrl) {
         doc.addImage(logoDataUrl, 'PNG', margin, currentY, 40, 15);
       } else {
         // Fallback text for left logo
         doc.setTextColor(41, 128, 185);
-        doc.setFontSize(16);
+        doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
         doc.text('Healing Hands', margin, currentY + 12);
       }
-    
       
-      // Document title
+      // Move Y position down after logo
+      currentY += 20; // Give space after logo
+      
+      // Document title - now positioned below logo with proper spacing
       doc.setFontSize(20);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(41, 128, 185);
       doc.text('Referral Review', margin, currentY);
-      currentY += 10;
+      currentY += 12; // Space after title
       
-      // Document metadata
+      // Document metadata - positioned below title
       doc.setFontSize(10);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(100, 100, 100);
       doc.text(`Document ID: ${documentId}`, margin, currentY);
-      currentY += 4;
+      currentY += 5;
       doc.text(`Review Date: ${new Date(reviewDate).toLocaleDateString()}`, margin, currentY);
-      currentY += 8;
+      currentY += 10; // Extra space before separator
       
       // Main separator line after header
       addSectionSeparator();
@@ -204,7 +205,7 @@ const PDFPreviewScreen = () => {
         doc.roundedRect(margin, currentY, contentWidth, 15, 2, 2, 'F');
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(50, 50, 50);
-        doc.text('Patient Information:', margin + 5, currentY + 8);
+        doc.text('Patient Information:', margin + 5, currentY + 10);
         
         let patientInfo = '';
         if (formData.patientName) {
@@ -215,7 +216,7 @@ const PDFPreviewScreen = () => {
         }
         
         doc.setFont('helvetica', 'normal');
-        doc.text(patientInfo, margin + 50, currentY + 8);
+        doc.text(patientInfo, margin + 50, currentY + 10);
         currentY += 20;
         
         addSectionSeparator();
@@ -228,7 +229,7 @@ const PDFPreviewScreen = () => {
       doc.roundedRect(margin, currentY, contentWidth, 15, 2, 2, 'F');
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(50, 50, 50);
-      doc.text('Reviewed By:', margin + 5, currentY + 8);
+      doc.text('Reviewed By:', margin + 5, currentY + 10);
       doc.setFont('helvetica', 'normal');
       
       let reviewerInfo = reviewerName;
@@ -236,7 +237,7 @@ const PDFPreviewScreen = () => {
         reviewerInfo += `, ${reviewerCredentials}`;
       }
       
-      doc.text(reviewerInfo, margin + 35, currentY + 8);
+      doc.text(reviewerInfo, margin + 35, currentY + 10);
       currentY += 20;
       
       addSectionSeparator();

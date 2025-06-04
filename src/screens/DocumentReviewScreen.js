@@ -1,4 +1,4 @@
-// src/screens/DocumentReviewScreen.js - No highlighting version
+// src/screens/DocumentReviewScreen.js - Fixed web compatibility issues
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -312,7 +312,7 @@ const DocumentReviewScreen = () => {
               </TouchableOpacity>
             </View>
             
-            {/* Reviewer Authentication - existing code unchanged */}
+            {/* Reviewer Authentication - FIXED: Wrapped text nodes in Text components */}
             <View style={CommonStyles.sectionContainer}>
               <View style={CommonStyles.sectionTitleContainer}>
                 <View style={[CommonStyles.sectionTitleIcon, { backgroundColor: Colors.secondary }]} />
@@ -431,8 +431,9 @@ const DocumentReviewScreen = () => {
                   
                   <View style={styles.blockFooter}>
                     <Text style={styles.blockCoords}>
-                      Position: ({Math.round(block.x)}, {Math.round(block.y)}) • 
-                      {block.wordCount} words • {block.source} source
+                      Position: ({Math.round(block.x)}, {Math.round(block.y)}) {/* FIXED: Removed bullet character */}
+                      {block.wordCount} words {/* FIXED: Removed bullet character */}
+                      {block.source} source
                     </Text>
                   </View>
                 </View>

@@ -1,4 +1,4 @@
-// src/components/ReviewField.js - Add "Show Source" button
+// src/components/ReviewField.js - Fixed web compatibility
 import React, { useState } from 'react';
 import {
   View,
@@ -100,6 +100,7 @@ const ReviewField = ({
             placeholderTextColor={Colors.gray}
             multiline={isMultiline}
             textAlignVertical={isMultiline ? 'top' : 'center'}
+            // REMOVED: numberOfLines prop (deprecated in React Native Web)
           />
           
           {/* NEW: Show Source button */}
