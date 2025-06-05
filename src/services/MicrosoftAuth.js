@@ -1,6 +1,5 @@
 /**
- * MicrosoftAuth.js - Updated to use implicit flow (no callback needed)
- * Replace your existing realMicrosoftAuth method with this
+ * MicrosoftAuth.js - Updated with 15-minute auto-logout
  */
 import { Platform } from 'react-native';
 
@@ -28,8 +27,18 @@ class MicrosoftAuth {
     this.accessToken = null;
     this.listeners = [];
     
+    // Auto-logout configuration
+    this.sessionTimeout = 15 * 60 * 1000; // 15 minutes in milliseconds
+    this.warningTimeout = 13 * 60 * 1000; // 13 minutes - show warning 2 minutes before logout
+    this.sessionTimer = null;
+    this.warningTimer = null;
+    this.lastActivityTime = Date.now();
+    
     // Initialize - check for existing session
     setTimeout(() => this.checkStoredSession(), 100);
+    
+    // Set up activity tracking for auto-logout
+    this.setupActivityTracking();
   }
   
   static getInstance() {
@@ -37,6 +46,99 @@ class MicrosoftAuth {
       MicrosoftAuth.instance = new MicrosoftAuth();
     }
     return MicrosoftAuth.instance;
+  }
+
+  /**
+   * Set up activity tracking for auto-logout
+   */
+  setupActivityTracking() {
+    if (Platform.OS !== 'web') return;
+    
+    // Track user activity
+    const activityEvents = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+    
+    const resetActivityTimer = () => {
+      this.lastActivityTime = Date.now();
+      this.resetSessionTimers();
+    };
+    
+    activityEvents.forEach(event => {
+      document.addEventListener(event, resetActivityTimer, true);
+    });
+  }
+
+  /**
+   * Reset session timers when user is active
+   */
+  resetSessionTimers() {
+    if (!this.isAuthenticated) return;
+    
+    // Clear existing timers
+    if (this.sessionTimer) clearTimeout(this.sessionTimer);
+    if (this.warningTimer) clearTimeout(this.warningTimer);
+    
+    // Set warning timer (13 minutes)
+    this.warningTimer = setTimeout(() => {
+      this.showSessionWarning();
+    }, this.warningTimeout);
+    
+    // Set auto-logout timer (15 minutes)
+    this.sessionTimer = setTimeout(() => {
+      this.autoLogout();
+    }, this.sessionTimeout);
+  }
+
+  /**
+   * Show session expiry warning
+   */
+  showSessionWarning() {
+    console.log('⚠️ Session expiring in 2 minutes...');
+    this.notifyListeners('session_warning', {
+      message: 'Your session will expire in 2 minutes due to inactivity.',
+      timeRemaining: 2 * 60 * 1000 // 2 minutes in ms
+    });
+  }
+
+  /**
+   * Auto-logout due to inactivity
+   */
+  async autoLogout() {
+    console.log('🔒 Auto-logout triggered due to inactivity');
+    this.notifyListeners('session_expired', {
+      message: 'You have been logged out due to 15 minutes of inactivity.',
+      reason: 'inactivity'
+    });
+    
+    await this.logout();
+  }
+
+  /**
+   * Manual logout (from logout button)
+   */
+  async manualLogout() {
+    console.log('🔒 Manual logout triggered');
+    
+    // Clear timers first
+    if (this.sessionTimer) clearTimeout(this.sessionTimer);
+    if (this.warningTimer) clearTimeout(this.warningTimer);
+    
+    // Clear auth state
+    this.isAuthenticated = false;
+    this.currentUser = null;
+    this.userGroups = [];
+    this.accessToken = null;
+    this.lastActivityTime = 0;
+    
+    // Clear stored session
+    await this.clearStoredSession();
+    
+    // Notify listeners
+    this.notifyListeners('manual_logout', {
+      message: 'You have been logged out.',
+      reason: 'manual'
+    });
+    
+    console.log('✅ Manual logout completed');
   }
 
   /**
@@ -187,8 +289,13 @@ class MicrosoftAuth {
       this.currentUser = user;
       this.userGroups = userGroups;
       this.accessToken = accessToken;
+      this.lastActivityTime = Date.now();
       
       await this.storeSession();
+      
+      // Start session timers
+      this.resetSessionTimers();
+      
       this.notifyListeners('authenticated');
       
       resolve({
@@ -226,8 +333,13 @@ class MicrosoftAuth {
           this.currentUser = session.user;
           this.userGroups = session.userGroups || [];
           this.accessToken = session.accessToken;
+          this.lastActivityTime = Date.now();
           
           console.log('Found valid stored session for:', session.user.displayName);
+          
+          // Start session timers for existing session
+          this.resetSessionTimers();
+          
           this.notifyListeners('authenticated');
           return true;
         } else {
@@ -304,16 +416,32 @@ class MicrosoftAuth {
   }
   
   /**
-   * Logout
+   * Logout (handles both auto and manual logout)
    */
   async logout() {
+    // Clear timers
+    if (this.sessionTimer) clearTimeout(this.sessionTimer);
+    if (this.warningTimer) clearTimeout(this.warningTimer);
+    
     this.isAuthenticated = false;
     this.currentUser = null;
     this.userGroups = [];
     this.accessToken = null;
+    this.lastActivityTime = 0;
     
     await this.clearStoredSession();
     this.notifyListeners('unauthenticated');
+  }
+  
+  /**
+   * Get session time remaining
+   */
+  getSessionTimeRemaining() {
+    if (!this.isAuthenticated) return 0;
+    
+    const elapsed = Date.now() - this.lastActivityTime;
+    const remaining = Math.max(0, this.sessionTimeout - elapsed);
+    return remaining;
   }
   
   /**
@@ -343,10 +471,10 @@ class MicrosoftAuth {
     this.listeners = this.listeners.filter(listener => listener !== callback);
   }
   
-  notifyListeners(status) {
+  notifyListeners(status, data = null) {
     this.listeners.forEach(callback => {
       try {
-        callback(status, this.currentUser);
+        callback(status, data || this.currentUser);
       } catch (error) {
         console.error('Listener error:', error);
       }
