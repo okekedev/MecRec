@@ -5,6 +5,7 @@
     "name": "MedRec",
     "slug": "medrec",
     "version": "1.0.0",
+    "scheme": "com.medrec.app",
     "orientation": "portrait",
     "icon": "./src/assets/icon.png",
     "userInterfaceStyle": "light",

@@ -17,6 +17,7 @@ import PDFProcessorService from '../services/PDFProcessorService';
 import MedicalFieldService from '../services/MedicalFieldService';
 import { Colors, CommonStyles } from '../styles';
 import * as Animations from '../animations';
+import Footer from '../components/Footer';
 
 // Import icons from Expo vector icons
 import { 
@@ -252,9 +253,12 @@ const HomeScreen = () => {
                 The system uses advanced OCR and AI to identify important clinical data points, supporting efficient and accurate medical record processing.
               </Text>
             </View>
+           
+
           </Animated.View>
         </ScrollView>
       </SafeAreaView>
+      <Footer />
     </View>
   );
 };

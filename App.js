@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { StatusBar, useColorScheme, View, Text, StyleSheet } from 'react-native';
-import AppNavigator from './src/navigation/AppNavigator';
+import AuthWrapper from './src/components/AuthWrapper';
 import { isWeb } from './src/utils/platform';
 
 function App() {
@@ -51,7 +51,7 @@ function App() {
           backgroundColor={isDarkMode ? '#000000' : '#ffffff'}
         />
       )}
-      <AppNavigator />
+      <AuthWrapper />
     </>
   );
 }

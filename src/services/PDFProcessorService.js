@@ -1,8 +1,8 @@
-// src/services/PDFProcessorService.js - Optimized version removing duplicates
+// src/services/PDFProcessorService.js - Updated to use Azure OpenAI
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 import ParallelPDFTextExtractionService from './ParallelPDFTextExtractionService';
-import OllamaService from './OllamaService';
+import AzureOpenAIService from './AzureOpenAIService'; // Changed from OllamaService
 import MedicalFieldService from './MedicalFieldService';
 
 class PDFProcessorService {
@@ -11,7 +11,7 @@ class PDFProcessorService {
   constructor() {
     this.documentsCache = new Map();
     this.textExtractionService = ParallelPDFTextExtractionService.getInstance();
-    this.ollamaService = OllamaService.getInstance();
+    this.azureOpenAIService = AzureOpenAIService.getInstance(); // Changed from ollamaService
     this.medicalFieldService = MedicalFieldService.getInstance();
     this.isProcessing = false;
     this.progressCallback = null;
@@ -30,7 +30,7 @@ class PDFProcessorService {
   setProgressCallback(callback) {
     this.progressCallback = callback;
     this.textExtractionService.setProgressCallback(callback);
-    this.ollamaService.setProgressCallback(callback);
+    this.azureOpenAIService.setProgressCallback(callback); // Changed from ollamaService
   }
   
   updateProgress(status, progress, step, message) {
@@ -114,16 +114,16 @@ class PDFProcessorService {
         this.updateProgress('processing', 0.38, 'Context Mapping', 'No text positions found - highlighting disabled');
       }
       
-      // STEP 3: AI processing
+      // STEP 3: AI processing using Azure OpenAI
       let formData = this.medicalFieldService.createEmptyFormData();
       
       if (extractedText) {
         try {
-          this.updateProgress('processing', 0.4, 'AI Extraction', 'Starting AI information extraction');
+          this.updateProgress('processing', 0.4, 'AI Extraction', 'Starting Azure OpenAI information extraction');
           
-          const extractedInfo = await this.ollamaService.extractInformation(extractedText);
+          const extractedInfo = await this.azureOpenAIService.extractInformation(extractedText); // Changed from ollamaService
           
-          this.updateProgress('processing', 0.8, 'AI Complete', 'AI extraction completed successfully');
+          this.updateProgress('processing', 0.8, 'AI Complete', 'Azure OpenAI extraction completed successfully');
           
           if (extractedInfo && extractedInfo.extractionMethod !== 'failed') {
             formData = { ...formData, ...extractedInfo };
@@ -132,14 +132,14 @@ class PDFProcessorService {
               this.updateProgress('processing', 0.85, 'Patient Identified', `Found patient: ${formData.patientName}`);
             }
           } else {
-            this.updateProgress('warning', 0.8, 'Extraction Issues', 'AI had trouble identifying information');
+            this.updateProgress('warning', 0.8, 'Extraction Issues', 'Azure OpenAI had trouble identifying information');
             formData.extractionMethod = 'failed';
             formData.error = extractedInfo?.error || 'Unknown error';
           }
         } catch (error) {
-          this.updateProgress('warning', 0.5, 'AI Unavailable', `Could not connect to AI: ${error.message}`);
+          this.updateProgress('warning', 0.5, 'AI Unavailable', `Could not connect to Azure OpenAI: ${error.message}`);
           formData.extractionMethod = 'unavailable';
-          formData.error = `AI service unavailable: ${error.message}`;
+          formData.error = `Azure OpenAI service unavailable: ${error.message}`;
         }
       } else {
         this.updateProgress('error', 0.4, 'No Text Found', 'No readable text was extracted');
@@ -638,8 +638,8 @@ class PDFProcessorService {
       extractedValue: fieldValue,
       explanation: sourcePositions.length > 0 ? 
         `Found "${fieldValue}" in ${sourcePositions.length} contextual location(s) with generous highlighting.` :
-        `AI extracted this information from the document text.`,
-      confidence: 'AI Generated',
+        `Azure OpenAI extracted this information from the document text.`,
+      confidence: 'Azure OpenAI Generated',
       timestamp: document.formData.extractionDate,
       sourcePositions: sourcePositions,
       hasSourceHighlighting: sourcePositions.length > 0

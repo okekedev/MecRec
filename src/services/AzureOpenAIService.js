@@ -1,24 +1,45 @@
 /**
- * Debug OllamaService - Add logging to understand why extraction is empty
+ * AzureOpenAIService - Replacement for OllamaService using Azure OpenAI
+ * Updated to use environment variables for sensitive configuration
  */
+import { AzureOpenAI } from 'openai';
 import MedicalFieldService from './MedicalFieldService';
 
-class OllamaService {
+class AzureOpenAIService {
   static instance;
 
   constructor() {
-    this.baseUrl = 'http://localhost:11434';
-    this.defaultModel = 'monotykamary/medichat-llama3';
-    this.fallbackModel = 'llama3.2:1b';
+    // Azure OpenAI configuration - using environment variables
+    this.endpoint = process.env.AZURE_OPENAI_ENDPOINT || 'https://medrecapp.openai.azure.com/';
+    this.apiKey = process.env.AZURE_OPENAI_API_KEY;
+    this.deployment = process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4.1-mini';
+    this.modelName = process.env.AZURE_OPENAI_MODEL_NAME || 'gpt-4.1-mini';
+    this.apiVersion = process.env.AZURE_OPENAI_API_VERSION || '2025-01-01-preview';
+    
+    // Validate required environment variables
+    if (!this.apiKey) {
+      throw new Error('AZURE_OPENAI_API_KEY environment variable is required');
+    }
+    
+    // Initialize Azure OpenAI client
+    const options = { 
+      endpoint: this.endpoint, 
+      apiKey: this.apiKey, 
+      deployment: this.deployment, 
+      apiVersion: this.apiVersion,
+      dangerouslyAllowBrowser: true // Required for web environments
+    };
+    
+    this.client = new AzureOpenAI(options);
     this.medicalFieldService = MedicalFieldService.getInstance();
     this.progressCallback = null;
   }
 
   static getInstance() {
-    if (!OllamaService.instance) {
-      OllamaService.instance = new OllamaService();
+    if (!AzureOpenAIService.instance) {
+      AzureOpenAIService.instance = new AzureOpenAIService();
     }
-    return OllamaService.instance;
+    return AzureOpenAIService.instance;
   }
 
   setProgressCallback(callback) {
@@ -37,7 +58,7 @@ class OllamaService {
   }
 
   /**
-   * DEBUG: Enhanced system prompt with more guidance
+   * Enhanced system prompt optimized for GPT-4.1-mini
    */
   getSystemPrompt() {
     return `You are a medical AI assistant specialized in extracting information from clinical documents.
@@ -49,9 +70,9 @@ OUTPUT FORMAT RULES:
 - Extract real information from the document
 - Do not leave fields empty unless truly no information exists
 - Look carefully for patient names, dates, diagnoses, medications, etc.
-- Do not include any text from the format example
 - Use the pipe symbol (|) to separate the number from the content
-- Ensure the content is relevant to the field number. Do not skip fields.
+- Ensure the content is relevant to the field number
+- Be thorough and accurate
 
 FORMAT EXAMPLE:
 1|John Smith
@@ -82,8 +103,8 @@ FIELD DEFINITIONS:
 9 = Medications (all drugs, prescriptions, treatments mentioned)
 10 = Cardiac medications (heart-specific drugs only)
 11 = Laboratory data (lab results, vital signs, test values)
-12 = Physical examination (examination notes, assessments, physician signature status)
-13 = Medical history (past conditions, previous medical issues)
+12 = History and physical/H&P (examination notes, assessments, is the face to face signed?)
+13 = Medical history Discharge Summary (past conditions, previous medical issues)
 14 = Mental status (cognitive state, mental health notes)
 15 = Additional notes (other important clinical information)
 
@@ -91,12 +112,9 @@ IMPORTANT: Extract actual information from the document. Do not return empty fie
   }
 
   /**
-   * DEBUG: Enhanced document prompt with better instructions
+   * Document prompt for Azure OpenAI
    */
-  getCoTPrompt(documentText) {
-    // DEBUG: Log the document text being sent to AI
-
-    
+  getDocumentPrompt(documentText) {
     return `Read this medical document carefully and extract the requested information:
 
 MEDICAL DOCUMENT TEXT:
@@ -112,74 +130,65 @@ INSTRUCTIONS:
 Extract the information now using the NUMBER|CONTENT format:`;
   }
 
+  /**
+   * Generate completion using Azure OpenAI
+   */
   async generateCompletion(documentText) {
-    // DEBUG: Check if document text is meaningful
+    // Check if document text is meaningful
     if (!documentText || documentText.trim().length < 50) {
       console.warn('DEBUG: Document text is very short or empty:', documentText);
     }
     
-    this.updateProgress('processing', 0.4, 'Medical AI Analysis', `Using medichat-llama3 model`);
+    this.updateProgress('processing', 0.4, 'Azure AI Analysis', 'Using GPT-4.1-mini model');
     
     try {
-      return await this.tryModelGeneration(this.defaultModel, documentText);
-    } catch (error) {
-      console.warn('Medichat model failed, trying fallback:', error.message);
-      this.updateProgress('processing', 0.45, 'Switching models', 'Trying alternative model');
+      console.log('DEBUG: Sending request to Azure OpenAI GPT-4.1-mini');
       
-      try {
-        return await this.tryModelGeneration(this.fallbackModel, documentText);
-      } catch (fallbackError) {
-        throw new Error(`Both models failed: ${error.message}, ${fallbackError.message}`);
+      const response = await this.client.chat.completions.create({
+        messages: [
+          { 
+            role: 'system', 
+            content: this.getSystemPrompt() 
+          },
+          { 
+            role: 'user', 
+            content: this.getDocumentPrompt(documentText) 
+          }
+        ],
+        model: this.modelName,
+        max_completion_tokens: 3000,
+        temperature: 0.1, // Low temperature for consistent extraction
+        top_p: 0.3,
+        frequency_penalty: 0,
+        presence_penalty: 0,
+      });
+
+      if (response?.error !== undefined && response.status !== "200") {
+        throw new Error(`Azure OpenAI API error: ${response.error}`);
       }
+
+      const result = response.choices[0]?.message?.content || '';
+      
+      this.updateProgress('processing', 0.7, 'AI analysis complete', 'Extracted clinical information');
+      
+      // DEBUG: Log the full response
+      console.log('DEBUG: Full Azure OpenAI Response:', result);
+      console.log('DEBUG: Response length:', result.length);
+      
+      return result;
+      
+    } catch (error) {
+      console.error('Azure OpenAI API Error:', error);
+      throw new Error(`Azure OpenAI request failed: ${error.message}`);
     }
   }
 
-  async tryModelGeneration(modelName, documentText) {
-    // DEBUG: More balanced parameters - not too restrictive
-    const requestData = {
-      model: modelName,
-      prompt: this.getCoTPrompt(documentText),
-      system: this.getSystemPrompt(),
-      temperature: 0.1, // Slightly higher to encourage extraction
-      stream: false,
-      options: {
-        num_predict: 3000,  // More tokens for detailed extraction
-        num_ctx: 8192,
-        top_k: 20,         // Less restrictive to allow medical terminology
-        top_p: 0.4,        // Less restrictive for better extraction
-        repeat_penalty: 1.1,
-        stop: ["16|", "END", "---"],
-        seed: 42
-      }
-    };
-
-    // DEBUG: Log the request being sent
-    console.log('DEBUG: Sending request to model:', modelName);
-    console.log('DEBUG: Request parameters:', JSON.stringify(requestData.options, null, 2));
-
-    const response = await fetch(`${this.baseUrl}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestData),
-    });
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    this.updateProgress('processing', 0.7, 'Medical analysis complete', 'Extracted clinical information');
-    
-    // DEBUG: Log the full response
-    console.log('DEBUG: Full AI Response:', data.response);
-    console.log('DEBUG: Response length:', (data.response || '').length);
-    
-    return data.response || JSON.stringify(data);
-  }
-
+  /**
+   * Extract information using Azure OpenAI
+   */
   async extractInformation(text) {
     try {
-      this.updateProgress('processing', 0.3, 'Starting medical analysis', 'Preparing document for medichat AI');
+      this.updateProgress('processing', 0.3, 'Starting AI analysis', 'Preparing document for Azure OpenAI');
       
       // DEBUG: Log the text being processed
       console.log('DEBUG: Text being processed for extraction:');
@@ -199,15 +208,15 @@ Extract the information now using the NUMBER|CONTENT format:`;
           }
         });
         
-        this.updateProgress('processing', 0.9, 'Medical extraction complete', 'Successfully extracted clinical data');
+        this.updateProgress('processing', 0.9, 'AI extraction complete', 'Successfully extracted clinical data');
         return extractedData;
       } catch (parseError) {
         console.error('DEBUG: Parse error:', parseError);
-        this.updateProgress('error', 0.7, 'Medical parsing error', `Failed to extract: ${parseError.message}`);
+        this.updateProgress('error', 0.7, 'AI parsing error', `Failed to extract: ${parseError.message}`);
         
         return {
           extractionMethod: 'failed',
-          error: 'Medical parsing error',
+          error: 'AI parsing error',
           errorDetails: parseError.message,
           rawOutput: result,
           timestamp: new Date().toISOString()
@@ -215,7 +224,7 @@ Extract the information now using the NUMBER|CONTENT format:`;
       }
     } catch (error) {
       console.error('DEBUG: Extraction error:', error);
-      this.updateProgress('error', 0.5, 'Medical extraction failed', `Error: ${error.message}`);
+      this.updateProgress('error', 0.5, 'AI extraction failed', `Error: ${error.message}`);
       return {
         extractionMethod: 'failed',
         error: error.message,
@@ -225,12 +234,15 @@ Extract the information now using the NUMBER|CONTENT format:`;
     }
   }
 
+  /**
+   * Parse delimiter response (same logic as before)
+   */
   parseDelimiterResponse(text) {
-    console.log('DEBUG: Parsing AI response...');
+    console.log('DEBUG: Parsing Azure OpenAI response...');
     console.log('DEBUG: Raw response:', text);
     
     const result = this.medicalFieldService.createEmptyFormData();
-    result.extractionMethod = 'medichat-parsed';
+    result.extractionMethod = 'azure-openai-parsed';
     
     const pattern = /^(\d+)\s*\|\s*(.*?)$/gm;
     const matches = [...text.matchAll(pattern)];
@@ -266,6 +278,9 @@ Extract the information now using the NUMBER|CONTENT format:`;
     return result;
   }
 
+  /**
+   * Validate medical content (same logic as before)
+   */
   isValidMedicalContent(content, fieldNumber) {
     if (!content || content.length < 1) {
       console.log(`DEBUG: Content empty or too short: "${content}"`);
@@ -288,6 +303,9 @@ Extract the information now using the NUMBER|CONTENT format:`;
     return !isInvalid;
   }
 
+  /**
+   * Clean medical content (same logic as before)
+   */
   cleanMedicalContent(content) {
     const cleaned = content
       .replace(/^\[|\]$/g, '') // Remove brackets
@@ -296,9 +314,8 @@ Extract the information now using the NUMBER|CONTENT format:`;
       .replace(/^[:\-\s]+|[:\-\s]+$/g, '') // Remove leading/trailing colons and dashes
       .trim();
     
-   
     return cleaned;
   }
 }
 
-export default OllamaService;
+export default AzureOpenAIService;
