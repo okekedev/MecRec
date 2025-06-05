@@ -1,38 +1,20 @@
 /**
- * AzureOpenAIService - Replacement for OllamaService using Azure OpenAI
- * Updated to use environment variables for sensitive configuration
+ * AzureOpenAIService - Fixed to detect development vs production environment
  */
-import { AzureOpenAI } from 'openai';
 import MedicalFieldService from './MedicalFieldService';
 
 class AzureOpenAIService {
   static instance;
 
   constructor() {
-    // Azure OpenAI configuration - using environment variables
-    this.endpoint = process.env.AZURE_OPENAI_ENDPOINT || 'https://medrecapp.openai.azure.com/';
-    this.apiKey = process.env.AZURE_OPENAI_API_KEY;
-    this.deployment = process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4.1-mini';
-    this.modelName = process.env.AZURE_OPENAI_MODEL_NAME || 'gpt-4.1-mini';
-    this.apiVersion = process.env.AZURE_OPENAI_API_VERSION || '2025-01-01-preview';
-    
-    // Validate required environment variables
-    if (!this.apiKey) {
-      throw new Error('AZURE_OPENAI_API_KEY environment variable is required');
-    }
-    
-    // Initialize Azure OpenAI client
-    const options = { 
-      endpoint: this.endpoint, 
-      apiKey: this.apiKey, 
-      deployment: this.deployment, 
-      apiVersion: this.apiVersion,
-      dangerouslyAllowBrowser: true // Required for web environments
-    };
-    
-    this.client = new AzureOpenAI(options);
     this.medicalFieldService = MedicalFieldService.getInstance();
     this.progressCallback = null;
+    
+    // Smart API endpoint detection
+    this.apiEndpoint = this.getApiEndpoint();
+    
+    console.log('🔐 AzureOpenAIService configured');
+    console.log('📍 API Endpoint:', this.apiEndpoint);
   }
 
   static getInstance() {
@@ -40,6 +22,26 @@ class AzureOpenAIService {
       AzureOpenAIService.instance = new AzureOpenAIService();
     }
     return AzureOpenAIService.instance;
+  }
+
+  /**
+   * Smart API endpoint detection for development vs production
+   */
+  getApiEndpoint() {
+    // Check if we're in Expo development environment (port 19006)
+    const isExpoDev = typeof window !== 'undefined' && 
+                     window.location && 
+                     window.location.port === '19006';
+
+    if (isExpoDev) {
+      // Expo dev server - point to our separate API server on port 3000
+      console.log('🛠️ Development mode detected: Using separate API server on port 3000');
+      return 'http://localhost:3000/api/openai';
+    } else {
+      // Production or same-server development - use relative path
+      console.log('🏭 Production mode detected: Using relative API path');
+      return '/api/openai';
+    }
   }
 
   setProgressCallback(callback) {
@@ -58,178 +60,86 @@ class AzureOpenAIService {
   }
 
   /**
-   * Enhanced system prompt optimized for GPT-4.1-mini
-   */
-  getSystemPrompt() {
-    return `You are a medical AI assistant specialized in extracting information from clinical documents.
-
-TASK: Read the medical document carefully and extract specific information into 15 numbered fields.
-
-OUTPUT FORMAT RULES:
-- Each line starts with: NUMBER|EXTRACTED_INFORMATION
-- Extract real information from the document
-- Do not leave fields empty unless truly no information exists
-- Look carefully for patient names, dates, diagnoses, medications, etc.
-- Use the pipe symbol (|) to separate the number from the content
-- Ensure the content is relevant to the field number
-- Be thorough and accurate
-
-FORMAT EXAMPLE:
-1|John Smith
-2|01/15/1980
-3|Medicare Part A
-4|General Hospital
-5|Type 2 Diabetes
-6|Dr. Sarah Johnson
-7|Home with follow-up
-8|No acute findings
-9|Metformin 500mg BID
-10|Lisinopril 10mg daily
-11|A1C 7.2%, Glucose 140
-12|Alert and oriented
-13|Hypertension, diabetes
-14|Normal cognition
-15|Patient compliant with medications
-
-FIELD DEFINITIONS:
-1 = Patient's full name (look for names, patient identifiers)
-2 = Date of birth or age (look for DOB, birth date, age)
-3 = Insurance (Medicare, Medicaid, insurance company names)
-4 = Medical facility (hospital name, clinic, medical center)
-5 = Primary diagnosis (main medical condition, chief complaint)
-6 = Primary care provider (doctor names, PCP, referring physician)
-7 = Discharge disposition (where patient goes: home, facility, etc.)
-8 = Physical findings (wounds, injuries, physical exam results)
-9 = Medications (all drugs, prescriptions, treatments mentioned)
-10 = Cardiac medications (heart-specific drugs only)
-11 = Laboratory data (lab results, vital signs, test values)
-12 = History and physical/H&P (examination notes, assessments, is the face to face signed?)
-13 = Medical history Discharge Summary (past conditions, previous medical issues)
-14 = Mental status (cognitive state, mental health notes)
-15 = Additional notes (other important clinical information)
-
-IMPORTANT: Extract actual information from the document. Do not return empty fields unless the information truly doesn't exist in the document.`;
-  }
-
-  /**
-   * Document prompt for Azure OpenAI
-   */
-  getDocumentPrompt(documentText) {
-    return `Read this medical document carefully and extract the requested information:
-
-MEDICAL DOCUMENT TEXT:
-${documentText}
-
-INSTRUCTIONS:
-1. Read the entire document above
-2. Look for patient information, medical details, diagnoses, medications, etc.
-3. Extract information into the 15 numbered fields using pipe format
-4. Put actual information after each pipe symbol
-5. Only leave a field empty (NUMBER|) if that information truly doesn't exist
-
-Extract the information now using the NUMBER|CONTENT format:`;
-  }
-
-  /**
-   * Generate completion using Azure OpenAI
-   */
-  async generateCompletion(documentText) {
-    // Check if document text is meaningful
-    if (!documentText || documentText.trim().length < 50) {
-      console.warn('DEBUG: Document text is very short or empty:', documentText);
-    }
-    
-    this.updateProgress('processing', 0.4, 'Azure AI Analysis', 'Using GPT-4.1-mini model');
-    
-    try {
-      console.log('DEBUG: Sending request to Azure OpenAI GPT-4.1-mini');
-      
-      const response = await this.client.chat.completions.create({
-        messages: [
-          { 
-            role: 'system', 
-            content: this.getSystemPrompt() 
-          },
-          { 
-            role: 'user', 
-            content: this.getDocumentPrompt(documentText) 
-          }
-        ],
-        model: this.modelName,
-        max_completion_tokens: 3000,
-        temperature: 0.1, // Low temperature for consistent extraction
-        top_p: 0.3,
-        frequency_penalty: 0,
-        presence_penalty: 0,
-      });
-
-      if (response?.error !== undefined && response.status !== "200") {
-        throw new Error(`Azure OpenAI API error: ${response.error}`);
-      }
-
-      const result = response.choices[0]?.message?.content || '';
-      
-      this.updateProgress('processing', 0.7, 'AI analysis complete', 'Extracted clinical information');
-      
-      // DEBUG: Log the full response
-      console.log('DEBUG: Full Azure OpenAI Response:', result);
-      console.log('DEBUG: Response length:', result.length);
-      
-      return result;
-      
-    } catch (error) {
-      console.error('Azure OpenAI API Error:', error);
-      throw new Error(`Azure OpenAI request failed: ${error.message}`);
-    }
-  }
-
-  /**
-   * Extract information using Azure OpenAI
+   * Extract information using API proxy
    */
   async extractInformation(text) {
     try {
       this.updateProgress('processing', 0.3, 'Starting AI analysis', 'Preparing document for Azure OpenAI');
       
-      // DEBUG: Log the text being processed
       console.log('DEBUG: Text being processed for extraction:');
-      console.log('Text length:', text.length);
-      console.log('Text preview:', text.substring(0, 200) + '...');
+      console.log('DEBUG: Text length:', text.length);
+      console.log('DEBUG: API endpoint:', this.apiEndpoint);
       
-      const result = await this.generateCompletion(text);
+      this.updateProgress('processing', 0.4, 'AI Analysis', 'Sending to Azure OpenAI via secure proxy');
       
-      try {
-        const extractedData = this.parseDelimiterResponse(result);
-        
-        // DEBUG: Log extraction results
-        console.log('DEBUG: Extraction results:');
-        Object.entries(extractedData).forEach(([key, value]) => {
-          if (value && typeof value === 'string' && value.trim()) {
-            console.log(`DEBUG: ${key} = "${value}"`);
-          }
-        });
-        
-        this.updateProgress('processing', 0.9, 'AI extraction complete', 'Successfully extracted clinical data');
-        return extractedData;
-      } catch (parseError) {
-        console.error('DEBUG: Parse error:', parseError);
-        this.updateProgress('error', 0.7, 'AI parsing error', `Failed to extract: ${parseError.message}`);
-        
-        return {
-          extractionMethod: 'failed',
-          error: 'AI parsing error',
-          errorDetails: parseError.message,
-          rawOutput: result,
-          timestamp: new Date().toISOString()
-        };
+      // Call our internal API instead of Azure directly
+      const response = await fetch(`${this.apiEndpoint}/extract`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          documentText: text
+        })
+      });
+
+      console.log('DEBUG: API response status:', response.status);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ 
+          error: `HTTP ${response.status}: ${response.statusText}` 
+        }));
+        throw new Error(`API request failed: ${response.status} - ${errorData.error || errorData.details || 'Unknown error'}`);
       }
+
+      const result = await response.json();
+      
+      if (result.success) {
+        this.updateProgress('processing', 0.7, 'AI Complete', 'Processing extraction results');
+        
+        try {
+          const extractedData = this.parseDelimiterResponse(result.extractedData);
+          
+          console.log('DEBUG: Extraction successful');
+          this.updateProgress('processing', 0.9, 'AI extraction complete', 'Successfully extracted clinical data');
+          return extractedData;
+          
+        } catch (parseError) {
+          console.error('DEBUG: Parse error:', parseError);
+          this.updateProgress('error', 0.7, 'AI parsing error', `Failed to extract: ${parseError.message}`);
+          
+          return {
+            extractionMethod: 'failed',
+            error: 'AI parsing error',
+            errorDetails: parseError.message,
+            rawOutput: result.extractedData,
+            timestamp: new Date().toISOString()
+          };
+        }
+      } else {
+        throw new Error(result.error || result.details || 'Extraction failed');
+      }
+      
     } catch (error) {
       console.error('DEBUG: Extraction error:', error);
-      this.updateProgress('error', 0.5, 'AI extraction failed', `Error: ${error.message}`);
+      
+      // Enhanced error handling with endpoint information
+      let errorMessage = error.message;
+      if (error.message.includes('Failed to fetch') || error.message.includes('404')) {
+        errorMessage = `Cannot connect to API server at ${this.apiEndpoint}. `;
+        
+        if (this.apiEndpoint.includes('localhost:3000')) {
+          errorMessage += 'Make sure API server is running: npm run api';
+        } else {
+          errorMessage += 'Check server status.';
+        }
+      }
+      
+      this.updateProgress('error', 0.5, 'AI extraction failed', errorMessage);
       return {
         extractionMethod: 'failed',
-        error: error.message,
+        error: errorMessage,
         timestamp: new Date().toISOString(),
-        rawOutput: error.rawOutput || '',
       };
     }
   }
@@ -279,7 +189,7 @@ Extract the information now using the NUMBER|CONTENT format:`;
   }
 
   /**
-   * Validate medical content (same logic as before)
+   * Validate medical content
    */
   isValidMedicalContent(content, fieldNumber) {
     if (!content || content.length < 1) {
@@ -290,9 +200,9 @@ Extract the information now using the NUMBER|CONTENT format:`;
     const invalidPatterns = [
       /^(not found|none|n\/a|unknown|not specified|not mentioned)$/i,
       /^(no|null|undefined|empty)$/i,
-      /^\[.*\]$/, // Bracketed instructions
-      /^extract:/i, // Instruction remnants
-      /^(here|content|info|information)$/i // Generic placeholders
+      /^\[.*\]$/,
+      /^extract:/i,
+      /^(here|content|info|information)$/i
     ];
     
     const isInvalid = invalidPatterns.some(pattern => pattern.test(content.trim()));
@@ -304,14 +214,14 @@ Extract the information now using the NUMBER|CONTENT format:`;
   }
 
   /**
-   * Clean medical content (same logic as before)
+   * Clean medical content
    */
   cleanMedicalContent(content) {
     const cleaned = content
-      .replace(/^\[|\]$/g, '') // Remove brackets
-      .replace(/^Extract:\s*/i, '') // Remove instruction prefixes
-      .replace(/\s+/g, ' ') // Normalize spaces
-      .replace(/^[:\-\s]+|[:\-\s]+$/g, '') // Remove leading/trailing colons and dashes
+      .replace(/^\[|\]$/g, '')
+      .replace(/^Extract:\s*/i, '')
+      .replace(/\s+/g, ' ')
+      .replace(/^[:\-\s]+|[:\-\s]+$/g, '')
       .trim();
     
     return cleaned;
