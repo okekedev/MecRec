@@ -1,13 +1,10 @@
-// webpack.config.js
+// webpack.config.js - Your working version
 const path = require('path');
 const createExpoWebpackConfigAsync = require('@expo/webpack-config');
 const { DefinePlugin, ProvidePlugin } = require('webpack');
 
 module.exports = async function (env, argv) {
   const config = await createExpoWebpackConfigAsync(env, argv);
-
-  // Load environment variables from .env file (local dev) or process.env (Docker)
-  require('dotenv').config();
 
   // Fix for PDF.js dynamic imports
   config.module.rules.push({
@@ -33,23 +30,10 @@ module.exports = async function (env, argv) {
       Buffer: ['buffer', 'Buffer'],
       crypto: 'crypto-browserify',
     }),
-    // Environment variables - works for both local .env and Docker env vars
+    // NO Azure OpenAI environment variables - they're handled by the API server now
     new DefinePlugin({
-      'process.env.AZURE_OPENAI_ENDPOINT': JSON.stringify(
-        process.env.AZURE_OPENAI_ENDPOINT || 'https://medrecapp.openai.azure.com/'
-      ),
-      'process.env.AZURE_OPENAI_API_KEY': JSON.stringify(
-        process.env.AZURE_OPENAI_API_KEY
-      ),
-      'process.env.AZURE_OPENAI_DEPLOYMENT': JSON.stringify(
-        process.env.AZURE_OPENAI_DEPLOYMENT || 'gpt-4.1-mini'
-      ),
-      'process.env.AZURE_OPENAI_MODEL_NAME': JSON.stringify(
-        process.env.AZURE_OPENAI_MODEL_NAME || 'gpt-4.1-mini'
-      ),
-      'process.env.AZURE_OPENAI_API_VERSION': JSON.stringify(
-        process.env.AZURE_OPENAI_API_VERSION || '2025-01-01-preview'
-      ),
+      'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
+      // Add other NON-SENSITIVE environment variables here if needed
     })
   );
 
