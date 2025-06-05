@@ -22,7 +22,6 @@ module.exports = async function (env, argv) {
     fs: 'browserify-fs',
     path: require.resolve('path-browserify'),
     stream: require.resolve('stream-browserify'),
-    zlib: require.resolve('browserify-zlib'),
     util: require.resolve('util/'),
     crypto: require.resolve('crypto-browserify'),
   };
@@ -61,7 +60,6 @@ module.exports = async function (env, argv) {
     stream: require.resolve('stream-browserify'),
     path: require.resolve('path-browserify'),
     util: require.resolve('util/'),
-    zlib: require.resolve('browserify-zlib'),
     fs: false,
     os: false,
     url: false,
