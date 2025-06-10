@@ -1,53 +1,48 @@
-# MedRec - Fixed Dockerfile with Required Dependencies
-# Canvas package needs native compilation tools
-
-# Stage 1: Build the React Native Web app
+# MedRec - Simple Dockerfile with favicon support
 FROM node:18-alpine AS builder
 
-# Install build dependencies (needed for canvas package)
-RUN apk add --no-cache \
-    python3 \
-    make \
-    g++ \
-    cairo-dev \
-    pango-dev \
-    jpeg-dev \
-    giflib-dev \
-    pixman-dev \
-    musl-dev
-
 WORKDIR /app
 
-# Copy package files and install with legacy peer deps
+# Copy package files
 COPY package*.json ./
-RUN npm install --legacy-peer-deps
 
-# Copy source and build
-COPY . .
-RUN npm run web:build
+# Install dependencies
+RUN npm install --legacy-peer-deps --ignore-scripts
 
-# Stage 2: Production runtime
+# Copy configuration files
+COPY app.json ./
+COPY metro.config.js ./
+COPY babel.config.js ./
+
+# Copy entry points and source
+COPY App.js ./
+COPY index.js ./
+COPY src/ ./src/
+
+# Verify favicon exists
+RUN echo "=== Checking favicon ===" && ls -la src/assets/favicon.png
+
+# Export for web
+RUN npx expo export --platform web --output-dir dist
+
+# Verify output
+RUN echo "=== Export Complete ===" && ls -la dist/
+
+# Production stage
 FROM node:18-alpine AS production
 
-# Install runtime dependencies (needed for canvas at runtime)
-RUN apk add --no-cache \
-    cairo \
-    pango \
-    jpeg \
-    giflib \
-    pixman
-
 WORKDIR /app
 
-# Production install with legacy peer deps
+# Copy package files and install production deps
 COPY package*.json ./
-RUN npm ci --only=production --legacy-peer-deps
+RUN npm ci --only=production --legacy-peer-deps --ignore-scripts
 
-# Copy built app and backend
-COPY --from=builder /app/web-build ./web-build
+# Copy built web app and backend
+COPY --from=builder /app/dist ./web-build
 COPY backend/ ./backend/
 COPY src/assets/ ./src/assets/
 
-# Expose port and start
+# Start server
 EXPOSE 3000
+ENV NODE_ENV=production
 CMD ["node", "backend/server.js"]
