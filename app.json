@@ -29,8 +29,14 @@
       "package": "com.medrec.app"
     },
     "web": {
-      "favicon": null
+      "favicon": "./src/assets/favicon.png",
+      "bundler": "metro"
     },
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
     "plugins": [
       "expo-document-picker",
       "expo-file-system"

@@ -1,5 +1,5 @@
-// metro.config.js
-const { getDefaultConfig } = require('@expo/metro-config');
+// metro.config.js - Fixed for Expo SDK 50+ with proper web platform support
+const { getDefaultConfig } = require('expo/metro-config');
 const path = require('path');
 
 const defaultConfig = getDefaultConfig(__dirname);
@@ -10,8 +10,8 @@ defaultConfig.resolver.sourceExts.push('mjs');
 // Ensure PDFJs worker files are treated as assets
 defaultConfig.resolver.assetExts.push('worker.js', 'worker.min.js');
 
-// Add specific node modules to be transpiled
-defaultConfig.transformer.babelTransformerPath = require.resolve('metro-react-native-babel-transformer');
+// IMPORTANT: Use Expo's babel transformer for web compatibility
+defaultConfig.transformer.babelTransformerPath = require.resolve('@expo/metro-config/babel-transformer');
 
 // Set specific paths for node module resolution
 defaultConfig.resolver.extraNodeModules = {
