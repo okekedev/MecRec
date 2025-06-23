@@ -41,6 +41,7 @@ RUN npm ci --only=production --legacy-peer-deps --ignore-scripts
 COPY --from=builder /app/dist ./web-build
 COPY backend/ ./backend/
 COPY src/assets/ ./src/assets/
+
 # Start server
 EXPOSE 3000
 ENV NODE_ENV=production
