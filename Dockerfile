@@ -13,7 +13,6 @@ RUN npm install --legacy-peer-deps --ignore-scripts
 COPY app.json ./
 COPY metro.config.js ./
 COPY babel.config.js ./
-
 # Copy entry points and source
 COPY App.js ./
 COPY index.js ./
