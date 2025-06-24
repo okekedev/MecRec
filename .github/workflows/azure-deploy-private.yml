@@ -39,7 +39,7 @@ jobs:
       uses: docker/metadata-action@v5
       with:
         # ✅ Dynamic repository reference
-        images: ghcr.io/${{ github.repository_owner }}/azure-dev
+        images: ghcr.io/${{ github.repository_owner }}/mecrec
         tags: |
           type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
           type=raw,value=v${{ github.run_number }},enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
@@ -72,14 +72,14 @@ jobs:
         
         # Remove any existing registry configuration first
         az containerapp registry remove \
-          --name azure-dev-app \
-          --resource-group azure-dev \
+          --name mecrec-app \
+          --resource-group mecrec-rg \
           --server ghcr.io || echo "No existing registry config to remove"
         
         # Configure registry credentials with PAT for persistent access
         az containerapp registry set \
-          --name azure-dev-app \
-          --resource-group azure-dev \
+          --name mecrec-app \
+          --resource-group mecrec-rg \
           --server ghcr.io \
           --username ${{ github.actor }} \
           --password ${{ secrets.GHCR_TOKEN }}
@@ -91,22 +91,20 @@ jobs:
       run: |
         echo "🚀 Deploying to Azure Container Apps..."
         
+    - name: Deploy to Azure Container Apps
+      if: github.ref == 'refs/heads/main'
+      run: |
+        echo "🚀 Deploying to Azure Container Apps..."
+        
         # Create unique revision suffix with date and short commit
         REVISION_SUFFIX=$(date +%Y%m%d-%H%M%S)-${{ steps.short_sha.outputs.sha }}
         echo "📋 Creating revision: $REVISION_SUFFIX"
         
         az containerapp update \
-          --name azure-dev-app \
-          --resource-group azure-dev \
-          --image ghcr.io/${{ github.repository_owner }}/azure-dev:latest \
-          --revision-suffix $REVISION_SUFFIX \
-          --set-env-vars \
-            AZURE_OPENAI_API_KEY="${{ secrets.AZURE_OPENAI_API_KEY }}" \
-            AZURE_OPENAI_API_VERSION="${{ secrets.AZURE_OPENAI_API_VERSION }}" \
-            AZURE_OPENAI_DEPLOYMENT="${{ secrets.AZURE_OPENAI_DEPLOYMENT }}" \
-            AZURE_OPENAI_ENDPOINT="${{ secrets.AZURE_OPENAI_ENDPOINT }}" \
-            AZURE_OPENAI_MODEL_NAME="${{ secrets.AZURE_OPENAI_MODEL_NAME }}" \
-            NODE_ENV="production"
+          --name mecrec-app \
+          --resource-group mecrec-rg \
+          --image ghcr.io/${{ github.repository_owner }}/mecrec:latest \
+          --revision-suffix $REVISION_SUFFIX
         
         echo "✅ Deployment completed successfully!"
         
@@ -117,14 +115,14 @@ jobs:
         sleep 30
       
         az containerapp revision list \
-          --name azure-dev-app \
-          --resource-group azure-dev \
+          --name mecrec-app \
+          --resource-group mecrec-rg \
           --query '[0].{Name:name,Active:properties.active,CreatedTime:properties.createdTime,Image:properties.template.containers[0].image,TrafficWeight:properties.trafficWeight}' \
           --output table
         
         APP_URL=$(az containerapp show \
-          --name azure-dev-app \
-          --resource-group azure-dev \
+          --name mecrec-app \
+          --resource-group mecrec-rg \
           --query 'properties.configuration.ingress.fqdn' \
           --output tsv)
         
@@ -139,7 +137,7 @@ jobs:
         fi
         
         echo "📊 Deployment summary:"
-        echo "- Image: ghcr.io/${{ github.repository_owner }}/azure-dev:latest"
+        echo "- Image: ghcr.io/${{ github.repository_owner }}/mecrec:latest"
         echo "- Build: v${{ github.run_number }}"
         echo "- Commit: ${{ steps.short_sha.outputs.sha }}"
         echo "- Registry: Private GitHub Container Registry (ghcr.io) with PAT"
