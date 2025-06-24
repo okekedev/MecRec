@@ -91,11 +91,6 @@ jobs:
       run: |
         echo "🚀 Deploying to Azure Container Apps..."
         
-    - name: Deploy to Azure Container Apps
-      if: github.ref == 'refs/heads/main'
-      run: |
-        echo "🚀 Deploying to Azure Container Apps..."
-        
         # Create unique revision suffix with date and short commit
         REVISION_SUFFIX=$(date +%Y%m%d-%H%M%S)-${{ steps.short_sha.outputs.sha }}
         echo "📋 Creating revision: $REVISION_SUFFIX"
@@ -104,7 +99,14 @@ jobs:
           --name mecrec-app \
           --resource-group mecrec-rg \
           --image ghcr.io/${{ github.repository_owner }}/mecrec:latest \
-          --revision-suffix $REVISION_SUFFIX
+          --revision-suffix $REVISION_SUFFIX \
+          --set-env-vars \
+            AZURE_OPENAI_API_KEY="${{ secrets.AZURE_OPENAI_API_KEY }}" \
+            AZURE_OPENAI_API_VERSION="${{ secrets.AZURE_OPENAI_API_VERSION }}" \
+            AZURE_OPENAI_DEPLOYMENT="${{ secrets.AZURE_OPENAI_DEPLOYMENT }}" \
+            AZURE_OPENAI_ENDPOINT="${{ secrets.AZURE_OPENAI_ENDPOINT }}" \
+            AZURE_OPENAI_MODEL_NAME="${{ secrets.AZURE_OPENAI_MODEL_NAME }}" \
+            NODE_ENV="production"
         
         echo "✅ Deployment completed successfully!"
         
