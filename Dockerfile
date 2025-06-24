@@ -1,4 +1,4 @@
-# MedRec - Simple Dockerfile with favicon support
+# MedRec - Fixed Dockerfile with proper asset handling
 FROM node:18-alpine AS builder
 
 WORKDIR /app
@@ -13,13 +13,23 @@ RUN npm install --legacy-peer-deps --ignore-scripts
 COPY app.json ./
 COPY metro.config.js ./
 COPY babel.config.js ./
+
 # Copy entry points and source
 COPY App.js ./
 COPY index.js ./
 COPY src/ ./src/
 
-# Verify favicon exists
-RUN echo "=== Checking favicon ===" && ls -la src/assets/favicon.png
+# Fix missing medreclogo.png by copying from icon.png (or create a placeholder)
+RUN if [ ! -f src/assets/medreclogo.png ]; then \
+    echo "=== Creating missing medreclogo.png from icon.png ===" && \
+    cp src/assets/icon.png src/assets/medreclogo.png; \
+  fi
+
+# Verify all required assets exist
+RUN echo "=== Checking required assets ===" && \
+    ls -la src/assets/favicon.png && \
+    ls -la src/assets/icon.png && \
+    ls -la src/assets/medreclogo.png
 
 # Export for web
 RUN npx expo export --platform web --output-dir dist
