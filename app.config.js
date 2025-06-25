@@ -43,7 +43,7 @@ export default {
     plugins: [
       "expo-document-picker",
       "expo-file-system"
-    ]
+    ],  // ← Add missing comma here
     // ← Remove the "extra" section completely since we're using webpack
   }
 };
