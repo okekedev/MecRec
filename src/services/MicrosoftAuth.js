@@ -1,5 +1,5 @@
 /**
- * MicrosoftAuth.js - Updated with clean environment variables and 15-minute auto-logout
+ * MicrosoftAuth.js - Simplified to use webpack DefinePlugin consistently
  */
 import { Platform } from 'react-native';
 
@@ -7,7 +7,7 @@ class MicrosoftAuth {
   static instance;
   
   constructor() {
-    // Azure AD Configuration - Clean environment variables (no REACT_APP_ prefix)
+    // Azure AD Configuration - Simple and consistent via webpack
     this.config = {
       tenantId: process.env.AZURE_TENANT_ID,
       clientId: process.env.AZURE_CLIENT_ID,
@@ -48,19 +48,28 @@ class MicrosoftAuth {
    * Validate configuration and provide helpful error messages
    */
   validateConfig() {
-   const requiredVars = [
-  { name: 'AZURE_TENANT_ID', value: this.config.tenantId },        // ← Change this
-  { name: 'AZURE_CLIENT_ID', value: this.config.clientId },        // ← Change this  
-  { name: 'AZURE_REQUIRED_GROUP', value: this.config.requiredGroup } // ← Change this
-];
+    const requiredVars = [
+      { name: 'AZURE_TENANT_ID', value: this.config.tenantId },
+      { name: 'AZURE_CLIENT_ID', value: this.config.clientId },
+      { name: 'AZURE_REQUIRED_GROUP', value: this.config.requiredGroup }
+    ];
 
     const missing = requiredVars.filter(v => !v.value);
     
     if (missing.length > 0) {
       console.error('❌ MicrosoftAuth Configuration Error:');
-      console.error('Missing required environment variables:');
+      console.error('Missing required Azure AD environment variables:');
       missing.forEach(v => console.error(`  - ${v.name}`));
-      console.error('Please set these in your .env file or deployment config');
+      console.error('');
+      console.error('Setup Instructions:');
+      console.error('  1. Create a .env file in your project root');
+      console.error('  2. Add the following variables:');
+      console.error('     AZURE_TENANT_ID=your-tenant-id');
+      console.error('     AZURE_CLIENT_ID=your-client-id');
+      console.error('     AZURE_REQUIRED_GROUP=your-group-name');
+      console.error('  3. Restart your development server');
+      console.error('');
+      console.error('For production deployment, set these as environment variables.');
       throw new Error('Missing required Azure AD configuration. Please check environment variables.');
     } else {
       console.log('✅ MicrosoftAuth Configuration:');

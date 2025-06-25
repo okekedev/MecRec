@@ -1,4 +1,4 @@
-// app.config.js - Converted from your app.json with environment variables
+// app.config.js - Switch to webpack for consistent environment variable handling
 import 'dotenv/config';
 
 export default {
@@ -33,7 +33,7 @@ export default {
     },
     web: {
       favicon: "./src/assets/favicon.png",
-      bundler: "metro"
+      bundler: "webpack"  // ← Change from "metro" to "webpack"
     },
     platforms: [
       "ios",
@@ -43,12 +43,7 @@ export default {
     plugins: [
       "expo-document-picker",
       "expo-file-system"
-    ],
-    extra: {
-      // Environment variables for development
-      azureTenantId: process.env.AZURE_TENANT_ID,
-      azureClientId: process.env.AZURE_CLIENT_ID,
-      azureRequiredGroup: process.env.AZURE_REQUIRED_GROUP,
-    }
+    ]
+    // ← Remove the "extra" section completely since we're using webpack
   }
 };

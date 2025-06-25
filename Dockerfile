@@ -1,7 +1,17 @@
-# MedRec - Fixed Dockerfile with proper asset handling
+# MedRec - Updated Dockerfile with frontend build args and backend runtime env
 FROM node:18-alpine AS builder
 
 WORKDIR /app
+
+# Accept build-time arguments for frontend compilation
+ARG AZURE_TENANT_ID
+ARG AZURE_CLIENT_ID
+ARG AZURE_REQUIRED_GROUP
+
+# Set environment variables for the build process
+ENV AZURE_TENANT_ID=$AZURE_TENANT_ID
+ENV AZURE_CLIENT_ID=$AZURE_CLIENT_ID
+ENV AZURE_REQUIRED_GROUP=$AZURE_REQUIRED_GROUP
 
 # Copy package files
 COPY package*.json ./
@@ -9,8 +19,9 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install --legacy-peer-deps --ignore-scripts
 
-# Copy configuration files
-COPY app.json ./
+# Copy configuration files (these need the env vars for webpack)
+COPY app.config.js ./
+COPY webpack.config.js ./
 COPY metro.config.js ./
 COPY babel.config.js ./
 
@@ -31,7 +42,13 @@ RUN echo "=== Checking required assets ===" && \
     ls -la src/assets/icon.png && \
     ls -la src/assets/medreclogo.png
 
-# Export for web
+# Debug: Show environment variables are available during build
+RUN echo "=== Frontend Build Environment Check ===" && \
+    echo "AZURE_TENANT_ID: ${AZURE_TENANT_ID:0:8}..." && \
+    echo "AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:0:8}..." && \
+    echo "AZURE_REQUIRED_GROUP: $AZURE_REQUIRED_GROUP"
+
+# Export for web (webpack will use the env vars via DefinePlugin)
 RUN npx expo export --platform web --output-dir dist
 
 # Verify output
