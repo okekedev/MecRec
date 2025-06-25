@@ -1,4 +1,4 @@
-// webpack.config.js - Your working version
+// webpack.config.js - Clean variable names (no REACT_APP_ prefix)
 const path = require('path');
 const createExpoWebpackConfigAsync = require('@expo/webpack-config');
 const { DefinePlugin, ProvidePlugin } = require('webpack');
@@ -30,10 +30,14 @@ module.exports = async function (env, argv) {
       Buffer: ['buffer', 'Buffer'],
       crypto: 'crypto-browserify',
     }),
-    // NO Azure OpenAI environment variables - they're handled by the API server now
+    // Environment variables for the frontend - Clean mapping
     new DefinePlugin({
       'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
-      // Add other NON-SENSITIVE environment variables here if needed
+      
+      // Azure AD Configuration - Direct mapping (same names everywhere)
+      'process.env.AZURE_TENANT_ID': JSON.stringify(process.env.AZURE_TENANT_ID),
+      'process.env.AZURE_CLIENT_ID': JSON.stringify(process.env.AZURE_CLIENT_ID),
+      'process.env.AZURE_REQUIRED_GROUP': JSON.stringify(process.env.AZURE_REQUIRED_GROUP),
     })
   );
 

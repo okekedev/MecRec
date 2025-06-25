@@ -7,6 +7,13 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# Add environment variables for the build process
+env:
+  # Frontend build-time variables (mapped from your existing GitHub secrets)
+  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  AZURE_REQUIRED_GROUP: ${{ secrets.AZURE_REQUIRED_GROUP }}
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -54,6 +61,11 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
+        # Pass build-time environment variables to Docker build
+        build-args: |
+          AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_REQUIRED_GROUP=${{ secrets.AZURE_REQUIRED_GROUP }}
 
     # Deploy only on main branch
     - name: Azure Login with OIDC

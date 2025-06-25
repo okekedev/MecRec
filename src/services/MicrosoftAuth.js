@@ -1,5 +1,5 @@
 /**
- * MicrosoftAuth.js - Updated with 15-minute auto-logout
+ * MicrosoftAuth.js - Updated with clean environment variables and 15-minute auto-logout
  */
 import { Platform } from 'react-native';
 
@@ -7,11 +7,11 @@ class MicrosoftAuth {
   static instance;
   
   constructor() {
-    // Azure AD Configuration
+    // Azure AD Configuration - Clean environment variables (no REACT_APP_ prefix)
     this.config = {
-      tenantId: 'cc099856-d092-4bf8-bf4b-10b37b156601',
-      clientId: '003bb526-011c-4e8e-9e1f-693a54540f0f',
-      requiredGroup: 'MedRec',
+      tenantId: process.env.AZURE_TENANT_ID,
+      clientId: process.env.AZURE_CLIENT_ID,
+      requiredGroup: process.env.AZURE_REQUIRED_GROUP,
       scopes: [
         'openid',
         'profile',
@@ -20,6 +20,9 @@ class MicrosoftAuth {
         'GroupMember.Read.All'
       ]
     };
+
+    // Validate configuration and provide helpful error messages
+    this.validateConfig();
     
     this.isAuthenticated = false;
     this.currentUser = null;
@@ -39,6 +42,32 @@ class MicrosoftAuth {
     
     // Set up activity tracking for auto-logout
     this.setupActivityTracking();
+  }
+
+  /**
+   * Validate configuration and provide helpful error messages
+   */
+  validateConfig() {
+   const requiredVars = [
+  { name: 'AZURE_TENANT_ID', value: this.config.tenantId },        // ← Change this
+  { name: 'AZURE_CLIENT_ID', value: this.config.clientId },        // ← Change this  
+  { name: 'AZURE_REQUIRED_GROUP', value: this.config.requiredGroup } // ← Change this
+];
+
+    const missing = requiredVars.filter(v => !v.value);
+    
+    if (missing.length > 0) {
+      console.error('❌ MicrosoftAuth Configuration Error:');
+      console.error('Missing required environment variables:');
+      missing.forEach(v => console.error(`  - ${v.name}`));
+      console.error('Please set these in your .env file or deployment config');
+      throw new Error('Missing required Azure AD configuration. Please check environment variables.');
+    } else {
+      console.log('✅ MicrosoftAuth Configuration:');
+      console.log(`📱 Tenant ID: ${this.config.tenantId.substring(0, 8)}...`);
+      console.log(`🔑 Client ID: ${this.config.clientId.substring(0, 8)}...`);
+      console.log(`👥 Required Group: ${this.config.requiredGroup}`);
+    }
   }
   
   static getInstance() {
