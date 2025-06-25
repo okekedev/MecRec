@@ -1,7 +1,7 @@
-// app.config.js - Switch to webpack for consistent environment variable handling
-import 'dotenv/config';
+// app.config.js - CommonJS format for Docker compatibility
+require('dotenv/config');
 
-export default {
+module.exports = {
   name: "MedRecApp",
   displayName: "MedRec App",
   expo: {
@@ -33,7 +33,7 @@ export default {
     },
     web: {
       favicon: "./src/assets/favicon.png",
-      bundler: "webpack"  // ← Change from "metro" to "webpack"
+      bundler: "webpack"
     },
     platforms: [
       "ios",
@@ -43,7 +43,6 @@ export default {
     plugins: [
       "expo-document-picker",
       "expo-file-system"
-    ],  // ← Add missing comma here
-    // ← Remove the "extra" section completely since we're using webpack
+    ]
   }
 };
