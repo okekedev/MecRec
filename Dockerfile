@@ -19,8 +19,8 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install --legacy-peer-deps --ignore-scripts
 
-# Copy configuration files (these need the env vars for webpack)
-COPY app.config.js ./
+# Copy configuration files
+COPY app.json ./
 COPY webpack.config.js ./
 COPY metro.config.js ./
 COPY babel.config.js ./
