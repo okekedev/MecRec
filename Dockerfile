@@ -1,4 +1,4 @@
-# MedRec - Updated Dockerfile with webpack export instead of metro
+# MedRec - Metro-based build (simpler and more reliable)
 FROM node:18-alpine AS builder
 
 WORKDIR /app
@@ -21,8 +21,6 @@ RUN npm install --legacy-peer-deps --ignore-scripts
 
 # Copy configuration files
 COPY app.json ./
-COPY app.config.js ./
-COPY webpack.config.js ./
 COPY metro.config.js ./
 COPY babel.config.js ./
 
@@ -31,7 +29,7 @@ COPY App.js ./
 COPY index.js ./
 COPY src/ ./src/
 
-# Fix missing medreclogo.png by copying from icon.png (or create a placeholder)
+# Fix missing medreclogo.png by copying from icon.png
 RUN if [ ! -f src/assets/medreclogo.png ]; then \
     echo "=== Creating missing medreclogo.png from icon.png ===" && \
     cp src/assets/icon.png src/assets/medreclogo.png; \
@@ -49,13 +47,13 @@ RUN echo "=== Frontend Build Environment Check ===" && \
     echo "AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:0:8}..." && \
     echo "AZURE_REQUIRED_GROUP: $AZURE_REQUIRED_GROUP"
 
-# Try the modern expo export command with platform flag
+# IMPORTANT: Change app.json to use metro bundler temporarily for build
+RUN sed -i 's/"bundler": "webpack"/"bundler": "metro"/' app.json
+
+# Build using Metro (the standard Expo approach)
 RUN npx expo export --platform web
 
-# Alternative: if expo export fails, try webpack directly
-# RUN npx webpack --mode production --config webpack.config.js
-
-# Verify output (expo export creates dist by default)
+# Verify output
 RUN echo "=== Build Complete ===" && ls -la dist/
 
 # Production stage
