@@ -1,4 +1,4 @@
-# MedRec - Updated Dockerfile with frontend build args and backend runtime env
+# MedRec - Updated Dockerfile with webpack export instead of metro
 FROM node:18-alpine AS builder
 
 WORKDIR /app
@@ -21,6 +21,7 @@ RUN npm install --legacy-peer-deps --ignore-scripts
 
 # Copy configuration files
 COPY app.json ./
+COPY app.config.js ./
 COPY webpack.config.js ./
 COPY metro.config.js ./
 COPY babel.config.js ./
@@ -48,8 +49,8 @@ RUN echo "=== Frontend Build Environment Check ===" && \
     echo "AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:0:8}..." && \
     echo "AZURE_REQUIRED_GROUP: $AZURE_REQUIRED_GROUP"
 
-# Export for web (webpack will use the env vars via DefinePlugin)
-RUN npx expo export --platform web --output-dir dist
+# Use webpack build instead of expo export (since web.bundler is set to webpack)
+RUN npx expo export:web --output-dir dist
 
 # Verify output
 RUN echo "=== Export Complete ===" && ls -la dist/
