@@ -49,11 +49,14 @@ RUN echo "=== Frontend Build Environment Check ===" && \
     echo "AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:0:8}..." && \
     echo "AZURE_REQUIRED_GROUP: $AZURE_REQUIRED_GROUP"
 
-# Use webpack build instead of expo export (since web.bundler is set to webpack)
-RUN npx expo export:web --output-dir dist
+# Try the modern expo export command with platform flag
+RUN npx expo export --platform web
 
-# Verify output
-RUN echo "=== Export Complete ===" && ls -la dist/
+# Alternative: if expo export fails, try webpack directly
+# RUN npx webpack --mode production --config webpack.config.js
+
+# Verify output (expo export creates dist by default)
+RUN echo "=== Build Complete ===" && ls -la dist/
 
 # Production stage
 FROM node:18-alpine AS production
