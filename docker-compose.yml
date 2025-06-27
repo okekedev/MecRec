@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  medrec-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Azure AD Configuration (for frontend build)
+        AZURE_TENANT_ID: ${AZURE_TENANT_ID}
+        AZURE_CLIENT_ID: ${AZURE_CLIENT_ID}
+        AZURE_REQUIRED_GROUP: ${AZURE_REQUIRED_GROUP}
+    ports:
+      - "3000:3000"
+    environment:
+      # Runtime environment variables (for backend)
+      - NODE_ENV=production
+      - PORT=3000
+      
+      # Azure OpenAI Configuration (backend runtime)
+      - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
+      - AZURE_OPENAI_API_KEY=${AZURE_OPENAI_API_KEY}
+      - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT:-gpt-4.1-mini}
+      - AZURE_OPENAI_API_VERSION=${AZURE_OPENAI_API_VERSION:-2025-01-01-preview}
+      - AZURE_OPENAI_MODEL_NAME=${AZURE_OPENAI_MODEL_NAME:-gpt-4}
+    volumes:
+      # Optional: Mount for persistent document storage
+      - document_storage:/app/documents
+      # Optional: Mount logs for debugging
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - medrec-network
+
+  # Optional: Add a simple file browser for document management
+  filebrowser:
+    image: filebrowser/filebrowser:latest
+    ports:
+      - "8080:80"
+    volumes:
+      - document_storage:/srv
+      - ./filebrowser.db:/database/filebrowser.db
+      - ./filebrowser.json:/.filebrowser.json
+    environment:
+      - FB_DATABASE=/database/filebrowser.db
+      - FB_ROOT=/srv
+    networks:
+      - medrec-network
+    profiles:
+      - tools
+
+volumes:
+  document_storage:
+    driver: local
+
+networks:
+  medrec-network:
+    driver: bridge
