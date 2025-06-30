@@ -61,11 +61,11 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
-        # Pass build-time environment variables to Docker build
+        # ✅ FIXED: Pass environment variables from job context to Docker build args
         build-args: |
-          AZURE_TENANT_ID=${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID=${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_REQUIRED_GROUP=${{ secrets.AZURE_REQUIRED_GROUP }}
+          AZURE_TENANT_ID=${{ env.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID=${{ env.AZURE_CLIENT_ID }}
+          AZURE_REQUIRED_GROUP=${{ env.AZURE_REQUIRED_GROUP }}
 
     # Deploy only on main branch
     - name: Azure Login with OIDC
