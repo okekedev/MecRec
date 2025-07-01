@@ -80,3 +80,4 @@ COPY src/assets/ ./src/assets/
 EXPOSE 3000
 ENV NODE_ENV=production
 CMD ["node", "backend/server.js"]
+# Healthcheck to ensure the server is running
