@@ -1,4 +1,4 @@
-# MedRec - Final working Dockerfile with proper webpack bundler configuration
+# MedRec - Fixed Dockerfile with proper expo export command
 FROM node:18-alpine AS builder
 
 WORKDIR /app
@@ -48,8 +48,8 @@ RUN echo "=== Frontend Build Environment Check ===" && \
     echo "AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:0:8}..." && \
     echo "AZURE_REQUIRED_GROUP: $AZURE_REQUIRED_GROUP"
 
-# ✅ CRITICAL FIX: Explicitly force webpack bundler in the export command
-RUN npx expo export --platform web --output-dir dist --bundler webpack
+# ✅ FIXED: Remove --bundler flag - webpack is already configured in app.json
+RUN npx expo export --platform web --output-dir dist
 
 # Verify environment variables are in the built bundle
 RUN echo "=== Build Complete ===" && ls -la dist/
