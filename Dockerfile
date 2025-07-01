@@ -1,4 +1,4 @@
-# MedRec - Webpack-based build for proper environment variable injection
+# MedRec - Final working Dockerfile with proper webpack bundler configuration
 FROM node:18-alpine AS builder
 
 WORKDIR /app
@@ -48,21 +48,18 @@ RUN echo "=== Frontend Build Environment Check ===" && \
     echo "AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:0:8}..." && \
     echo "AZURE_REQUIRED_GROUP: $AZURE_REQUIRED_GROUP"
 
-# ✅ CRITICAL: Keep webpack bundler (don't change to metro!)
-# app.json already has "bundler": "webpack" - don't override it!
-
-# Build using webpack to properly inject environment variables
-RUN npx expo export --platform web --output-dir dist
+# ✅ CRITICAL FIX: Explicitly force webpack bundler in the export command
+RUN npx expo export --platform web --output-dir dist --bundler webpack
 
 # Verify environment variables are in the built bundle
 RUN echo "=== Build Complete ===" && ls -la dist/
 RUN echo "=== Checking for environment variables in bundle ===" && \
-    if find dist -name "*.js" -type f -exec grep -l "AZURE_TENANT_ID" {} \; | head -1; then \
+    if find dist -name "*.js" -type f -exec grep -l "79865dd8" {} \; | head -1; then \
       echo "✅ Environment variables found in bundle!"; \
     else \
       echo "❌ Environment variables NOT found in bundle"; \
       echo "Checking what values were actually used:"; \
-      find dist -name "*.js" -type f -exec grep -o "AZURE_[A-Z_]*" {} \; | head -5; \
+      find dist -name "*.js" -type f -exec grep -o "AZURE_[A-Z_]*" {} \; | head -5 || echo "No AZURE variables found"; \
     fi
 
 # Production stage
