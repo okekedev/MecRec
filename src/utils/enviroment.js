@@ -8,14 +8,19 @@ export const getEnvironmentVariable = (key, fallback = null) => {
     return process.env[key];
   }
   
-  // Then try expo-constants extra config
+  // Then try expo-constants extra config (from app.config.js)
   if (Constants.expoConfig?.extra?.[key]) {
     return Constants.expoConfig.extra[key];
   }
   
-  // Finally try manifest extra (legacy)
+  // Also try Constants.manifest.extra (legacy support)
   if (Constants.manifest?.extra?.[key]) {
     return Constants.manifest.extra[key];
+  }
+  
+  // Finally try the legacy Constants.manifest2.extra (Expo SDK 48+)
+  if (Constants.manifest2?.extra?.expoClient?.extra?.[key]) {
+    return Constants.manifest2.extra.expoClient.extra[key];
   }
   
   return fallback;
@@ -35,6 +40,11 @@ export const validateEnvironmentVariables = () => {
   
   if (missing.length > 0) {
     console.warn('Missing required environment variables:', missing);
+    console.warn('Available Constants:', {
+      expoConfig: Constants.expoConfig?.extra,
+      manifest: Constants.manifest?.extra,
+      manifest2: Constants.manifest2?.extra?.expoClient?.extra,
+    });
     return false;
   }
   
@@ -43,10 +53,13 @@ export const validateEnvironmentVariables = () => {
 
 // Debug helper to check what environment variables are available
 export const debugEnvironmentVariables = () => {
-  console.log('Environment Variables Debug:');
+  console.log('=== Environment Variables Debug ===');
   console.log('process.env.AZURE_TENANT_ID:', process.env.AZURE_TENANT_ID ? 'SET' : 'NOT SET');
   console.log('process.env.AZURE_CLIENT_ID:', process.env.AZURE_CLIENT_ID ? 'SET' : 'NOT SET');
   console.log('process.env.AZURE_REQUIRED_GROUP:', process.env.AZURE_REQUIRED_GROUP ? 'SET' : 'NOT SET');
   console.log('Constants.expoConfig.extra:', Constants.expoConfig?.extra);
+  console.log('Constants.manifest.extra:', Constants.manifest?.extra);
+  console.log('Constants.manifest2.extra:', Constants.manifest2?.extra?.expoClient?.extra);
   console.log('azureConfig:', azureConfig);
+  console.log('=== End Debug ===');
 };

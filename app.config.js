@@ -1,6 +1,4 @@
-// app.config.js - CommonJS format for Docker compatibility
-require('dotenv/config');
-
+// app.config.js - Dynamic configuration with environment variables
 module.exports = {
   name: "MedRecApp",
   displayName: "MedRec App",
@@ -33,7 +31,7 @@ module.exports = {
     },
     web: {
       favicon: "./src/assets/favicon.png",
-      bundler: "webpack"
+      bundler: "metro"
     },
     platforms: [
       "ios",
@@ -43,6 +41,11 @@ module.exports = {
     plugins: [
       "expo-document-picker",
       "expo-file-system"
-    ]
+    ],
+    extra: {
+      AZURE_TENANT_ID: process.env.AZURE_TENANT_ID,
+      AZURE_CLIENT_ID: process.env.AZURE_CLIENT_ID,
+      AZURE_REQUIRED_GROUP: process.env.AZURE_REQUIRED_GROUP,
+    }
   }
 };
