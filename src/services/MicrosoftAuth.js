@@ -1,5 +1,5 @@
 /**
- * MicrosoftAuth.js - Updated to use Authorization Code Flow with PKCE (more secure)
+ * MicrosoftAuth.js - Fixed version with better error handling and fallbacks
  */
 import { Platform } from 'react-native';
 
@@ -87,30 +87,82 @@ class MicrosoftAuth {
   }
 
   /**
-   * Generate PKCE code verifier and challenge
+   * Simple random string generator (fallback for environments without crypto)
    */
-  generatePKCE() {
-    // Generate code verifier (43-128 characters)
-    const codeVerifier = this.base64URLEncode(crypto.getRandomValues(new Uint8Array(32)));
-    
-    // Generate code challenge
-    const encoder = new TextEncoder();
-    const data = encoder.encode(codeVerifier);
-    
-    return crypto.subtle.digest('SHA-256', data).then(hash => {
-      const codeChallenge = this.base64URLEncode(new Uint8Array(hash));
-      return { codeVerifier, codeChallenge };
-    });
+  generateRandomString(length = 43) {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+    let result = '';
+    for (let i = 0; i < length; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
   }
 
   /**
-   * Base64 URL encode
+   * Base64 URL encode (compatible version)
    */
-  base64URLEncode(buffer) {
-    return btoa(String.fromCharCode(...buffer))
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=/g, '');
+  base64URLEncode(str) {
+    if (typeof str === 'string') {
+      return btoa(str)
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '');
+    } else {
+      // Handle Uint8Array
+      return btoa(String.fromCharCode(...str))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '');
+    }
+  }
+
+  /**
+   * Generate PKCE code verifier and challenge (with fallbacks)
+   */
+  async generatePKCE() {
+    try {
+      console.log('🔧 Generating PKCE parameters...');
+      
+      // Check if crypto is available
+      if (typeof crypto === 'undefined' || !crypto.getRandomValues || !crypto.subtle) {
+        console.warn('⚠️ Crypto API not available, using fallback');
+        return this.generatePKCEFallback();
+      }
+
+      // Generate code verifier (43-128 characters)
+      const codeVerifier = this.base64URLEncode(crypto.getRandomValues(new Uint8Array(32)));
+      
+      // Generate code challenge
+      const encoder = new TextEncoder();
+      const data = encoder.encode(codeVerifier);
+      
+      const hash = await crypto.subtle.digest('SHA-256', data);
+      const codeChallenge = this.base64URLEncode(new Uint8Array(hash));
+      
+      console.log('✅ PKCE generated with crypto API');
+      return { codeVerifier, codeChallenge };
+      
+    } catch (error) {
+      console.warn('⚠️ Crypto API failed, using fallback:', error.message);
+      return this.generatePKCEFallback();
+    }
+  }
+
+  /**
+   * Fallback PKCE generation (for environments without crypto.subtle)
+   */
+  generatePKCEFallback() {
+    console.log('🔧 Using fallback PKCE generation...');
+    
+    // Generate a random code verifier
+    const codeVerifier = this.generateRandomString(43);
+    
+    // For fallback, we'll use the code verifier as challenge (plain method)
+    // This is less secure but compatible
+    const codeChallenge = codeVerifier;
+    
+    console.log('✅ PKCE generated with fallback method');
+    return { codeVerifier, codeChallenge, method: 'plain' };
   }
 
   /**
@@ -207,7 +259,7 @@ class MicrosoftAuth {
   }
 
   /**
-   * Microsoft authentication using Authorization Code Flow with PKCE (more secure)
+   * Microsoft authentication using Authorization Code Flow with PKCE (with fallbacks)
    */
   async realMicrosoftAuth() {
     if (Platform.OS !== 'web') {
@@ -216,31 +268,38 @@ class MicrosoftAuth {
     
     return new Promise(async (resolve, reject) => {
       try {
+        console.log('🚀 Starting Microsoft authentication...');
+        
         // Generate PKCE parameters
-        const { codeVerifier, codeChallenge } = await this.generatePKCE();
+        const pkceResult = await this.generatePKCE();
+        const { codeVerifier, codeChallenge, method = 'S256' } = pkceResult;
         
         // Store code verifier for later use
         sessionStorage.setItem('pkce_code_verifier', codeVerifier);
+        sessionStorage.setItem('pkce_method', method);
         
         // Generate state for security
-        const state = this.base64URLEncode(crypto.getRandomValues(new Uint8Array(16)));
+        const state = this.generateRandomString(16);
         sessionStorage.setItem('auth_state', state);
+        
+        console.log('✅ PKCE and state generated successfully');
         
         // Use Authorization Code flow with PKCE
         const authParams = new URLSearchParams({
           client_id: this.config.clientId,
-          response_type: 'code', // Authorization code flow
-          redirect_uri: window.location.origin, // Redirect back to main app
+          response_type: 'code',
+          redirect_uri: window.location.origin,
           scope: this.config.scopes.join(' '),
           state: state,
           code_challenge: codeChallenge,
-          code_challenge_method: 'S256',
+          code_challenge_method: method,
           prompt: 'select_account'
         });
         
         const authUrl = `https://login.microsoftonline.com/${this.config.tenantId}/oauth2/v2.0/authorize?${authParams}`;
         
-        console.log('Opening Microsoft auth popup with Authorization Code flow + PKCE...');
+        console.log('🔗 Opening authentication popup...');
+        console.log('Auth URL:', authUrl);
         
         // Open popup window
         const popup = window.open(
@@ -254,12 +313,23 @@ class MicrosoftAuth {
           return;
         }
         
+        console.log('✅ Popup opened successfully');
+        
         // Listen for popup to navigate back to our domain
         const checkPopup = setInterval(async () => {
           try {
+            // Check if popup is closed
+            if (popup.closed) {
+              clearInterval(checkPopup);
+              reject(new Error('Authentication cancelled'));
+              return;
+            }
+            
             // Check if popup has navigated back to our domain
             if (popup.location && popup.location.origin === window.location.origin) {
               clearInterval(checkPopup);
+              
+              console.log('✅ Popup returned to our domain');
               
               // Extract authorization code from URL
               const urlParams = new URLSearchParams(popup.location.search);
@@ -271,7 +341,7 @@ class MicrosoftAuth {
               popup.close();
               
               if (error) {
-                console.error('OAuth error:', error, errorDescription);
+                console.error('❌ OAuth error:', error, errorDescription);
                 reject(new Error(errorDescription || error));
                 return;
               }
@@ -279,23 +349,22 @@ class MicrosoftAuth {
               // Verify state parameter
               const storedState = sessionStorage.getItem('auth_state');
               if (returnedState !== storedState) {
-                reject(new Error('Invalid state parameter - possible CSRF attack'));
+                reject(new Error('Invalid state parameter'));
                 return;
               }
               
               if (!code) {
-                reject(new Error('No authorization code received from Microsoft'));
+                reject(new Error('No authorization code received'));
                 return;
               }
               
-              console.log('Authorization code received successfully');
+              console.log('✅ Authorization code received');
               
               // Exchange code for tokens
-              await this.exchangeCodeForTokens(code, codeVerifier, resolve, reject);
+              await this.exchangeCodeForTokens(code, codeVerifier, method, resolve, reject);
             }
           } catch (error) {
             // Cross-origin error is expected while popup is on Microsoft domain
-            // We'll keep checking until it returns to our domain
           }
         }, 1000);
         
@@ -305,21 +374,22 @@ class MicrosoftAuth {
             popup.close();
           }
           clearInterval(checkPopup);
-          reject(new Error('Authentication timeout or cancelled'));
+          reject(new Error('Authentication timeout'));
         }, 300000);
         
       } catch (error) {
-        reject(new Error(`PKCE generation failed: ${error.message}`));
+        console.error('❌ Authentication error:', error);
+        reject(new Error(`Authentication failed: ${error.message}`));
       }
     });
   }
   
   /**
-   * Exchange authorization code for access tokens
+   * Exchange authorization code for access tokens (with method parameter)
    */
-  async exchangeCodeForTokens(code, codeVerifier, resolve, reject) {
+  async exchangeCodeForTokens(code, codeVerifier, method, resolve, reject) {
     try {
-      console.log('Exchanging authorization code for tokens...');
+      console.log('🔄 Exchanging authorization code for tokens...');
       
       const tokenParams = new URLSearchParams({
         client_id: this.config.clientId,
@@ -342,20 +412,23 @@ class MicrosoftAuth {
       
       if (!tokenResponse.ok) {
         const errorData = await tokenResponse.json();
+        console.error('❌ Token exchange failed:', errorData);
         throw new Error(`Token exchange failed: ${errorData.error_description || errorData.error}`);
       }
       
       const tokens = await tokenResponse.json();
+      console.log('✅ Tokens received successfully');
       
       // Clean up session storage
       sessionStorage.removeItem('pkce_code_verifier');
+      sessionStorage.removeItem('pkce_method');
       sessionStorage.removeItem('auth_state');
       
       // Process the tokens
       await this.processTokens(tokens.access_token, tokens.id_token, resolve, reject);
       
     } catch (error) {
-      console.error('Token exchange error:', error);
+      console.error('❌ Token exchange error:', error);
       reject(new Error(`Failed to exchange code for tokens: ${error.message}`));
     }
   }
@@ -365,7 +438,7 @@ class MicrosoftAuth {
    */
   async processTokens(accessToken, idToken, resolve, reject) {
     try {
-      console.log('Processing tokens and fetching user info...');
+      console.log('👤 Processing tokens and fetching user info...');
       
       // Get user profile
       const userResponse = await fetch('https://graph.microsoft.com/v1.0/me', {
@@ -380,10 +453,10 @@ class MicrosoftAuth {
       }
       
       const user = await userResponse.json();
-      console.log('User profile received:', user.displayName);
+      console.log('✅ User profile received:', user.displayName);
       
       // Get user groups
-      console.log('Fetching user groups...');
+      console.log('👥 Fetching user groups...');
       const groupsResponse = await fetch('https://graph.microsoft.com/v1.0/me/memberOf', {
         headers: {
           'Authorization': `Bearer ${accessToken}`,
@@ -395,17 +468,17 @@ class MicrosoftAuth {
       if (groupsResponse.ok) {
         const groupsData = await groupsResponse.json();
         userGroups = groupsData.value || [];
-        console.log('User groups received:', userGroups.length);
+        console.log('✅ User groups received:', userGroups.length);
       } else {
-        console.warn('Failed to fetch user groups, continuing without group info');
+        console.warn('⚠️ Failed to fetch user groups, continuing without group info');
       }
       
       // Check if user is in required group
       const userGroupNames = userGroups.map(group => group.displayName);
       const isAuthorized = this.isUserInRequiredGroup(userGroups);
       
-      console.log('User groups:', userGroupNames);
-      console.log('Is authorized:', isAuthorized);
+      console.log('📋 User groups:', userGroupNames);
+      console.log('🔐 Is authorized:', isAuthorized);
       
       if (!isAuthorized) {
         resolve({
@@ -438,7 +511,7 @@ class MicrosoftAuth {
       });
       
     } catch (error) {
-      console.error('Token processing error:', error);
+      console.error('❌ Token processing error:', error);
       reject(new Error(`Failed to process authentication: ${error.message}`));
     }
   }
@@ -467,7 +540,7 @@ class MicrosoftAuth {
           this.accessToken = session.accessToken;
           this.lastActivityTime = Date.now();
           
-          console.log('Found valid stored session for:', session.user.displayName);
+          console.log('✅ Found valid stored session for:', session.user.displayName);
           
           // Start session timers for existing session
           this.resetSessionTimers();
@@ -475,17 +548,17 @@ class MicrosoftAuth {
           this.notifyListeners('authenticated');
           return true;
         } else {
-          console.log('Stored session expired or invalid, clearing...');
+          console.log('⚠️ Stored session expired or invalid, clearing...');
           await this.clearStoredSession();
         }
       } else {
-        console.log('No stored session found');
+        console.log('ℹ️ No stored session found');
       }
       
       this.notifyListeners('unauthenticated');
       return false;
     } catch (error) {
-      console.error('Session check error:', error);
+      console.error('❌ Session check error:', error);
       this.notifyListeners('unauthenticated');
       return false;
     }
@@ -499,7 +572,7 @@ class MicrosoftAuth {
       this.notifyListeners('authenticating');
       return await this.realMicrosoftAuth();
     } catch (error) {
-      console.error('Authentication error:', error);
+      console.error('❌ Authentication error:', error);
       this.notifyListeners('error');
       return { success: false, error: error.message };
     }
@@ -530,7 +603,7 @@ class MicrosoftAuth {
         localStorage.setItem('medrec_microsoft_session', JSON.stringify(sessionData));
       }
     } catch (error) {
-      console.error('Session storage error:', error);
+      console.error('❌ Session storage error:', error);
     }
   }
   
@@ -543,7 +616,7 @@ class MicrosoftAuth {
         localStorage.removeItem('medrec_microsoft_session');
       }
     } catch (error) {
-      console.error('Session clear error:', error);
+      console.error('❌ Session clear error:', error);
     }
   }
   
@@ -608,7 +681,7 @@ class MicrosoftAuth {
       try {
         callback(status, data || this.currentUser);
       } catch (error) {
-        console.error('Listener error:', error);
+        console.error('❌ Listener error:', error);
       }
     });
   }
