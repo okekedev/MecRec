@@ -41,8 +41,13 @@ RUN echo "=== Frontend Build Environment Check ===" && \
     echo "EXPO_PUBLIC_AZURE_CLIENT_ID: ${EXPO_PUBLIC_AZURE_CLIENT_ID:0:8}..." && \
     echo "EXPO_PUBLIC_AZURE_REQUIRED_GROUP: $EXPO_PUBLIC_AZURE_REQUIRED_GROUP"
 
-# ✅ METRO SOLUTION: Export using Metro bundler for web
-RUN npx expo export --platform web --output-dir dist
+# ✅ METRO SOLUTION: Export using Metro bundler for web with cache clearing
+RUN echo "=== Clearing Metro cache and exporting ===" && \
+    npx expo export --platform web --output-dir dist --clear
+
+# Debug: Check if environment variables are actually in the bundle
+RUN echo "=== Checking if EXPO_PUBLIC variables are in the bundle ===" && \
+    find dist -name "*.js" -type f -exec grep -l "EXPO_PUBLIC_AZURE_TENANT_ID\|79865dd8" {} \; | head -3 || echo "Variables not found in bundle"
 
 # Verify build output
 RUN echo "=== Build Complete ===" && ls -la dist/

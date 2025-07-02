@@ -8,10 +8,23 @@ import React from 'react';
 import { StatusBar, useColorScheme, View, Text, StyleSheet } from 'react-native';
 import AuthWrapper from './src/components/AuthWrapper';
 import { isWeb } from './src/utils/platform';
+import { debugEnvironmentVariables, testEnvironmentVariables } from './src/utils/environment';
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
   const [webError, setWebError] = React.useState(null);
+
+  // 🔍 Environment variable debugging
+  React.useEffect(() => {
+    console.log('🔍 Starting environment variable debugging...');
+    
+    // Run comprehensive debug
+    debugEnvironmentVariables();
+    
+    // Run simple test
+    testEnvironmentVariables();
+    
+  }, []);
 
   // Handle web-specific initialization
   React.useEffect(() => {
