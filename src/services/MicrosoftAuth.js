@@ -1,5 +1,5 @@
 /**
- * MicrosoftAuth.js - Fixed version with better error handling and fallbacks
+ * MicrosoftAuth.js - Authorization Code Flow with PKCE (Microsoft Recommended)
  */
 import { Platform } from 'react-native';
 
@@ -7,7 +7,7 @@ class MicrosoftAuth {
   static instance;
   
   constructor() {
-    // Azure AD Configuration - Using EXPO_PUBLIC_ variables for Metro bundler compatibility
+    // Azure AD Configuration - Using EXPO_PUBLIC_ variables
     this.config = {
       tenantId: process.env.EXPO_PUBLIC_AZURE_TENANT_ID,
       clientId: process.env.EXPO_PUBLIC_AZURE_CLIENT_ID,
@@ -87,82 +87,30 @@ class MicrosoftAuth {
   }
 
   /**
-   * Simple random string generator (fallback for environments without crypto)
-   */
-  generateRandomString(length = 43) {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
-    let result = '';
-    for (let i = 0; i < length; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
-  }
-
-  /**
-   * Base64 URL encode (compatible version)
-   */
-  base64URLEncode(str) {
-    if (typeof str === 'string') {
-      return btoa(str)
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=/g, '');
-    } else {
-      // Handle Uint8Array
-      return btoa(String.fromCharCode(...str))
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=/g, '');
-    }
-  }
-
-  /**
-   * Generate PKCE code verifier and challenge (with fallbacks)
+   * Generate PKCE code verifier and challenge
    */
   async generatePKCE() {
-    try {
-      console.log('🔧 Generating PKCE parameters...');
-      
-      // Check if crypto is available
-      if (typeof crypto === 'undefined' || !crypto.getRandomValues || !crypto.subtle) {
-        console.warn('⚠️ Crypto API not available, using fallback');
-        return this.generatePKCEFallback();
-      }
-
-      // Generate code verifier (43-128 characters)
-      const codeVerifier = this.base64URLEncode(crypto.getRandomValues(new Uint8Array(32)));
-      
-      // Generate code challenge
-      const encoder = new TextEncoder();
-      const data = encoder.encode(codeVerifier);
-      
-      const hash = await crypto.subtle.digest('SHA-256', data);
-      const codeChallenge = this.base64URLEncode(new Uint8Array(hash));
-      
-      console.log('✅ PKCE generated with crypto API');
-      return { codeVerifier, codeChallenge };
-      
-    } catch (error) {
-      console.warn('⚠️ Crypto API failed, using fallback:', error.message);
-      return this.generatePKCEFallback();
-    }
+    // Generate code verifier (43-128 characters)
+    const codeVerifier = this.base64URLEncode(crypto.getRandomValues(new Uint8Array(32)));
+    
+    // Generate code challenge
+    const encoder = new TextEncoder();
+    const data = encoder.encode(codeVerifier);
+    
+    const hash = await crypto.subtle.digest('SHA-256', data);
+    const codeChallenge = this.base64URLEncode(new Uint8Array(hash));
+    
+    return { codeVerifier, codeChallenge };
   }
 
   /**
-   * Fallback PKCE generation (for environments without crypto.subtle)
+   * Base64 URL encode
    */
-  generatePKCEFallback() {
-    console.log('🔧 Using fallback PKCE generation...');
-    
-    // Generate a random code verifier
-    const codeVerifier = this.generateRandomString(43);
-    
-    // For fallback, we'll use the code verifier as challenge (plain method)
-    // This is less secure but compatible
-    const codeChallenge = codeVerifier;
-    
-    console.log('✅ PKCE generated with fallback method');
-    return { codeVerifier, codeChallenge, method: 'plain' };
+  base64URLEncode(buffer) {
+    return btoa(String.fromCharCode(...buffer))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
   }
 
   /**
@@ -259,7 +207,7 @@ class MicrosoftAuth {
   }
 
   /**
-   * Microsoft authentication using Authorization Code Flow with PKCE (with fallbacks)
+   * Microsoft authentication using Authorization Code Flow with PKCE
    */
   async realMicrosoftAuth() {
     if (Platform.OS !== 'web') {
@@ -268,21 +216,17 @@ class MicrosoftAuth {
     
     return new Promise(async (resolve, reject) => {
       try {
-        console.log('🚀 Starting Microsoft authentication...');
+        console.log('🚀 Starting Microsoft authentication with PKCE...');
         
         // Generate PKCE parameters
-        const pkceResult = await this.generatePKCE();
-        const { codeVerifier, codeChallenge, method = 'S256' } = pkceResult;
+        const { codeVerifier, codeChallenge } = await this.generatePKCE();
         
         // Store code verifier for later use
         sessionStorage.setItem('pkce_code_verifier', codeVerifier);
-        sessionStorage.setItem('pkce_method', method);
         
         // Generate state for security
-        const state = this.generateRandomString(16);
+        const state = this.base64URLEncode(crypto.getRandomValues(new Uint8Array(16)));
         sessionStorage.setItem('auth_state', state);
-        
-        console.log('✅ PKCE and state generated successfully');
         
         // Use Authorization Code flow with PKCE
         const authParams = new URLSearchParams({
@@ -292,14 +236,13 @@ class MicrosoftAuth {
           scope: this.config.scopes.join(' '),
           state: state,
           code_challenge: codeChallenge,
-          code_challenge_method: method,
+          code_challenge_method: 'S256',
           prompt: 'select_account'
         });
         
         const authUrl = `https://login.microsoftonline.com/${this.config.tenantId}/oauth2/v2.0/authorize?${authParams}`;
         
-        console.log('🔗 Opening authentication popup...');
-        console.log('Auth URL:', authUrl);
+        console.log('🔗 Opening Microsoft auth popup with Authorization Code flow + PKCE...');
         
         // Open popup window
         const popup = window.open(
@@ -313,23 +256,12 @@ class MicrosoftAuth {
           return;
         }
         
-        console.log('✅ Popup opened successfully');
-        
         // Listen for popup to navigate back to our domain
         const checkPopup = setInterval(async () => {
           try {
-            // Check if popup is closed
-            if (popup.closed) {
-              clearInterval(checkPopup);
-              reject(new Error('Authentication cancelled'));
-              return;
-            }
-            
             // Check if popup has navigated back to our domain
             if (popup.location && popup.location.origin === window.location.origin) {
               clearInterval(checkPopup);
-              
-              console.log('✅ Popup returned to our domain');
               
               // Extract authorization code from URL
               const urlParams = new URLSearchParams(popup.location.search);
@@ -349,22 +281,23 @@ class MicrosoftAuth {
               // Verify state parameter
               const storedState = sessionStorage.getItem('auth_state');
               if (returnedState !== storedState) {
-                reject(new Error('Invalid state parameter'));
+                reject(new Error('Invalid state parameter - possible CSRF attack'));
                 return;
               }
               
               if (!code) {
-                reject(new Error('No authorization code received'));
+                reject(new Error('No authorization code received from Microsoft'));
                 return;
               }
               
-              console.log('✅ Authorization code received');
+              console.log('✅ Authorization code received successfully');
               
               // Exchange code for tokens
-              await this.exchangeCodeForTokens(code, codeVerifier, method, resolve, reject);
+              await this.exchangeCodeForTokens(code, codeVerifier, resolve, reject);
             }
           } catch (error) {
             // Cross-origin error is expected while popup is on Microsoft domain
+            // We'll keep checking until it returns to our domain
           }
         }, 1000);
         
@@ -385,9 +318,9 @@ class MicrosoftAuth {
   }
   
   /**
-   * Exchange authorization code for access tokens (with method parameter)
+   * Exchange authorization code for access tokens
    */
-  async exchangeCodeForTokens(code, codeVerifier, method, resolve, reject) {
+  async exchangeCodeForTokens(code, codeVerifier, resolve, reject) {
     try {
       console.log('🔄 Exchanging authorization code for tokens...');
       
@@ -421,7 +354,6 @@ class MicrosoftAuth {
       
       // Clean up session storage
       sessionStorage.removeItem('pkce_code_verifier');
-      sessionStorage.removeItem('pkce_method');
       sessionStorage.removeItem('auth_state');
       
       // Process the tokens
