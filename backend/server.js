@@ -60,7 +60,6 @@ app.get('/health', (req, res) => {
     }
   });
 });
-
 // Static files and SPA routing (production only)
 if (!isDevelopment) {
   app.use(express.static(path.join(__dirname, '../web-build')));
