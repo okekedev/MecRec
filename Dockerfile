@@ -1,4 +1,4 @@
-# MedRec - Final Metro-only solution
+# MedRec - Proper Expo Metro solution with EXPO_PUBLIC_ environment variables
 FROM node:18-alpine AS builder
 
 WORKDIR /app
@@ -8,10 +8,10 @@ ARG AZURE_TENANT_ID
 ARG AZURE_CLIENT_ID
 ARG AZURE_REQUIRED_GROUP
 
-# Set environment variables for the build process
-ENV AZURE_TENANT_ID=$AZURE_TENANT_ID
-ENV AZURE_CLIENT_ID=$AZURE_CLIENT_ID
-ENV AZURE_REQUIRED_GROUP=$AZURE_REQUIRED_GROUP
+# ✅ CRITICAL: Set EXPO_PUBLIC_ prefixed environment variables
+ENV EXPO_PUBLIC_AZURE_TENANT_ID=$AZURE_TENANT_ID
+ENV EXPO_PUBLIC_AZURE_CLIENT_ID=$AZURE_CLIENT_ID
+ENV EXPO_PUBLIC_AZURE_REQUIRED_GROUP=$AZURE_REQUIRED_GROUP
 
 # Copy package files
 COPY package*.json ./
@@ -37,9 +37,9 @@ RUN if [ ! -f src/assets/medreclogo.png ]; then \
 
 # Debug: Show environment variables are available during build
 RUN echo "=== Frontend Build Environment Check ===" && \
-    echo "AZURE_TENANT_ID: ${AZURE_TENANT_ID:0:8}..." && \
-    echo "AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:0:8}..." && \
-    echo "AZURE_REQUIRED_GROUP: $AZURE_REQUIRED_GROUP"
+    echo "EXPO_PUBLIC_AZURE_TENANT_ID: ${EXPO_PUBLIC_AZURE_TENANT_ID:0:8}..." && \
+    echo "EXPO_PUBLIC_AZURE_CLIENT_ID: ${EXPO_PUBLIC_AZURE_CLIENT_ID:0:8}..." && \
+    echo "EXPO_PUBLIC_AZURE_REQUIRED_GROUP: $EXPO_PUBLIC_AZURE_REQUIRED_GROUP"
 
 # ✅ METRO SOLUTION: Export using Metro bundler for web
 RUN npx expo export --platform web --output-dir dist

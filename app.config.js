@@ -1,4 +1,4 @@
-// app.config.js - Dynamic configuration with environment variables
+// app.config.js - Simple configuration for Metro bundler
 module.exports = {
   name: "MedRecApp",
   displayName: "MedRec App",
@@ -41,11 +41,6 @@ module.exports = {
     plugins: [
       "expo-document-picker",
       "expo-file-system"
-    ],
-    extra: {
-      AZURE_TENANT_ID: process.env.AZURE_TENANT_ID,
-      AZURE_CLIENT_ID: process.env.AZURE_CLIENT_ID,
-      AZURE_REQUIRED_GROUP: process.env.AZURE_REQUIRED_GROUP,
-    }
+    ]
   }
 };

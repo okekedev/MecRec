@@ -1,32 +1,23 @@
-// src/utils/environment.js - Helper for accessing environment variables with Metro
+// src/utils/environment.js - Updated helper using EXPO_PUBLIC_ variables
 import Constants from 'expo-constants';
 
-// Environment variable helper that works with both Metro and runtime
+// Environment variable helper that uses EXPO_PUBLIC_ variables
 export const getEnvironmentVariable = (key, fallback = null) => {
-  // First try process.env (build-time variables)
-  if (typeof process !== 'undefined' && process.env && process.env[key]) {
-    return process.env[key];
+  // Use EXPO_PUBLIC_ prefixed variables (inlined at build time)
+  const publicKey = `EXPO_PUBLIC_${key}`;
+  if (typeof process !== 'undefined' && process.env && process.env[publicKey]) {
+    return process.env[publicKey];
   }
   
-  // Then try expo-constants extra config (from app.config.js)
+  // Fallback to expo-constants if needed
   if (Constants.expoConfig?.extra?.[key]) {
     return Constants.expoConfig.extra[key];
-  }
-  
-  // Also try Constants.manifest.extra (legacy support)
-  if (Constants.manifest?.extra?.[key]) {
-    return Constants.manifest.extra[key];
-  }
-  
-  // Finally try the legacy Constants.manifest2.extra (Expo SDK 48+)
-  if (Constants.manifest2?.extra?.expoClient?.extra?.[key]) {
-    return Constants.manifest2.extra.expoClient.extra[key];
   }
   
   return fallback;
 };
 
-// Azure configuration with fallbacks
+// Azure configuration - your existing code can use this unchanged
 export const azureConfig = {
   tenantId: getEnvironmentVariable('AZURE_TENANT_ID'),
   clientId: getEnvironmentVariable('AZURE_CLIENT_ID'),
@@ -40,26 +31,18 @@ export const validateEnvironmentVariables = () => {
   
   if (missing.length > 0) {
     console.warn('Missing required environment variables:', missing);
-    console.warn('Available Constants:', {
-      expoConfig: Constants.expoConfig?.extra,
-      manifest: Constants.manifest?.extra,
-      manifest2: Constants.manifest2?.extra?.expoClient?.extra,
-    });
     return false;
   }
   
   return true;
 };
 
-// Debug helper to check what environment variables are available
+// Debug helper
 export const debugEnvironmentVariables = () => {
   console.log('=== Environment Variables Debug ===');
-  console.log('process.env.AZURE_TENANT_ID:', process.env.AZURE_TENANT_ID ? 'SET' : 'NOT SET');
-  console.log('process.env.AZURE_CLIENT_ID:', process.env.AZURE_CLIENT_ID ? 'SET' : 'NOT SET');
-  console.log('process.env.AZURE_REQUIRED_GROUP:', process.env.AZURE_REQUIRED_GROUP ? 'SET' : 'NOT SET');
-  console.log('Constants.expoConfig.extra:', Constants.expoConfig?.extra);
-  console.log('Constants.manifest.extra:', Constants.manifest?.extra);
-  console.log('Constants.manifest2.extra:', Constants.manifest2?.extra?.expoClient?.extra);
-  console.log('azureConfig:', azureConfig);
+  console.log('EXPO_PUBLIC_AZURE_TENANT_ID:', process.env.EXPO_PUBLIC_AZURE_TENANT_ID ? 'SET' : 'NOT SET');
+  console.log('EXPO_PUBLIC_AZURE_CLIENT_ID:', process.env.EXPO_PUBLIC_AZURE_CLIENT_ID ? 'SET' : 'NOT SET');
+  console.log('EXPO_PUBLIC_AZURE_REQUIRED_GROUP:', process.env.EXPO_PUBLIC_AZURE_REQUIRED_GROUP ? 'SET' : 'NOT SET');
+  console.log('Final azureConfig:', azureConfig);
   console.log('=== End Debug ===');
 };
