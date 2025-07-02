@@ -30,7 +30,7 @@
     },
     "web": {
       "favicon": "./src/assets/favicon.png",
-      "bundler": "webpack"
+      "bundler": "metro"
     },
     "platforms": [
       "ios",
@@ -40,6 +40,11 @@
     "plugins": [
       "expo-document-picker",
       "expo-file-system"
-    ]
+    ],
+    "extra": {
+      "AZURE_TENANT_ID": null,
+      "AZURE_CLIENT_ID": null,
+      "AZURE_REQUIRED_GROUP": null
+    }
   }
 }

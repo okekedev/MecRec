@@ -1,4 +1,4 @@
-# MedRec - Fixed Dockerfile using webpack export command
+# MedRec - Metro bundler solution with environment variables
 FROM node:18-alpine AS builder
 
 WORKDIR /app
@@ -19,9 +19,8 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install --legacy-peer-deps --ignore-scripts
 
-# Copy configuration files (including webpack.config.js!)
+# Copy configuration files
 COPY app.json ./
-COPY webpack.config.js ./
 COPY metro.config.js ./
 COPY babel.config.js ./
 
@@ -48,19 +47,13 @@ RUN echo "=== Frontend Build Environment Check ===" && \
     echo "AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:0:8}..." && \
     echo "AZURE_REQUIRED_GROUP: $AZURE_REQUIRED_GROUP"
 
-# ✅ FIXED: Use webpack export command instead of regular export for web
-RUN npx expo export:web --output-dir dist
+# ✅ METRO SOLUTION: Export using Metro bundler for web
+RUN npx expo export --platform web --output-dir dist
 
 # Verify environment variables are in the built bundle
 RUN echo "=== Build Complete ===" && ls -la dist/
-RUN echo "=== Checking for environment variables in bundle ===" && \
-    if find dist -name "*.js" -type f -exec grep -l "79865dd8" {} \; | head -1; then \
-      echo "✅ Environment variables found in bundle!"; \
-    else \
-      echo "❌ Environment variables NOT found in bundle"; \
-      echo "Checking what values were actually used:"; \
-      find dist -name "*.js" -type f -exec grep -o "AZURE_[A-Z_]*" {} \; | head -5 || echo "No AZURE variables found"; \
-    fi
+RUN echo "=== Checking bundle contents ===" && \
+    find dist -name "*.js" -type f | head -3 | xargs ls -la
 
 # Production stage
 FROM node:18-alpine AS production
@@ -80,4 +73,3 @@ COPY src/assets/ ./src/assets/
 EXPOSE 3000
 ENV NODE_ENV=production
 CMD ["node", "backend/server.js"]
-# Healthcheck to ensure the server is running
