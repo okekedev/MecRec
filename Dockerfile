@@ -19,11 +19,10 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install --legacy-peer-deps --ignore-scripts
 
-# Copy configuration files and CSS
+# Copy configuration files
 COPY app.config.js ./
 COPY metro.config.js ./
 COPY babel.config.js ./
-COPY *.css ./ || true
 
 # Copy entry points and source
 COPY App.js ./
