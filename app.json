@@ -42,9 +42,9 @@
       "expo-file-system"
     ],
     "extra": {
-      "AZURE_TENANT_ID": null,
-      "AZURE_CLIENT_ID": null,
-      "AZURE_REQUIRED_GROUP": null
+      "AZURE_TENANT_ID": "${AZURE_TENANT_ID}",
+      "AZURE_CLIENT_ID": "${AZURE_CLIENT_ID}",
+      "AZURE_REQUIRED_GROUP": "${AZURE_REQUIRED_GROUP}"
     }
   }
 }

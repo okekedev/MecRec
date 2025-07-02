@@ -1,4 +1,4 @@
-# MedRec - Metro bundler solution with environment variables
+# MedRec - Final Metro-only solution
 FROM node:18-alpine AS builder
 
 WORKDIR /app
@@ -35,12 +35,6 @@ RUN if [ ! -f src/assets/medreclogo.png ]; then \
     cp src/assets/icon.png src/assets/medreclogo.png; \
   fi
 
-# Verify all required assets exist
-RUN echo "=== Checking required assets ===" && \
-    ls -la src/assets/favicon.png && \
-    ls -la src/assets/icon.png && \
-    ls -la src/assets/medreclogo.png
-
 # Debug: Show environment variables are available during build
 RUN echo "=== Frontend Build Environment Check ===" && \
     echo "AZURE_TENANT_ID: ${AZURE_TENANT_ID:0:8}..." && \
@@ -50,24 +44,21 @@ RUN echo "=== Frontend Build Environment Check ===" && \
 # ✅ METRO SOLUTION: Export using Metro bundler for web
 RUN npx expo export --platform web --output-dir dist
 
-# Verify environment variables are in the built bundle
+# Verify build output
 RUN echo "=== Build Complete ===" && ls -la dist/
-RUN echo "=== Checking bundle contents ===" && \
-    find dist -name "*.js" -type f | head -3 | xargs ls -la
 
-# Production stage
+# Production stage - Start fresh for minimal image
 FROM node:18-alpine AS production
 
 WORKDIR /app
 
-# Copy package files and install production deps
-COPY package*.json ./
-RUN npm ci --only=production --legacy-peer-deps --ignore-scripts
+# Only install the backend dependencies we actually need
+RUN npm init -y && \
+    npm install express@^4.21.2 cors@^2.8.5 dotenv@^16.5.0 openai@^5.0.1
 
 # Copy built web app and backend
 COPY --from=builder /app/dist ./web-build
 COPY backend/ ./backend/
-COPY src/assets/ ./src/assets/
 
 # Start server
 EXPOSE 3000
