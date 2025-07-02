@@ -13,18 +13,6 @@ function App() {
   const isDarkMode = useColorScheme() === 'dark';
   const [webError, setWebError] = React.useState(null);
 
-  // 🔍 Environment variable debugging
-  React.useEffect(() => {
-    console.log('🔍 Starting environment variable debugging...');
-    
-    // Run comprehensive debug
-    debugEnvironmentVariables();
-    
-    // Run simple test
-    testEnvironmentVariables();
-    
-  }, []);
-
   // Handle web-specific initialization
   React.useEffect(() => {
     if (isWeb) {
