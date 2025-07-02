@@ -1,5 +1,5 @@
 /**
- * MicrosoftAuth.js - Updated to use EXPO_PUBLIC_ environment variables for Metro bundler
+ * MicrosoftAuth.js - Updated to use Authorization Code Flow with PKCE (more secure)
  */
 import { Platform } from 'react-native';
 
@@ -84,6 +84,33 @@ class MicrosoftAuth {
       MicrosoftAuth.instance = new MicrosoftAuth();
     }
     return MicrosoftAuth.instance;
+  }
+
+  /**
+   * Generate PKCE code verifier and challenge
+   */
+  generatePKCE() {
+    // Generate code verifier (43-128 characters)
+    const codeVerifier = this.base64URLEncode(crypto.getRandomValues(new Uint8Array(32)));
+    
+    // Generate code challenge
+    const encoder = new TextEncoder();
+    const data = encoder.encode(codeVerifier);
+    
+    return crypto.subtle.digest('SHA-256', data).then(hash => {
+      const codeChallenge = this.base64URLEncode(new Uint8Array(hash));
+      return { codeVerifier, codeChallenge };
+    });
+  }
+
+  /**
+   * Base64 URL encode
+   */
+  base64URLEncode(buffer) {
+    return btoa(String.fromCharCode(...buffer))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
   }
 
   /**
@@ -180,90 +207,157 @@ class MicrosoftAuth {
   }
 
   /**
-   * Real Microsoft authentication using implicit flow (no callback needed)
+   * Microsoft authentication using Authorization Code Flow with PKCE (more secure)
    */
   async realMicrosoftAuth() {
     if (Platform.OS !== 'web') {
-      throw new Error('Real Microsoft auth currently only supported on web');
+      throw new Error('Microsoft auth currently only supported on web');
     }
     
-    return new Promise((resolve, reject) => {
-      // Use implicit flow - tokens returned directly in URL fragment
-      const authParams = new URLSearchParams({
+    return new Promise(async (resolve, reject) => {
+      try {
+        // Generate PKCE parameters
+        const { codeVerifier, codeChallenge } = await this.generatePKCE();
+        
+        // Store code verifier for later use
+        sessionStorage.setItem('pkce_code_verifier', codeVerifier);
+        
+        // Generate state for security
+        const state = this.base64URLEncode(crypto.getRandomValues(new Uint8Array(16)));
+        sessionStorage.setItem('auth_state', state);
+        
+        // Use Authorization Code flow with PKCE
+        const authParams = new URLSearchParams({
+          client_id: this.config.clientId,
+          response_type: 'code', // Authorization code flow
+          redirect_uri: window.location.origin, // Redirect back to main app
+          scope: this.config.scopes.join(' '),
+          state: state,
+          code_challenge: codeChallenge,
+          code_challenge_method: 'S256',
+          prompt: 'select_account'
+        });
+        
+        const authUrl = `https://login.microsoftonline.com/${this.config.tenantId}/oauth2/v2.0/authorize?${authParams}`;
+        
+        console.log('Opening Microsoft auth popup with Authorization Code flow + PKCE...');
+        
+        // Open popup window
+        const popup = window.open(
+          authUrl,
+          'microsoftAuth',
+          'width=500,height=600,scrollbars=yes,resizable=yes'
+        );
+        
+        if (!popup) {
+          reject(new Error('Popup blocked. Please allow popups for this site.'));
+          return;
+        }
+        
+        // Listen for popup to navigate back to our domain
+        const checkPopup = setInterval(async () => {
+          try {
+            // Check if popup has navigated back to our domain
+            if (popup.location && popup.location.origin === window.location.origin) {
+              clearInterval(checkPopup);
+              
+              // Extract authorization code from URL
+              const urlParams = new URLSearchParams(popup.location.search);
+              const code = urlParams.get('code');
+              const returnedState = urlParams.get('state');
+              const error = urlParams.get('error');
+              const errorDescription = urlParams.get('error_description');
+              
+              popup.close();
+              
+              if (error) {
+                console.error('OAuth error:', error, errorDescription);
+                reject(new Error(errorDescription || error));
+                return;
+              }
+              
+              // Verify state parameter
+              const storedState = sessionStorage.getItem('auth_state');
+              if (returnedState !== storedState) {
+                reject(new Error('Invalid state parameter - possible CSRF attack'));
+                return;
+              }
+              
+              if (!code) {
+                reject(new Error('No authorization code received from Microsoft'));
+                return;
+              }
+              
+              console.log('Authorization code received successfully');
+              
+              // Exchange code for tokens
+              await this.exchangeCodeForTokens(code, codeVerifier, resolve, reject);
+            }
+          } catch (error) {
+            // Cross-origin error is expected while popup is on Microsoft domain
+            // We'll keep checking until it returns to our domain
+          }
+        }, 1000);
+        
+        // 5 minute timeout
+        setTimeout(() => {
+          if (!popup.closed) {
+            popup.close();
+          }
+          clearInterval(checkPopup);
+          reject(new Error('Authentication timeout or cancelled'));
+        }, 300000);
+        
+      } catch (error) {
+        reject(new Error(`PKCE generation failed: ${error.message}`));
+      }
+    });
+  }
+  
+  /**
+   * Exchange authorization code for access tokens
+   */
+  async exchangeCodeForTokens(code, codeVerifier, resolve, reject) {
+    try {
+      console.log('Exchanging authorization code for tokens...');
+      
+      const tokenParams = new URLSearchParams({
         client_id: this.config.clientId,
-        response_type: 'id_token token', // Implicit flow
-        redirect_uri: window.location.origin, // Redirect back to main app
-        scope: this.config.scopes.join(' '),
-        response_mode: 'fragment', // Tokens in URL fragment
-        prompt: 'select_account',
-        nonce: Date.now().toString() // Security nonce
+        grant_type: 'authorization_code',
+        code: code,
+        redirect_uri: window.location.origin,
+        code_verifier: codeVerifier
       });
       
-      const authUrl = `https://login.microsoftonline.com/${this.config.tenantId}/oauth2/v2.0/authorize?${authParams}`;
-      
-      console.log('Opening Microsoft auth popup with implicit flow...');
-      
-      // Open popup window
-      const popup = window.open(
-        authUrl,
-        'microsoftAuth',
-        'width=500,height=600,scrollbars=yes,resizable=yes'
+      const tokenResponse = await fetch(
+        `https://login.microsoftonline.com/${this.config.tenantId}/oauth2/v2.0/token`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: tokenParams
+        }
       );
       
-      if (!popup) {
-        reject(new Error('Popup blocked. Please allow popups for this site.'));
-        return;
+      if (!tokenResponse.ok) {
+        const errorData = await tokenResponse.json();
+        throw new Error(`Token exchange failed: ${errorData.error_description || errorData.error}`);
       }
       
-      // Listen for popup to navigate back to our domain
-      const checkPopup = setInterval(async () => {
-        try {
-          // Check if popup has navigated back to our domain
-          if (popup.location && popup.location.origin === window.location.origin) {
-            clearInterval(checkPopup);
-            
-            // Extract tokens from URL fragment
-            const urlFragment = popup.location.hash.substring(1); // Remove #
-            const params = new URLSearchParams(urlFragment);
-            
-            const accessToken = params.get('access_token');
-            const idToken = params.get('id_token');
-            const error = params.get('error');
-            const errorDescription = params.get('error_description');
-            
-            popup.close();
-            
-            if (error) {
-              console.error('OAuth error:', error, errorDescription);
-              reject(new Error(errorDescription || error));
-              return;
-            }
-            
-            if (!accessToken || !idToken) {
-              reject(new Error('No tokens received from Microsoft'));
-              return;
-            }
-            
-            console.log('Tokens received successfully');
-            
-            // Process the authentication
-            await this.processTokens(accessToken, idToken, resolve, reject);
-          }
-        } catch (error) {
-          // Cross-origin error is expected while popup is on Microsoft domain
-          // We'll keep checking until it returns to our domain
-        }
-      }, 1000);
+      const tokens = await tokenResponse.json();
       
-      // 5 minute timeout
-      setTimeout(() => {
-        if (!popup.closed) {
-          popup.close();
-        }
-        clearInterval(checkPopup);
-        reject(new Error('Authentication timeout or cancelled'));
-      }, 300000);
-    });
+      // Clean up session storage
+      sessionStorage.removeItem('pkce_code_verifier');
+      sessionStorage.removeItem('auth_state');
+      
+      // Process the tokens
+      await this.processTokens(tokens.access_token, tokens.id_token, resolve, reject);
+      
+    } catch (error) {
+      console.error('Token exchange error:', error);
+      reject(new Error(`Failed to exchange code for tokens: ${error.message}`));
+    }
   }
   
   /**
