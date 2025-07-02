@@ -1,33 +1,12 @@
-// babel.config.js - Configuration for environment variable injection with Metro
+// babel.config.js - Simple configuration for Metro
 module.exports = function(api) {
   api.cache(true);
   
   return {
     presets: [
-      [
-        'babel-preset-expo',
-        {
-          // Enable web support
-          web: {
-            unstable_transformProfile: 'hermes-stable',
-          },
-        },
-      ],
+      'babel-preset-expo'
     ],
     plugins: [
-      // Transform environment variables at build time
-      [
-        'transform-inline-environment-variables',
-        {
-          // Include only the variables we need
-          include: [
-            'AZURE_TENANT_ID',
-            'AZURE_CLIENT_ID', 
-            'AZURE_REQUIRED_GROUP',
-            'NODE_ENV'
-          ]
-        }
-      ],
       'react-native-web',
       '@babel/plugin-transform-class-static-block',
       '@babel/plugin-proposal-class-properties',
