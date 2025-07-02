@@ -1,4 +1,6 @@
-// app.config.js - Simple configuration for Metro bundler
+// app.config.js - Updated for Metro-only approach
+require('dotenv/config');
+
 module.exports = {
   name: "MedRecApp",
   displayName: "MedRec App",
@@ -31,7 +33,7 @@ module.exports = {
     },
     web: {
       favicon: "./src/assets/favicon.png",
-      bundler: "metro"
+      bundler: "metro"  // Changed from "webpack" to "metro"
     },
     platforms: [
       "ios",

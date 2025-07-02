@@ -1,5 +1,5 @@
 /**
- * MicrosoftAuth.js - Simplified to use webpack DefinePlugin consistently
+ * MicrosoftAuth.js - Updated to use EXPO_PUBLIC_ environment variables for Metro bundler
  */
 import { Platform } from 'react-native';
 
@@ -7,11 +7,11 @@ class MicrosoftAuth {
   static instance;
   
   constructor() {
-    // Azure AD Configuration - Simple and consistent via webpack
+    // Azure AD Configuration - Using EXPO_PUBLIC_ variables for Metro bundler compatibility
     this.config = {
-      tenantId: process.env.AZURE_TENANT_ID,
-      clientId: process.env.AZURE_CLIENT_ID,
-      requiredGroup: process.env.AZURE_REQUIRED_GROUP,
+      tenantId: process.env.EXPO_PUBLIC_AZURE_TENANT_ID,
+      clientId: process.env.EXPO_PUBLIC_AZURE_CLIENT_ID,
+      requiredGroup: process.env.EXPO_PUBLIC_AZURE_REQUIRED_GROUP,
       scopes: [
         'openid',
         'profile',
@@ -49,9 +49,9 @@ class MicrosoftAuth {
    */
   validateConfig() {
     const requiredVars = [
-      { name: 'AZURE_TENANT_ID', value: this.config.tenantId },
-      { name: 'AZURE_CLIENT_ID', value: this.config.clientId },
-      { name: 'AZURE_REQUIRED_GROUP', value: this.config.requiredGroup }
+      { name: 'EXPO_PUBLIC_AZURE_TENANT_ID', value: this.config.tenantId },
+      { name: 'EXPO_PUBLIC_AZURE_CLIENT_ID', value: this.config.clientId },
+      { name: 'EXPO_PUBLIC_AZURE_REQUIRED_GROUP', value: this.config.requiredGroup }
     ];
 
     const missing = requiredVars.filter(v => !v.value);
@@ -64,9 +64,9 @@ class MicrosoftAuth {
       console.error('Setup Instructions:');
       console.error('  1. Create a .env file in your project root');
       console.error('  2. Add the following variables:');
-      console.error('     AZURE_TENANT_ID=your-tenant-id');
-      console.error('     AZURE_CLIENT_ID=your-client-id');
-      console.error('     AZURE_REQUIRED_GROUP=your-group-name');
+      console.error('     EXPO_PUBLIC_AZURE_TENANT_ID=your-tenant-id');
+      console.error('     EXPO_PUBLIC_AZURE_CLIENT_ID=your-client-id');
+      console.error('     EXPO_PUBLIC_AZURE_REQUIRED_GROUP=your-group-name');
       console.error('  3. Restart your development server');
       console.error('');
       console.error('For production deployment, set these as environment variables.');
