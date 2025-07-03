@@ -729,127 +729,6 @@ export const CommonStyles = StyleSheet.create({
   successTitle: {
     color: Colors.success,
   },
-
-  // Progress Overlay styles
-  overlayBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  
-  overlayContainer: {
-    backgroundColor: Colors.white,
-    borderRadius: BorderRadius.medium,
-    padding: Spacing.large,
-    width: '80%',
-    maxWidth: 350,
-    alignItems: 'center',
-  },
-  
-  overlayIconContainer: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: Colors.primaryLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: Spacing.medium,
-  },
-  
-  overlayTitle: {
-    fontSize: Typography.size.medium,
-    fontWeight: Typography.weight.semibold,
-    color: Colors.black,
-    marginBottom: Spacing.small,
-    textAlign: 'center',
-  },
-  
-  overlayMessage: {
-    fontSize: Typography.size.small,
-    color: Colors.gray,
-    marginBottom: Spacing.medium,
-    textAlign: 'center',
-  },
-
-  // Header styles for progress display
-  headerContainer: {
-    padding: Spacing.medium,
-    backgroundColor: Colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.reviewBorder,
-    ...Shadows.soft,
-  },
-  
-  headerTextContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.small,
-  },
-  
-  headerText: {
-    fontSize: Typography.size.medium,
-    fontWeight: Typography.weight.semibold,
-    color: Colors.black,
-  },
-  
-  headerPercentage: {
-    fontSize: Typography.size.medium,
-    fontWeight: Typography.weight.bold,
-  },
-  
-  headerDetail: {
-    fontSize: Typography.size.small,
-    color: Colors.gray,
-    marginTop: Spacing.small,
-  },
-
-  // Message/Alert styles
-  errorContainer: {
-    marginTop: Spacing.medium,
-    backgroundColor: Colors.accentLight,
-    borderRadius: BorderRadius.small,
-    padding: Spacing.medium,
-    borderLeftWidth: 3,
-    borderLeftColor: Colors.accent,
-  },
-  
-  warningContainer: {
-    marginTop: Spacing.medium,
-    backgroundColor: '#fff8f0',
-    borderRadius: BorderRadius.small,
-    padding: Spacing.medium,
-    borderLeftWidth: 3,
-    borderLeftColor: Colors.warning,
-  },
-  
-  successContainer: {
-    marginTop: Spacing.medium,
-    backgroundColor: Colors.successLight || '#f0f9ff',
-    borderRadius: BorderRadius.small,
-    padding: Spacing.medium,
-    borderLeftWidth: 3,
-    borderLeftColor: Colors.success,
-  },
-  
-  messageTitle: {
-    fontSize: Typography.size.small,
-    fontWeight: Typography.weight.semibold,
-    marginBottom: Spacing.tiny,
-  },
-  
-  errorTitle: {
-    color: Colors.accent,
-  },
-  
-  warningTitle: {
-    color: Colors.warning,
-  },
-  
-  successTitle: {
-    color: Colors.success,
-  },
   
   // DocumentUploader specific styles
   uploaderContainer: {
@@ -963,7 +842,7 @@ export const CommonStyles = StyleSheet.create({
     }),
   },
   
-  // Header specific styles
+  // FIXED: Header specific styles with proper logo sizing
   headerSafeArea: {
     width: '100%',
     zIndex: ZIndex.header,
@@ -986,6 +865,7 @@ export const CommonStyles = StyleSheet.create({
     }),
   },
   
+  // This is the duplicate - using the same name but with different position in the file
   headerContainer: {
     height: 56,
     flexDirection: 'row',
@@ -1028,9 +908,12 @@ export const CommonStyles = StyleSheet.create({
     flex: 1,
   },
   
+  // FIXED: Proper logo image constraints to prevent massive size in production
   headerLogoImage: {
-    height: 100,
-    width: 100,
+    height: 30,           // Fixed height
+    width: 100,           // Fixed width  
+    maxHeight: 30,        // Maximum height constraint
+    maxWidth: 100,        // Maximum width constraint
   },
   
   headerBackIcon: {

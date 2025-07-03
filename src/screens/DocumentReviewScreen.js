@@ -1,4 +1,4 @@
-// src/screens/DocumentReviewScreen.js - Fixed web compatibility issues
+// src/screens/DocumentReviewScreen.js - Fixed scrollbar visibility
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -245,7 +245,13 @@ const DocumentReviewScreen = () => {
         </Text>
       </View>
       
-      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+      {/* FIXED: Added showsVerticalScrollIndicator={true} to make scrollbar visible */}
+      <ScrollView 
+        style={{ flex: 1 }} 
+        showsVerticalScrollIndicator={true}
+        indicatorStyle="default"
+        contentContainerStyle={{ paddingBottom: 20 }}
+      >
         <Animated.View style={{
           opacity: fadeAnim,
           transform: [{ translateY: slideAnim }]
@@ -393,7 +399,11 @@ const DocumentReviewScreen = () => {
             </View>
           </View>
           
-          <ScrollView style={styles.sourceViewerContent}>
+          <ScrollView 
+            style={styles.sourceViewerContent}
+            showsVerticalScrollIndicator={true}
+            indicatorStyle="default"
+          >
             {contextualBlocks.map((block, index) => {
               const { before, highlighted, after } = formatContextText(block);
               
