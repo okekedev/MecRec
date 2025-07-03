@@ -1,11 +1,10 @@
 /**
- * Tesseract-Only PDFTextExtractionService - Simplified OCR-first approach
- * Removed PDF.js fallback logic - uses Tesseract.js as the primary method
+ * Tesseract-Only PDFTextExtractionService - Clean production version
  */
 import Tesseract from 'tesseract.js';
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf';
 
-// Set PDF.js worker for web (still needed for PDF rendering to canvas)
+// Set PDF.js worker for web
 if (typeof window !== 'undefined' && 'Worker' in window) {
   pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@2.16.105/legacy/build/pdf.worker.min.js';
 }
@@ -56,14 +55,13 @@ class ParallelPDFTextExtractionService {
   }
   
   /**
-   * SIMPLIFIED: Extract text using Tesseract.js OCR as primary method
+   * Extract text using Tesseract.js OCR as primary method
    */
   async extractText(uri) {
     try {
       this.cancelProcessing = false;
       
       this.updateProgress('processing', 0.05, 'Starting', 'Loading PDF document');
-      console.log('🤖 Extracting text using Tesseract OCR from PDF:', uri);
       
       // Clear previous positions
       this.lastExtractedPositions = [];
@@ -73,17 +71,14 @@ class ParallelPDFTextExtractionService {
       const pdf = await loadingTask.promise;
       const totalPages = pdf.numPages;
       
-      console.log(`📄 PDF loaded with ${totalPages} pages - processing with OCR`);
       this.updateProgress('processing', 0.15, 'PDF Loaded', `Processing ${totalPages} pages with OCR`);
       
       // Process directly with OCR
-      console.log('🤖 Using Tesseract OCR for text extraction and position capture...');
       this.updateProgress('processing', 0.2, 'OCR Processing', 'Starting OCR text extraction with position tracking');
       
       return await this.processWithOCRAndRealPositions(pdf, totalPages);
       
     } catch (error) {
-      console.error('❌ OCR extraction error:', error);
       this.updateProgress('error', 0.5, 'Error', `OCR extraction failed: ${error.message}`);
       
       return {
@@ -152,7 +147,6 @@ class ParallelPDFTextExtractionService {
       
       // Store positions for later use
       this.lastExtractedPositions = allPositions;
-      console.log(`✅ OCR complete - ${fullText.length} characters, ${allPositions.length} REAL positions`);
       
       await this.cleanupWorkers(workers);
       
@@ -177,8 +171,6 @@ class ParallelPDFTextExtractionService {
    */
   async processPageWithOCR(pdf, pageNum, worker) {
     try {
-      console.log(`🤖 OCR processing page ${pageNum} with position capture...`);
-      
       const page = await pdf.getPage(pageNum);
       
       // Render page to canvas with high resolution for better OCR
@@ -199,8 +191,6 @@ class ParallelPDFTextExtractionService {
       });
       
       // Run Tesseract OCR with blocks output to get real bounding boxes
-      console.log(`🔍 Running Tesseract OCR with blocks output for page ${pageNum}...`);
-      
       const { data } = await worker.recognize(blob, {
         tesseract_pageseg_mode: 6,    // Uniform block of text
         preserve_interword_spaces: 1  // Better text formatting
@@ -215,9 +205,6 @@ class ParallelPDFTextExtractionService {
       
       // Extract REAL word positions from blocks output
       const positions = [];
-      
-      console.log(`📊 Processing Tesseract blocks output for page ${pageNum}...`);
-      console.log(`📋 Found ${data.blocks ? data.blocks.length : 0} blocks`);
       
       if (data.blocks && data.blocks.length > 0) {
         // Navigate through blocks -> paragraphs -> lines -> words
@@ -262,18 +249,6 @@ class ParallelPDFTextExtractionService {
       canvas.width = 0;
       canvas.height = 0;
       
-      console.log(`✅ Page ${pageNum} OCR complete - ${extractedText.length} characters, ${positions.length} positions`);
-      
-      // Show sample positions for debugging
-      if (positions.length > 0) {
-        console.log(`📍 Sample OCR positions from page ${pageNum}:`);
-        positions.slice(0, 5).forEach((pos, i) => {
-          console.log(`  ${i + 1}. "${pos.text}" at (${Math.round(pos.x)}, ${Math.round(pos.y)}) conf: ${pos.confidence}% [OCR]`);
-        });
-      } else {
-        console.warn(`⚠️ No positions found for page ${pageNum} - check OCR output`);
-      }
-      
       return {
         pageNum,
         text: extractedText,
@@ -282,7 +257,6 @@ class ParallelPDFTextExtractionService {
       };
       
     } catch (error) {
-      console.error(`❌ Error processing page ${pageNum} with OCR:`, error);
       return {
         pageNum,
         text: `Error processing page ${pageNum}: ${error.message}`,
@@ -296,16 +270,13 @@ class ParallelPDFTextExtractionService {
    * Create Tesseract workers
    */
   async createWorkers() {
-    console.log(`🏭 Creating ${this.maxWorkers} Tesseract OCR workers`);
     const workers = [];
     
     for (let i = 0; i < this.maxWorkers; i++) {
       try {
         const worker = await Tesseract.createWorker('eng');
         workers.push(worker);
-        console.log(`✅ Created OCR worker ${i + 1}/${this.maxWorkers}`);
       } catch (error) {
-        console.warn(`⚠️ Failed to create OCR worker ${i + 1}:`, error);
         break;
       }
     }
@@ -314,7 +285,6 @@ class ParallelPDFTextExtractionService {
       throw new Error('Failed to create any Tesseract OCR workers');
     }
     
-    console.log(`✅ Successfully created ${workers.length} OCR workers`);
     return workers;
   }
   
@@ -322,14 +292,11 @@ class ParallelPDFTextExtractionService {
    * Clean up workers
    */
   async cleanupWorkers(workers) {
-    console.log(`🧹 Cleaning up ${workers.length} OCR workers`);
-    
     const cleanupPromises = workers.map(worker => 
-      worker.terminate().catch(err => console.warn('⚠️ Error terminating OCR worker:', err))
+      worker.terminate().catch(() => {})
     );
     
     await Promise.all(cleanupPromises);
-    console.log('✅ All OCR workers terminated');
   }
 }
 

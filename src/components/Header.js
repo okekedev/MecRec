@@ -1,5 +1,5 @@
 /**
- * Header.js - Modern clinical header component with logout button
+ * Header.js - Modern clinical header component with logout button and MedRec text
  */
 import React, { useState } from 'react';
 import { 
@@ -44,35 +44,25 @@ const Header = ({
   };
 
   const handleLogoutPress = () => {
-    console.log('🔴 LOGOUT BUTTON CLICKED!');
-    console.log('🔍 useUser context:', { user: !!user, onLogout: !!onLogout });
-    
-    // Show custom modal instead of Alert.alert
     setShowLogoutModal(true);
   };
 
   const handleConfirmLogout = async () => {
-    console.log('🔒 User confirmed logout');
     setShowLogoutModal(false);
     
     try {
       // Try context logout first
       if (onLogout) {
-        console.log('📱 Using context onLogout...');
         await onLogout();
       } else {
-        console.log('⚠️ No context onLogout, using direct MicrosoftAuth...');
         await microsoftAuth.manualLogout();
       }
-      
-      console.log('✅ Logout process completed');
     } catch (error) {
       console.error('❌ Logout error:', error);
     }
   };
 
   const handleCancelLogout = () => {
-    console.log('❌ User cancelled logout');
     setShowLogoutModal(false);
   };
 
@@ -103,11 +93,12 @@ const Header = ({
             </TouchableOpacity>
           ) : showLogo ? (
             <TouchableOpacity
-              style={CommonStyles.headerLogoButton}
+              style={styles.headerLogoSection}
               onPress={handleMenuPress}
               accessibilityLabel="Menu"
               accessibilityRole="button"
             >
+              <Text style={styles.medrecText}>MedRec</Text>
               <Image 
                 source={require('../assets/medreclogo.png')} 
                 style={CommonStyles.headerLogoImage}
@@ -181,8 +172,8 @@ const Header = ({
             <View style={logoutModalStyles.modalHeader}>
               <MaterialCommunityIcons 
                 name="logout" 
-                size={28} // Slightly smaller like login icons
-                color="#0078d4" // Microsoft blue to match login
+                size={28}
+                color="#0078d4"
               />
               <Text style={logoutModalStyles.modalTitle}>Sign Out</Text>
             </View>
@@ -216,6 +207,22 @@ const Header = ({
 };
 
 const styles = {
+  // NEW: Logo section with MedRec text
+  headerLogoSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 30,
+    marginRight: 15, // Spacing before title
+  },
+  
+  medrecText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.primary,
+    marginRight: 8, // Space between text and logo
+    letterSpacing: -0.5,
+  },
+  
   userSection: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -248,7 +255,7 @@ const styles = {
 const logoutModalStyles = {
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)', // Darker backdrop like login
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
@@ -256,35 +263,35 @@ const logoutModalStyles = {
   modalCard: {
     backgroundColor: Colors.white,
     borderRadius: 16,
-    padding: 32, // More padding like login card
+    padding: 32,
     width: '100%',
-    maxWidth: 420, // Slightly wider like login
+    maxWidth: 420,
     alignItems: 'center',
     shadowColor: Colors.black,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 12, // Stronger shadow like login
+    shadowRadius: 12,
     elevation: 8,
     borderWidth: 1,
-    borderColor: '#e1e5e9', // Subtle border like login
+    borderColor: '#e1e5e9',
   },
   modalHeader: {
     alignItems: 'center',
-    marginBottom: 24, // More spacing like login
+    marginBottom: 24,
   },
   modalTitle: {
     fontSize: 20,
-    fontWeight: '600', // Match login weight
-    color: '#1a202c', // Darker color like login
+    fontWeight: '600',
+    color: '#1a202c',
     marginTop: 12,
-    letterSpacing: -0.3, // Subtle letter spacing like login
+    letterSpacing: -0.3,
   },
   modalMessage: {
-    fontSize: 15, // Match login description size
-    color: '#64748b', // Match login gray
+    fontSize: 15,
+    color: '#64748b',
     textAlign: 'center',
     lineHeight: 22,
-    marginBottom: 32, // More spacing like login
+    marginBottom: 32,
     fontWeight: '400',
   },
   buttonContainer: {
@@ -294,7 +301,7 @@ const logoutModalStyles = {
   },
   button: {
     flex: 1,
-    paddingVertical: 14, // Match login button padding
+    paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
     shadowColor: Colors.black,
@@ -306,21 +313,21 @@ const logoutModalStyles = {
   cancelButton: {
     backgroundColor: Colors.white,
     borderWidth: 1,
-    borderColor: '#d1d5db', // Professional gray border
+    borderColor: '#d1d5db',
   },
   logoutButton: {
-    backgroundColor: '#0078d4', // Microsoft blue like login
+    backgroundColor: '#0078d4',
     borderWidth: 1,
-    borderColor: '#106ebe', // Darker blue border like login
+    borderColor: '#106ebe',
   },
   cancelButtonText: {
-    color: '#374151', // Professional dark gray
-    fontSize: 15, // Match login button size
+    color: '#374151',
+    fontSize: 15,
     fontWeight: '600',
   },
   logoutButtonText: {
     color: Colors.white,
-    fontSize: 15, // Match login button size
+    fontSize: 15,
     fontWeight: '600',
   },
 };

@@ -1,8 +1,8 @@
-// src/services/PDFProcessorService.js - Updated to use Azure OpenAI
+// src/services/PDFProcessorService.js - Clean production version
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 import ParallelPDFTextExtractionService from './ParallelPDFTextExtractionService';
-import AzureOpenAIService from './AzureOpenAIService'; // Changed from OllamaService
+import AzureOpenAIService from './AzureOpenAIService';
 import MedicalFieldService from './MedicalFieldService';
 
 class PDFProcessorService {
@@ -11,7 +11,7 @@ class PDFProcessorService {
   constructor() {
     this.documentsCache = new Map();
     this.textExtractionService = ParallelPDFTextExtractionService.getInstance();
-    this.azureOpenAIService = AzureOpenAIService.getInstance(); // Changed from ollamaService
+    this.azureOpenAIService = AzureOpenAIService.getInstance();
     this.medicalFieldService = MedicalFieldService.getInstance();
     this.isProcessing = false;
     this.progressCallback = null;
@@ -30,7 +30,7 @@ class PDFProcessorService {
   setProgressCallback(callback) {
     this.progressCallback = callback;
     this.textExtractionService.setProgressCallback(callback);
-    this.azureOpenAIService.setProgressCallback(callback); // Changed from ollamaService
+    this.azureOpenAIService.setProgressCallback(callback);
   }
   
   updateProgress(status, progress, step, message) {
@@ -79,7 +79,6 @@ class PDFProcessorService {
       }
       
       this.isProcessing = true;
-      console.log('Processing document:', name);
       
       this.updateProgress('processing', 0.01, 'Starting', 'Beginning document processing');
       
@@ -121,7 +120,7 @@ class PDFProcessorService {
         try {
           this.updateProgress('processing', 0.4, 'AI Extraction', 'Starting Azure OpenAI information extraction');
           
-          const extractedInfo = await this.azureOpenAIService.extractInformation(extractedText); // Changed from ollamaService
+          const extractedInfo = await this.azureOpenAIService.extractInformation(extractedText);
           
           this.updateProgress('processing', 0.8, 'AI Complete', 'Azure OpenAI extraction completed successfully');
           

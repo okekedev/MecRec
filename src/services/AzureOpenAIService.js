@@ -1,5 +1,5 @@
 /**
- * AzureOpenAIService - Fixed to detect development vs production environment
+ * AzureOpenAIService - Clean production version without debug statements
  */
 import MedicalFieldService from './MedicalFieldService';
 
@@ -12,9 +12,6 @@ class AzureOpenAIService {
     
     // Smart API endpoint detection
     this.apiEndpoint = this.getApiEndpoint();
-    
-    console.log('🔐 AzureOpenAIService configured');
-    console.log('📍 API Endpoint:', this.apiEndpoint);
   }
 
   static getInstance() {
@@ -34,12 +31,8 @@ class AzureOpenAIService {
                      window.location.port === '19006';
 
     if (isExpoDev) {
-      // Expo dev server - point to our separate API server on port 3000
-      console.log('🛠️ Development mode detected: Using separate API server on port 3000');
       return 'http://localhost:3000/api/openai';
     } else {
-      // Production or same-server development - use relative path
-      console.log('🏭 Production mode detected: Using relative API path');
       return '/api/openai';
     }
   }
@@ -65,11 +58,6 @@ class AzureOpenAIService {
   async extractInformation(text) {
     try {
       this.updateProgress('processing', 0.3, 'Starting AI analysis', 'Preparing document for Azure OpenAI');
-      
-      console.log('DEBUG: Text being processed for extraction:');
-      console.log('DEBUG: Text length:', text.length);
-      console.log('DEBUG: API endpoint:', this.apiEndpoint);
-      
       this.updateProgress('processing', 0.4, 'AI Analysis', 'Sending to Azure OpenAI via secure proxy');
       
       // Call our internal API instead of Azure directly
@@ -82,8 +70,6 @@ class AzureOpenAIService {
           documentText: text
         })
       });
-
-      console.log('DEBUG: API response status:', response.status);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ 
@@ -99,13 +85,10 @@ class AzureOpenAIService {
         
         try {
           const extractedData = this.parseDelimiterResponse(result.extractedData);
-          
-          console.log('DEBUG: Extraction successful');
           this.updateProgress('processing', 0.9, 'AI extraction complete', 'Successfully extracted clinical data');
           return extractedData;
           
         } catch (parseError) {
-          console.error('DEBUG: Parse error:', parseError);
           this.updateProgress('error', 0.7, 'AI parsing error', `Failed to extract: ${parseError.message}`);
           
           return {
@@ -121,8 +104,6 @@ class AzureOpenAIService {
       }
       
     } catch (error) {
-      console.error('DEBUG: Extraction error:', error);
-      
       // Enhanced error handling with endpoint information
       let errorMessage = error.message;
       if (error.message.includes('Failed to fetch') || error.message.includes('404')) {
@@ -145,32 +126,24 @@ class AzureOpenAIService {
   }
 
   /**
-   * Parse delimiter response (same logic as before)
+   * Parse delimiter response
    */
   parseDelimiterResponse(text) {
-    console.log('DEBUG: Parsing Azure OpenAI response...');
-    console.log('DEBUG: Raw response:', text);
-    
     const result = this.medicalFieldService.createEmptyFormData();
     result.extractionMethod = 'azure-openai-parsed';
     
     const pattern = /^(\d+)\s*\|\s*(.*?)$/gm;
     const matches = [...text.matchAll(pattern)];
     
-    console.log(`DEBUG: Found ${matches.length} pipe-delimited matches`);
-    
     if (matches.length === 0) {
-      console.error('DEBUG: No pipe format found in response');
       result.extractionMethod = 'format_error';
       result.error = 'AI response did not follow required pipe delimiter format';
       return result;
     }
     
-    matches.forEach((match, index) => {
+    matches.forEach((match) => {
       const number = parseInt(match[1], 10);
       let content = match[2].trim();
-      
-      console.log(`DEBUG: Match ${index + 1}: Field ${number} = "${content}"`);
       
       if (this.isValidMedicalContent(content, number)) {
         const field = this.medicalFieldService.getFieldByNumber(number);
@@ -178,10 +151,7 @@ class AzureOpenAIService {
         if (field && number >= 1 && number <= 15) {
           content = this.cleanMedicalContent(content);
           result[field.key] = content;
-          console.log(`DEBUG: ✓ Stored ${field.key} = "${content}"`);
         }
-      } else {
-        console.log(`DEBUG: ✗ Invalid content for field ${number}: "${content}"`);
       }
     });
     
@@ -193,7 +163,6 @@ class AzureOpenAIService {
    */
   isValidMedicalContent(content, fieldNumber) {
     if (!content || content.length < 1) {
-      console.log(`DEBUG: Content empty or too short: "${content}"`);
       return false;
     }
     
@@ -206,10 +175,6 @@ class AzureOpenAIService {
     ];
     
     const isInvalid = invalidPatterns.some(pattern => pattern.test(content.trim()));
-    if (isInvalid) {
-      console.log(`DEBUG: Content matches invalid pattern: "${content}"`);
-    }
-    
     return !isInvalid;
   }
 

@@ -1,4 +1,4 @@
-// src/screens/DocumentReviewScreen.js - Fixed scrollbar visibility
+// src/screens/DocumentReviewScreen.js - Fixed scrollbar visibility for web
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -10,7 +10,8 @@ import {
   SafeAreaView,
   ActivityIndicator,
   Animated,
-  Modal
+  Modal,
+  Platform
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import PDFProcessorService from '../services/PDFProcessorService';
@@ -60,8 +61,6 @@ const DocumentReviewScreen = () => {
           throw new Error('Document not found');
         }
         
-        console.log('Document loaded:', documentId);
-        
         // Check for extraction errors
         if (document.formData.extractionMethod === 'failed' || 
             document.formData.extractionMethod === 'error' || 
@@ -108,8 +107,6 @@ const DocumentReviewScreen = () => {
   
   // ENHANCED: Handle showing contextual source blocks
   const handleShowSource = (fieldKey, fieldValue) => {
-    console.log(`Showing contextual source for ${fieldKey}: ${fieldValue}`);
-    
     // Get contextual source positions from PDF processor
     const fieldReference = pdfProcessor.getFieldReference(documentId, fieldKey);
     
@@ -117,8 +114,6 @@ const DocumentReviewScreen = () => {
       setHighlightedField({ fieldKey, fieldValue });
       setContextualBlocks(fieldReference.sourcePositions);
       setShowSourceViewer(true);
-      
-      console.log(`DEBUG: Showing ${fieldReference.sourcePositions.length} contextual blocks`);
     } else {
       Alert.alert('No Source Found', 'Could not locate this information in the document.');
     }
@@ -221,7 +216,7 @@ const DocumentReviewScreen = () => {
         showBackButton={true}
       />
       
-      {/* Progress Header - existing code */}
+      {/* Progress Header */}
       <View style={CommonStyles.headerContainer}>
         <View style={CommonStyles.headerTextContainer}>
           <Text style={CommonStyles.headerText}>Review Progress</Text>
@@ -245,11 +240,13 @@ const DocumentReviewScreen = () => {
         </Text>
       </View>
       
-      {/* FIXED: Added showsVerticalScrollIndicator={true} to make scrollbar visible */}
+      {/* FIXED: Enhanced ScrollView with web-specific scrollbar styling */}
       <ScrollView 
-        style={{ flex: 1 }} 
+        style={[
+          { flex: 1 },
+          Platform.OS === 'web' && styles.webScrollView
+        ]} 
         showsVerticalScrollIndicator={true}
-        indicatorStyle="default"
         contentContainerStyle={{ paddingBottom: 20 }}
       >
         <Animated.View style={{
@@ -257,7 +254,7 @@ const DocumentReviewScreen = () => {
           transform: [{ translateY: slideAnim }]
         }}>
           <View style={CommonStyles.contentContainer}>
-            {/* Document Header - existing code */}
+            {/* Document Header */}
             <View style={CommonStyles.sectionContainer}>
               <Text style={CommonStyles.sectionTitle}>{documentData?.name}</Text>
               <Text style={[CommonStyles.sectionDescription, { marginBottom: 0 }]}>
@@ -276,7 +273,7 @@ const DocumentReviewScreen = () => {
               )}
             </View>
             
-            {/* Clinical Information Section - Enhanced */}
+            {/* Clinical Information Section */}
             <View style={CommonStyles.sectionContainer}>
               <View style={CommonStyles.sectionTitleContainer}>
                 <View style={CommonStyles.sectionTitleIcon} />
@@ -318,7 +315,7 @@ const DocumentReviewScreen = () => {
               </TouchableOpacity>
             </View>
             
-            {/* Reviewer Authentication - FIXED: Wrapped text nodes in Text components */}
+            {/* Reviewer Authentication */}
             <View style={CommonStyles.sectionContainer}>
               <View style={CommonStyles.sectionTitleContainer}>
                 <View style={[CommonStyles.sectionTitleIcon, { backgroundColor: Colors.secondary }]} />
@@ -375,7 +372,7 @@ const DocumentReviewScreen = () => {
         </Animated.View>
       </ScrollView>
       
-      {/* ENHANCED: Contextual Source Viewer Modal */}
+      {/* Source Viewer Modal */}
       <Modal
         visible={showSourceViewer}
         animationType="slide"
@@ -400,9 +397,11 @@ const DocumentReviewScreen = () => {
           </View>
           
           <ScrollView 
-            style={styles.sourceViewerContent}
+            style={[
+              styles.sourceViewerContent,
+              Platform.OS === 'web' && styles.webScrollView
+            ]}
             showsVerticalScrollIndicator={true}
-            indicatorStyle="default"
           >
             {contextualBlocks.map((block, index) => {
               const { before, highlighted, after } = formatContextText(block);
@@ -441,9 +440,7 @@ const DocumentReviewScreen = () => {
                   
                   <View style={styles.blockFooter}>
                     <Text style={styles.blockCoords}>
-                      Position: ({Math.round(block.x)}, {Math.round(block.y)}) {/* FIXED: Removed bullet character */}
-                      {block.wordCount} words {/* FIXED: Removed bullet character */}
-                      {block.source} source
+                      Position: ({Math.round(block.x)}, {Math.round(block.y)}) | {block.wordCount} words | {block.source} source
                     </Text>
                   </View>
                 </View>
@@ -470,8 +467,29 @@ const DocumentReviewScreen = () => {
   );
 };
 
-// MODIFIED: Styles for contextual source viewer - NO YELLOW HIGHLIGHTING
+// Styles with web-specific scrollbar enhancement
 const styles = {
+  // Web-specific scrollbar styling
+  webScrollView: Platform.OS === 'web' ? {
+    overflow: 'auto',
+    scrollbarWidth: 'thin',
+    scrollbarColor: '#888 #f0f0f0',
+    '::-webkit-scrollbar': {
+      width: '8px',
+    },
+    '::-webkit-scrollbar-track': {
+      background: '#f0f0f0',
+      borderRadius: '4px',
+    },
+    '::-webkit-scrollbar-thumb': {
+      background: '#888',
+      borderRadius: '4px',
+    },
+    '::-webkit-scrollbar-thumb:hover': {
+      background: '#555',
+    },
+  } : {},
+  
   sourceViewerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -563,9 +581,8 @@ const styles = {
     color: Colors.gray,
   },
   contextHighlighted: {
-    // NO YELLOW BACKGROUND - same style as other text
     color: Colors.black,
-    fontWeight: '400', // Same weight as other text
+    fontWeight: '400',
     paddingHorizontal: 0,
     borderRadius: 0,
   },
