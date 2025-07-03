@@ -99,11 +99,6 @@ const Header = ({
               accessibilityRole="button"
             >
               <Text style={styles.medrecText}>MedRec</Text>
-              <Image 
-                source={require('../assets/medreclogo.png')} 
-                style={CommonStyles.headerLogoImage}
-                resizeMode="contain"
-              />
             </TouchableOpacity>
           ) : null}
           
@@ -207,19 +202,17 @@ const Header = ({
 };
 
 const styles = {
-  // NEW: Logo section with MedRec text
+  // Logo section with just MedRec text
   headerLogoSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
     height: 30,
+    justifyContent: 'center',
     marginRight: 15, // Spacing before title
   },
   
   medrecText: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
     color: Colors.primary,
-    marginRight: 8, // Space between text and logo
     letterSpacing: -0.5,
   },
   
