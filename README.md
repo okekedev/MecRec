@@ -1,122 +1,69 @@
-# MedRec PDF Processor
+# MedRec
 
-A React Native application for processing medical referral documents with parallel OCR capabilities. This app allows you to upload and view PDF documents, extract text (via direct methods and OCR), and ask questions about the document using an AI-powered chat interface.
+<p align="center">
+  <img src="screenshots/login.png" alt="MedRec Login" width="400">
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="screenshots/dashboard.png" alt="MedRec Dashboard" width="400">
+</p>
+
+<p align="center">
+  <strong>Clinical Document Review Platform</strong><br>
+  HIPAA-compliant medical referral processing with AI-powered document extraction
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-Web%20%7C%20iOS%20%7C%20Android-blue" alt="Platform">
+  <img src="https://img.shields.io/badge/Auth-Microsoft%20Azure%20AD-0078D4" alt="Azure AD">
+  <img src="https://img.shields.io/badge/HIPAA-Compliant-green" alt="HIPAA Compliant">
+</p>
+
+---
+
+## Overview
+
+MedRec simplifies the clinical document review process by extracting key medical information for verification by healthcare professionals. The system uses advanced OCR and AI to identify important clinical data points, supporting efficient and accurate medical record processing.
+
+---
 
 ## Features
 
-- Upload and process PDF documents
-- Extract text using both direct extraction and parallel OCR
-- Generate embeddings for semantic search
-- AI-powered chat interface for document questions
-- Form extraction for medical referral data
-- Cross-platform: works on Android, iOS, and Web
+- **Enterprise Authentication** - Secure Microsoft Azure AD integration
+- **Document Processing** - Upload, review, and generate referral summaries
+- **AI-Powered Extraction** - Automatic extraction of clinical data points
+- **Parallel OCR** - Fast multi-page document processing with Tesseract.js
+- **Cross-Platform** - Works on Web, iOS, and Android
+- **HIPAA Compliant** - Secure healthcare data handling
 
-## Latest Updates
+---
 
-- Added parallel OCR processing for significantly faster text extraction
-- Optimized PDF processing with multiple Tesseract workers
-- Improved UI responsiveness during OCR processing
-- Fixed compatibility issues with PDF.js and Tesseract.js
+## Tech Stack
 
-## Project Structure
+- **Frontend**: React Native / React Native Web
+- **Authentication**: Microsoft Azure Active Directory
+- **OCR**: Tesseract.js with parallel processing
+- **PDF Processing**: PDF.js
+- **AI**: Embeddings for semantic search and document Q&A
 
-- `src/components/`: Reusable UI components
-- `src/screens/`: Application screens
-- `src/services/`: Business logic and services
-- `src/utils/`: Utility functions and helpers
-- `src/assets/`: Images and other static assets
-- `src/navigation/`: Navigation configuration
+---
 
-## Running the App
+## Request a Demo
 
-### Prerequisites
+This is a proprietary healthcare solution. For demo access or licensing inquiries:
 
-- Node.js (v18+)
-- npm or yarn
-- For Android: Android Studio, Android SDK
-- For iOS: Xcode, CocoaPods
+<p align="center">
+  <a href="https://www.linkedin.com/in/christianokeke/">
+    <img src="https://img.shields.io/badge/LinkedIn-Contact%20for%20Demo-0077B5?style=for-the-badge&logo=linkedin" alt="Contact on LinkedIn">
+  </a>
+</p>
 
-### Installing Dependencies
-
-```bash
-# Install dependencies
-npm install --legacy-peer-deps
-```
-
-### Running on Android
-
-```bash
-# Start Metro bundler
-npm start
-
-# In a new terminal, run on Android
-npm run android
-```
-
-### Running on iOS
-
-```bash
-# Install CocoaPods dependencies
-cd ios && pod install && cd ..
-
-# Start Metro bundler
-npm start
-
-# In a new terminal, run on iOS
-npm run ios
-```
-
-### Running on Web
-
-#### Option 1: Simple Web Demo (Recommended)
-
-We've created a simplified web demo that doesn't require webpack configuration:
-
-```bash
-# Run the simple web demo
-npm run web:simple
-```
-
-This will create a basic HTML page with PDF upload capabilities and serve it using a local server.
-
-#### Option 2: Full React Native Web (Advanced)
-
-For the full React Native Web experience (may require additional setup):
-
-```bash
-# Install web-specific dependencies
-npm install webpack webpack-cli webpack-dev-server babel-loader html-webpack-plugin file-loader url-loader babel-plugin-react-native-web crypto-browserify stream-browserify path-browserify buffer browserify-zlib util url --save-dev --legacy-peer-deps
-
-# Run the web version
-npm run web
-```
-
-## Web Compatibility
-
-The application has been designed to work on web browsers with platform-specific implementations for:
-
-- PDF viewing
-- Document picking
-- File system operations
-- OCR processing with Tesseract.js
-- Parallel processing for improved performance
-
-### Performance Notes
-
-- The parallel OCR implementation significantly improves processing time for multi-page documents
-- For optimal performance, the app creates multiple Tesseract workers (default: 3)
-- Memory usage increases with parallel processing, but the speed improvement is substantial
-- Configure the `maxWorkers` value in `ParallelPDFTextExtractionService.js` to adjust the balance between speed and resource usage
-
-## Troubleshooting
-
-If you encounter issues with PDF.js or Tesseract.js, try these solutions:
-
-1. **PDF.js Worker Issues**: Update the worker source URL in `PDFTextExtractionService.js` if needed
-2. **Tesseract.js Worker Issues**: Adjust the maxWorkers setting or try switching back to sequential processing
-3. **Memory Issues**: Reduce maxWorkers if your device runs out of memory during processing
-4. **Web Bundling Issues**: Run `npm start -- --clear-cache` to clear bundler cache
+---
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details
+Proprietary - All rights reserved. Contact for licensing information.
+
+---
+
+<p align="center">
+  <sub>© 2025 Christian Okeke • MedRec v1.0.0 • For healthcare professional use only</sub>
+</p>
